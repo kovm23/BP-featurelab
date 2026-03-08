@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 import os
 import shutil
 import logging
@@ -19,6 +19,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+# Povolíme CORS pro tvou novou doménu i localhost
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
 CORS(app, resources={r"/*": {"origins": ALLOWED_ORIGINS}})
