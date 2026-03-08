@@ -26,7 +26,14 @@ pip-delete-this-directory.txt
 # ==============================
 # Důležité: Ignoruje složku, kam se ukládají videa a obrázky uživatelů
 uploads/
+dataset/
 test.csv
+
+# Logy
+*.log
+
+# Binárky
+*.deb
 
 # ==============================
 # 4. Tajné klíče a konfigurace

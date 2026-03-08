@@ -10,10 +10,19 @@ export default defineConfig({
     },
   },
   server: {
+    // TADY JE TA ZMĚNA:
+    allowedHosts: true, // Povolí přístup z jakékoli Cloudflare adresy
+    host: true,         // Nutné pro poslech na síťovém rozhraní
+    port: 5173,
     proxy: {
       '/upload': { target: 'http://127.0.0.1:5000', changeOrigin: true },
-      // pokud používáš i /extract, přidej alias:
-      // '/extract': { target: 'http://127.0.0.1:5000', changeOrigin: true },
+      '/train': { target: 'http://127.0.0.1:5000', changeOrigin: true },
+      '/status': { target: 'http://127.0.0.1:5000', changeOrigin: true },
     },
+  },
+  preview: {
+    allowedHosts: true,
+    host: true,
+    port: 5173,
   },
 })
