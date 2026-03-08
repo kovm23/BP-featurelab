@@ -78,8 +78,17 @@ export interface TrainResult {
 export interface PredictionItem {
   media_name: string;
   predicted_score: number;
+  actual_score?: number;
   rule_applied: string;
   extracted_features: Record<string, unknown>;
+}
+
+export interface PredictionMetrics {
+  mse: number;
+  mae: number;
+  correlation: number | null;
+  matched_count: number;
+  total_count: number;
 }
 
 export type StatusPayload = {

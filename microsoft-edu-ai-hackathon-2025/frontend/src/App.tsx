@@ -36,6 +36,7 @@ import type {
   ExtractDetails,
   TrainResult,
   PredictionItem,
+  PredictionMetrics,
 } from "@/lib/api";
 import {
   AVAILABLE_MODELS,
@@ -93,6 +94,7 @@ export default function MediaFeatureLabPro() {
   // Phase 5: predictions
   const [predictBusy, setPredictBusy] = useState(false);
   const [predictions, setPredictions] = useState<PredictionItem[] | null>(null);
+  const [predictionMetrics, setPredictionMetrics] = useState<PredictionMetrics | null>(null);
 
   const [files, setFiles] = useState<File[]>([]);
   const [fileType, setFileType] = useState<FileType | null>(null);
@@ -223,7 +225,7 @@ export default function MediaFeatureLabPro() {
   // =========================================================
   // HANDLER: Fáze 1 – Feature Discovery
   // =========================================================
-  async function handleDiscover(sampleFile: File) {
+  async function handleDiscover(sampleFile: File, labelsFile?: File | null) {
     setIsDiscovering(true);
     setFeatureSpec(null);
     setError(null);
@@ -232,6 +234,9 @@ export default function MediaFeatureLabPro() {
     formData.append("file", sampleFile);
     formData.append("target_variable", targetVariable);
     formData.append("model", modelProvider);
+    if (labelsFile) {
+      formData.append("labels_file", labelsFile);
+    }
 
     try {
       const res = await fetch(DISCOVER_URL, { method: "POST", body: formData });
@@ -251,7 +256,7 @@ export default function MediaFeatureLabPro() {
   // =========================================================
   // HANDLER: Fáze 2 – Feature Extraction (training data)
   // =========================================================
-  async function handleExtractTraining(zipFile: File) {
+  async function handleExtractTraining(zipFile: File, labelsFile?: File | null) {
     setExtractionBusy(true);
     setTrainingDataX(null);
     setProgress(0);
@@ -263,6 +268,9 @@ export default function MediaFeatureLabPro() {
     formData.append("model", modelProvider);
     formData.append("feature_spec", JSON.stringify(featureSpec));
     formData.append("dataset_type", "training");
+    if (labelsFile) {
+      formData.append("labels_file", labelsFile);
+    }
 
     try {
       const res = await fetch(EXTRACT_URL, { method: "POST", body: formData });
@@ -377,19 +385,28 @@ export default function MediaFeatureLabPro() {
   // =========================================================
   // HANDLER: Fáze 5 – Predikce
   // =========================================================
-  async function handlePredict() {
+  async function handlePredict(labelsFile?: File | null) {
     setPredictBusy(true);
     setPredictions(null);
+    setPredictionMetrics(null);
     setError(null);
 
     try {
-      const res = await fetch(PREDICT_URL, { method: "POST" });
+      let res: Response;
+      if (labelsFile) {
+        const formData = new FormData();
+        formData.append("labels_file", labelsFile);
+        res = await fetch(PREDICT_URL, { method: "POST", body: formData });
+      } else {
+        res = await fetch(PREDICT_URL, { method: "POST" });
+      }
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
         throw new Error(errData.error || "Predikce selhala");
       }
       const data = await res.json();
       setPredictions(data.predictions);
+      setPredictionMetrics(data.metrics || null);
     } catch (e: unknown) {
       setError("Fáze 5 selhala: " + (e instanceof Error ? e.message : String(e)));
     } finally {
@@ -502,6 +519,7 @@ export default function MediaFeatureLabPro() {
     setTestingDataX(null);
     setPredictBusy(false);
     setPredictions(null);
+    setPredictionMetrics(null);
     try {
       localStorage.removeItem("mflFilesMeta");
       localStorage.removeItem("mflFileType");
@@ -680,6 +698,7 @@ export default function MediaFeatureLabPro() {
             onPredict={handlePredict}
             isPredicting={predictBusy}
             predictions={predictions}
+            predictionMetrics={predictionMetrics}
             /* Common */
             modelProvider={modelProvider}
             setModelProvider={setModelProvider}

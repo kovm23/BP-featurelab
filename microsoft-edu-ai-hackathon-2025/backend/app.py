@@ -92,9 +92,34 @@ class MachineLearningPipeline:
     # ==========================================
     # FÁZE 1: Feature Discovery
     # ==========================================
-    def discover_features(self, media_paths: list[str], target_variable: str, model_name: str) -> dict:
+    def discover_features(self, media_paths: list[str], target_variable: str,
+                          model_name: str, labels_df: pd.DataFrame | None = None) -> dict:
         """Analyzuje ukázková média a navrhne feature definition spec."""
         self.target_variable = target_variable
+
+        # Pokud máme labels, přidáme info o distribuci cílové proměnné
+        labels_context = ""
+        if labels_df is not None:
+            # Najdi sloupec s cílovou proměnnou (fuzzy match)
+            target_col = None
+            for c in labels_df.columns:
+                if c.lower().replace(" ", "_") == target_variable.lower().replace(" ", "_"):
+                    target_col = c
+                    break
+            if target_col is None:
+                # Vezmi poslední numerický sloupec jako target
+                numeric_cols = labels_df.select_dtypes(include="number").columns
+                if len(numeric_cols) > 0:
+                    target_col = numeric_cols[-1]
+
+            if target_col is not None:
+                col_data = labels_df[target_col]
+                labels_context = (
+                    f"\n\nYou also have access to the target variable '{target_col}' from the training labels:\n"
+                    f"- Min: {col_data.min()}, Max: {col_data.max()}, Mean: {col_data.mean():.4f}, Std: {col_data.std():.4f}\n"
+                    f"- Sample values: {list(col_data.head(10).values)}\n"
+                    f"Use this information to suggest features that would correlate well with these target values.\n"
+                )
 
         prompt = (
             f"You are a machine learning feature engineer.\n"
@@ -104,6 +129,7 @@ class MachineLearningPipeline:
             f"For each feature, provide:\n"
             f"- A descriptive name (lowercase_with_underscores)\n"
             f"- Expected value range, units, or categories\n\n"
+            f"{labels_context}"
             f"Output STRICTLY a JSON object where keys are feature names "
             f"and values are descriptions with ranges/units.\n"
             f"Example: {{\"movie_length\": \"duration in seconds (0-7200)\", "
@@ -135,16 +161,30 @@ class MachineLearningPipeline:
     # ==========================================
     def extract_features_async(self, media_files: list[str], feature_spec: dict,
                                 job_id: str, model_name: str, dataset_type: str,
-                                csv_path: str | None = None):
+                                csv_path: str | None = None,
+                                labels_df: pd.DataFrame | None = None):
         """Extrahuje features z médií podle feature_spec. Běží v threadu."""
         try:
             self.feature_spec = feature_spec
             spec_string = json.dumps(feature_spec, ensure_ascii=False)
             total = len(media_files)
 
+            # Volitelný kontext z labels
+            labels_context = ""
+            if labels_df is not None:
+                numeric_cols = labels_df.select_dtypes(include="number").columns
+                if len(numeric_cols) > 0:
+                    target_col = numeric_cols[-1]
+                    labels_context = (
+                        f"\nThe target variable '{target_col}' has range "
+                        f"[{labels_df[target_col].min()}, {labels_df[target_col].max()}]. "
+                        f"Use this context to calibrate your feature value estimates.\n"
+                    )
+
             prompt = (
                 f"You are a feature extraction AI.\n"
                 f"Extract EXACTLY these features from the provided media:\n{spec_string}\n\n"
+                f"{labels_context}"
                 f"Output STRICTLY a valid JSON object with these exact keys "
                 f"and their corresponding numerical or categorical values. "
                 f"No extra keys, no explanations."
@@ -292,15 +332,15 @@ class MachineLearningPipeline:
     # ==========================================
     # FÁZE 5: Predikce (batch)
     # ==========================================
-    def predict_batch(self) -> list[dict]:
-        """Predikuje pro všechny objekty v testing_X."""
+    def predict_batch(self, testing_Y_df: pd.DataFrame | None = None) -> dict:
+        """Predikuje pro všechny objekty v testing_X. Volitelně porovná s testing_Y."""
         if not self.is_trained:
             raise Exception("Model není natrénovaný. Proveďte Fázi 3.")
         if self.testing_X is None or self.testing_X.empty:
             raise Exception("Chybí testovací dataset_X. Proveďte Fázi 4.")
 
         feature_cols = [c for c in self.feature_spec if c in self.testing_X.columns]
-        X_test = self.testing_X[feature_cols]
+        X_test = self.testing_X[feature_cols].copy()
         X_test = pd.get_dummies(X_test)
 
         # Zajisti stejné sloupce jako při tréninku
@@ -311,19 +351,74 @@ class MachineLearningPipeline:
 
         predictions = self.model.predict(X_test)
 
+        # Pokud máme testing_Y, spáruj s predikcemi
+        actual_values = {}
+        if testing_Y_df is not None:
+            join_col = testing_Y_df.columns[0]
+            testing_Y_df = testing_Y_df.rename(columns={join_col: "media_name"})
+            testing_Y_df["media_name"] = testing_Y_df["media_name"].astype(str).str.strip()
+            # Najdi target sloupec
+            target_col = None
+            for c in testing_Y_df.columns:
+                if c.lower() == self.target_variable.lower() or c == self.target_variable:
+                    target_col = c
+                    break
+            if target_col is None:
+                numeric_cols = [c for c in testing_Y_df.columns if c != "media_name"
+                                and pd.api.types.is_numeric_dtype(testing_Y_df[c])]
+                if numeric_cols:
+                    target_col = numeric_cols[-1]
+            if target_col:
+                for _, row in testing_Y_df.iterrows():
+                    actual_values[str(row["media_name"]).strip()] = float(row[target_col])
+
         results = []
+        pred_list = []
+        actual_list = []
+
         for i, row in self.testing_X.iterrows():
             pred_score = float(predictions[i])
+            media_name = str(row.get("media_name", f"object_{i}"))
             # Najdi odpovídající pravidlo (zjednodušeně: první matching)
             rule = self.rules[0] if self.rules else "Default rule"
-            results.append({
-                "media_name": row.get("media_name", f"object_{i}"),
+
+            item = {
+                "media_name": media_name,
                 "predicted_score": round(pred_score, 4),
                 "rule_applied": rule,
                 "extracted_features": {k: row[k] for k in self.feature_spec if k in row},
-            })
+            }
 
-        return results
+            # Přidej actual score pokud máme testing_Y
+            if media_name in actual_values:
+                item["actual_score"] = round(actual_values[media_name], 4)
+                pred_list.append(pred_score)
+                actual_list.append(actual_values[media_name])
+
+            results.append(item)
+
+        # Spočítej metriky pokud máme párované hodnoty
+        metrics = None
+        if pred_list and actual_list:
+            import numpy as np
+            pred_arr = np.array(pred_list)
+            actual_arr = np.array(actual_list)
+            mse = float(np.mean((pred_arr - actual_arr) ** 2))
+            mae = float(np.mean(np.abs(pred_arr - actual_arr)))
+            # Pearson korelace
+            if len(pred_arr) > 1 and np.std(pred_arr) > 0 and np.std(actual_arr) > 0:
+                correlation = float(np.corrcoef(pred_arr, actual_arr)[0, 1])
+            else:
+                correlation = None
+            metrics = {
+                "mse": round(mse, 6),
+                "mae": round(mae, 6),
+                "correlation": round(correlation, 4) if correlation is not None else None,
+                "matched_count": len(pred_list),
+                "total_count": len(results),
+            }
+
+        return {"predictions": results, "metrics": metrics}
 
 
 pipeline = MachineLearningPipeline()
@@ -349,6 +444,21 @@ def api_discover():
     path = os.path.join(UPLOAD_FOLDER, secure_filename(file.filename))
     file.save(path)
 
+    # Volitelný labels CSV
+    labels_df = None
+    if "labels_file" in request.files:
+        lf = request.files["labels_file"]
+        if lf.filename:
+            labels_path = os.path.join(UPLOAD_FOLDER, f"labels_{secure_filename(lf.filename)}")
+            lf.save(labels_path)
+            try:
+                labels_df = pd.read_csv(labels_path)
+            except Exception as e:
+                logger.warning(f"Nelze načíst labels CSV: {e}")
+            finally:
+                if os.path.exists(labels_path):
+                    os.remove(labels_path)
+
     media_paths = []
     extract_path = None
 
@@ -357,14 +467,20 @@ def api_discover():
             # Rozbal ZIP, vezmi vzorky
             extract_path = os.path.join(UPLOAD_FOLDER, f"discover_{uuid.uuid4().hex[:8]}")
             os.makedirs(extract_path, exist_ok=True)
-            media_files, _ = _extract_zip_contents(path, extract_path)
+            media_files, csv_in_zip = _extract_zip_contents(path, extract_path)
             media_paths = media_files[:3]  # max 3 vzorky
             if not media_paths:
                 return jsonify({"error": "ZIP neobsahuje žádná média."}), 400
+            # Pokud labels_df není nahraný zvlášť, zkus CSV ze ZIPu
+            if labels_df is None and csv_in_zip:
+                try:
+                    labels_df = pd.read_csv(csv_in_zip)
+                except Exception:
+                    pass
         else:
             media_paths = [path]
 
-        features = pipeline.discover_features(media_paths, target_var, model_name)
+        features = pipeline.discover_features(media_paths, target_var, model_name, labels_df)
         return jsonify({"suggested_features": features})
 
     finally:
@@ -389,6 +505,21 @@ def api_extract():
     if not feature_spec:
         return jsonify({"error": "Chybí feature_spec."}), 400
 
+    # Volitelný labels CSV (separate upload)
+    labels_df = None
+    if "labels_file" in request.files:
+        lf = request.files["labels_file"]
+        if lf.filename:
+            labels_path = os.path.join(DATASET_FOLDER, f"labels_{secure_filename(lf.filename)}")
+            lf.save(labels_path)
+            try:
+                labels_df = pd.read_csv(labels_path)
+            except Exception as e:
+                logger.warning(f"Nelze načíst labels CSV: {e}")
+            finally:
+                if os.path.exists(labels_path):
+                    os.remove(labels_path)
+
     zip_path = os.path.join(DATASET_FOLDER, secure_filename(file.filename))
     file.save(zip_path)
 
@@ -412,7 +543,7 @@ def api_extract():
     def _run():
         try:
             pipeline.extract_features_async(
-                media_files, feature_spec, job_id, model_name, dataset_type, csv_path
+                media_files, feature_spec, job_id, model_name, dataset_type, csv_path, labels_df
             )
         finally:
             shutil.rmtree(extract_path, ignore_errors=True)
@@ -443,12 +574,28 @@ def api_train():
 @app.route("/predict", methods=["POST"])
 def api_predict():
     """Fáze 5: Predikce pro všechny objekty v testovacím datasetu."""
+    # Volitelný testing_Y CSV
+    testing_Y_df = None
+    if request.files and "labels_file" in request.files:
+        lf = request.files["labels_file"]
+        if lf.filename:
+            labels_path = os.path.join(UPLOAD_FOLDER, f"test_labels_{secure_filename(lf.filename)}")
+            lf.save(labels_path)
+            try:
+                testing_Y_df = pd.read_csv(labels_path)
+            except Exception as e:
+                logger.warning(f"Nelze načíst testing labels CSV: {e}")
+            finally:
+                if os.path.exists(labels_path):
+                    os.remove(labels_path)
+
     try:
-        predictions = pipeline.predict_batch()
+        result = pipeline.predict_batch(testing_Y_df)
         return jsonify({
             "status": "success",
-            "predictions": predictions,
-            "count": len(predictions),
+            "predictions": result["predictions"],
+            "metrics": result["metrics"],
+            "count": len(result["predictions"]),
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 400

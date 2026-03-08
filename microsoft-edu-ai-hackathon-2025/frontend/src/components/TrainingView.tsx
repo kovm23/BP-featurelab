@@ -15,7 +15,7 @@ import {
   Trash2,
   Pencil,
 } from "lucide-react";
-import type { TrainResult, PredictionItem } from "@/lib/api";
+import type { TrainResult, PredictionItem, PredictionMetrics } from "@/lib/api";
 import { AVAILABLE_MODELS } from "@/lib/api";
 import {
   downloadFeatureSpec,
@@ -30,14 +30,14 @@ import {
 export interface TrainingViewProps {
   deluxe: boolean;
   /* Phase 1 */
-  onDiscoverStart: (file: File) => void;
+  onDiscoverStart: (file: File, labelsFile?: File | null) => void;
   isDiscovering: boolean;
   targetVariable: string;
   setTargetVariable: (v: string) => void;
   featureSpec: Record<string, string> | null;
   setFeatureSpec: (spec: Record<string, string>) => void;
   /* Phase 2 */
-  onExtractTraining: (file: File) => void;
+  onExtractTraining: (file: File, labelsFile?: File | null) => void;
   isExtracting: boolean;
   trainingDataX: Record<string, unknown>[] | null;
   datasetYColumns: string[] | null;
@@ -50,9 +50,10 @@ export interface TrainingViewProps {
   isExtractingTest: boolean;
   testingDataX: Record<string, unknown>[] | null;
   /* Phase 5 */
-  onPredict: () => void;
+  onPredict: (labelsFile?: File | null) => void;
   isPredicting: boolean;
   predictions: PredictionItem[] | null;
+  predictionMetrics: PredictionMetrics | null;
   /* Common */
   modelProvider: string;
   setModelProvider: (v: string) => void;
@@ -426,6 +427,7 @@ export function TrainingView({
   onPredict,
   isPredicting,
   predictions,
+  predictionMetrics,
   modelProvider,
   setModelProvider,
   step,
@@ -439,6 +441,13 @@ export function TrainingView({
   const [trainZipFile, setTrainZipFile] = useState<File | null>(null);
   const [testZipFile, setTestZipFile] = useState<File | null>(null);
   const [targetColumn, setTargetColumn] = useState("");
+  // Optional labels files
+  const [discoveryLabels, setDiscoveryLabels] = useState<File | null>(null);
+  const [useDiscoveryLabels, setUseDiscoveryLabels] = useState(false);
+  const [extractionLabels, setExtractionLabels] = useState<File | null>(null);
+  const [useExtractionLabels, setUseExtractionLabels] = useState(false);
+  const [testingLabels, setTestingLabels] = useState<File | null>(null);
+  const [useTestingLabels, setUseTestingLabels] = useState(false);
 
   const phaseTitle: Record<number, string> = {
     1: "Fáze 1: Feature Discovery",
@@ -614,9 +623,40 @@ export function TrainingView({
             pickLabel="Vybrat soubor z disku"
           />
 
+          {/* Optional labels for discovery */}
+          <div className={`p-3 rounded-lg border ${cls(deluxe, "bg-amber-50/50 border-amber-200", "bg-amber-900/20 border-amber-800/50")}`}>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={useDiscoveryLabels}
+                onChange={(e) => {
+                  setUseDiscoveryLabels(e.target.checked);
+                  if (!e.target.checked) setDiscoveryLabels(null);
+                }}
+                className="rounded"
+              />
+              <span className={`text-sm font-medium ${cls(deluxe, "text-amber-800", "text-amber-300")}`}>
+                Use labels for this phase (dataset_Y)
+              </span>
+            </label>
+            {useDiscoveryLabels && (
+              <div className="mt-2">
+                <input
+                  type="file"
+                  accept=".csv"
+                  onChange={(e) => { if (e.target.files?.[0]) setDiscoveryLabels(e.target.files[0]); }}
+                  className={`text-xs ${cls(deluxe, "text-slate-600", "text-slate-400")}`}
+                />
+                {discoveryLabels && (
+                  <p className="mt-1 text-xs text-green-500 font-medium">CSV: {discoveryLabels.name}</p>
+                )}
+              </div>
+            )}
+          </div>
+
           <div className="flex justify-center mt-6">
             <Button
-              onClick={() => discoveryFile && onDiscoverStart(discoveryFile)}
+              onClick={() => discoveryFile && onDiscoverStart(discoveryFile, useDiscoveryLabels ? discoveryLabels : null)}
               disabled={!discoveryFile || !targetVariable || isDiscovering}
             >
               {isDiscovering ? (
@@ -676,9 +716,43 @@ export function TrainingView({
             pickLabel="Vybrat ZIP soubor"
           />
 
+          {/* Optional separate labels for extraction */}
+          <div className={`p-3 rounded-lg border ${cls(deluxe, "bg-amber-50/50 border-amber-200", "bg-amber-900/20 border-amber-800/50")}`}>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={useExtractionLabels}
+                onChange={(e) => {
+                  setUseExtractionLabels(e.target.checked);
+                  if (!e.target.checked) setExtractionLabels(null);
+                }}
+                className="rounded"
+              />
+              <span className={`text-sm font-medium ${cls(deluxe, "text-amber-800", "text-amber-300")}`}>
+                Use labels for this phase (dataset_Y)
+              </span>
+            </label>
+            <p className={`text-xs mt-1 ${cls(deluxe, "text-amber-600", "text-amber-400/70")}`}>
+              Pokud je CSV s labels v ZIPu, nahrajeme ho automaticky. Zde ho lze nahrát zvlášť.
+            </p>
+            {useExtractionLabels && (
+              <div className="mt-2">
+                <input
+                  type="file"
+                  accept=".csv"
+                  onChange={(e) => { if (e.target.files?.[0]) setExtractionLabels(e.target.files[0]); }}
+                  className={`text-xs ${cls(deluxe, "text-slate-600", "text-slate-400")}`}
+                />
+                {extractionLabels && (
+                  <p className="mt-1 text-xs text-green-500 font-medium">CSV: {extractionLabels.name}</p>
+                )}
+              </div>
+            )}
+          </div>
+
           <div className="flex justify-center mt-6">
             <Button
-              onClick={() => trainZipFile && onExtractTraining(trainZipFile)}
+              onClick={() => trainZipFile && onExtractTraining(trainZipFile, useExtractionLabels ? extractionLabels : null)}
               disabled={!trainZipFile || isExtracting}
             >
               {isExtracting ? (
@@ -906,11 +980,47 @@ export function TrainingView({
             <DatasetTable deluxe={deluxe} data={testingDataX} title="Testing Dataset X" />
           )}
 
+          {/* Optional testing_Y labels */}
+          {!predictions && (
+            <div className={`p-3 rounded-lg border ${cls(deluxe, "bg-amber-50/50 border-amber-200", "bg-amber-900/20 border-amber-800/50")}`}>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={useTestingLabels}
+                  onChange={(e) => {
+                    setUseTestingLabels(e.target.checked);
+                    if (!e.target.checked) setTestingLabels(null);
+                  }}
+                  className="rounded"
+                />
+                <span className={`text-sm font-medium ${cls(deluxe, "text-amber-800", "text-amber-300")}`}>
+                  Nahrát testing dataset_Y (pro vyhodnocení přesnosti)
+                </span>
+              </label>
+              <p className={`text-xs mt-1 ${cls(deluxe, "text-amber-600", "text-amber-400/70")}`}>
+                CSV se skutečnými hodnotami cílové proměnné. Slouží k porovnání predikcí vs. realita.
+              </p>
+              {useTestingLabels && (
+                <div className="mt-2">
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={(e) => { if (e.target.files?.[0]) setTestingLabels(e.target.files[0]); }}
+                    className={`text-xs ${cls(deluxe, "text-slate-600", "text-slate-400")}`}
+                  />
+                  {testingLabels && (
+                    <p className="mt-1 text-xs text-green-500 font-medium">CSV: {testingLabels.name}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Predict button (if predictions not yet available) */}
           {!predictions && (
             <div className="flex justify-center mt-6">
               <Button
-                onClick={onPredict}
+                onClick={() => onPredict(useTestingLabels ? testingLabels : null)}
                 disabled={isPredicting}
               >
                 {isPredicting ? (
@@ -933,6 +1043,38 @@ export function TrainingView({
                 Predikce dokončena ({predictions.length} objektů)
               </p>
 
+              {/* Metrics panel */}
+              {predictionMetrics && (
+                <div className={`p-3 rounded-lg border ${cls(deluxe, "bg-blue-50 border-blue-200", "bg-blue-900/20 border-blue-800/50")}`}>
+                  <p className={`text-xs font-bold mb-2 ${cls(deluxe, "text-blue-900", "text-blue-300")}`}>
+                    Vyhodnocení modelu (predikce vs. skutečnost):
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="text-center">
+                      <p className={`text-lg font-bold ${cls(deluxe, "text-blue-700", "text-blue-400")}`}>{predictionMetrics.mse}</p>
+                      <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>MSE</p>
+                    </div>
+                    <div className="text-center">
+                      <p className={`text-lg font-bold ${cls(deluxe, "text-blue-700", "text-blue-400")}`}>{predictionMetrics.mae}</p>
+                      <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>MAE</p>
+                    </div>
+                    <div className="text-center">
+                      <p className={`text-lg font-bold ${cls(deluxe, "text-blue-700", "text-blue-400")}`}>
+                        {predictionMetrics.correlation !== null ? predictionMetrics.correlation : "N/A"}
+                      </p>
+                      <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>Korelace</p>
+                    </div>
+                    <div className="text-center">
+                      <p className={`text-lg font-bold ${cls(deluxe, "text-blue-700", "text-blue-400")}`}>
+                        {predictionMetrics.matched_count}/{predictionMetrics.total_count}
+                      </p>
+                      <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>Spárováno</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Predictions table */}
               <div className={`rounded-lg border overflow-hidden ${cls(deluxe, "border-slate-200", "border-slate-700")}`}>
                 <div className="overflow-x-auto max-h-80">
                   <table className="w-full text-xs">
@@ -940,6 +1082,9 @@ export function TrainingView({
                       <tr className={cls(deluxe, "bg-slate-50", "bg-slate-900")}>
                         <th className="px-2 py-1 text-left font-mono">media_name</th>
                         <th className="px-2 py-1 text-left font-mono">predicted_score</th>
+                        {predictions.some((p) => p.actual_score !== undefined) && (
+                          <th className="px-2 py-1 text-left font-mono">actual_score</th>
+                        )}
                         <th className="px-2 py-1 text-left font-mono">rule_applied</th>
                         {featureSpec && Object.keys(featureSpec).map((f) => (
                           <th key={f} className="px-2 py-1 text-left font-mono">{f}</th>
@@ -951,6 +1096,11 @@ export function TrainingView({
                         <tr key={i} className={i % 2 === 0 ? cls(deluxe, "bg-white", "bg-slate-800/50") : cls(deluxe, "bg-slate-50/50", "bg-slate-900/50")}>
                           <td className="px-2 py-1 whitespace-nowrap font-medium">{pred.media_name}</td>
                           <td className="px-2 py-1 whitespace-nowrap font-bold text-blue-600">{pred.predicted_score}</td>
+                          {predictions.some((p) => p.actual_score !== undefined) && (
+                            <td className="px-2 py-1 whitespace-nowrap font-bold text-green-600">
+                              {pred.actual_score !== undefined ? pred.actual_score : "—"}
+                            </td>
+                          )}
                           <td className="px-2 py-1 whitespace-nowrap font-mono text-[10px]">{pred.rule_applied}</td>
                           {featureSpec && Object.keys(featureSpec).map((f) => (
                             <td key={f} className="px-2 py-1 whitespace-nowrap">
@@ -968,11 +1118,14 @@ export function TrainingView({
               <div className="flex justify-center">
                 <button
                   onClick={() => {
+                    const hasActual = predictions.some((p) => p.actual_score !== undefined);
+                    const headers = ["media_name", "predicted_score", ...(hasActual ? ["actual_score"] : []), "rule_applied", ...(featureSpec ? Object.keys(featureSpec) : [])];
                     const csv = [
-                      ["media_name", "predicted_score", "rule_applied", ...(featureSpec ? Object.keys(featureSpec) : [])].join(","),
+                      headers.join(","),
                       ...predictions.map((p) => [
                         p.media_name,
                         p.predicted_score,
+                        ...(hasActual ? [p.actual_score !== undefined ? p.actual_score : ""] : []),
                         `"${p.rule_applied}"`,
                         ...(featureSpec ? Object.keys(featureSpec).map((f) => String(p.extracted_features[f] ?? "")) : []),
                       ].join(","))
