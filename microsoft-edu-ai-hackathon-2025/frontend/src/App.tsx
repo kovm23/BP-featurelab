@@ -12,440 +12,185 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
-import { Badge } from "@/components/ui/badge";
 import {
   UploadCloud,
-  Image as ImageIcon,
-  FileVideo,
-  FileText,
   X,
   Download,
   PlayCircle,
   Loader2,
   RefreshCw,
-  Copy,
-  Check,
-  Archive,
   HelpCircle,
   Moon,
   Sun,
   ChevronDown,
   Cpu,
-  Tags,
-  BrainCircuit 
 } from "lucide-react";
 
-// =====================
-// KONFIGURACE MODELŮ
-// =====================
-const AVAILABLE_MODELS = [
-  { id: "gpt-4o", name: "Azure OpenAI", type: "cloud" },
-  { id: "qwen2.5vl:7b", name: "Qwen 2.5 VL", type: "local" },
-  { id: "llava:34b", name: "Llava v1.6 34B", type: "local" },
-  { id: "llama3.2-vision", name: "Llama 3.2 Vision", type: "local" },
-];
+// =====================================================
+// IMPORTY z nových modulů
+// =====================================================
+import type {
+  FileType,
+  BackendOk,
+  StatusPayload,
+  ExtractDetails,
+  TrainResult,
+  PredictionItem,
+} from "@/lib/api";
+import {
+  AVAILABLE_MODELS,
+  DISCOVER_URL,
+  EXTRACT_URL,
+  TRAIN_URL,
+  PREDICT_URL,
+  TYPE_STYLES,
+} from "@/lib/api";
+import {
+  detectType,
+  downloadText,
+  downloadXLSX,
+  humanSize,
+  fileIcon,
+  uploaderBorder,
+  fileKey,
+  mergeFiles,
+  getOutputs,
+  getProcType,
+  getTranscript,
+  tileBg,
+  CopyButton,
+  downloadTestingDataWithPrediction,
+} from "@/lib/helpers";
+import { pollProgress } from "@/hooks/usePollProgress";
+import { Guide } from "@/components/Guide";
+import { TrainingView } from "@/components/TrainingView";
 
-// =====================
-// Types for backend
-// =====================
-
-type FileType = "text" | "image" | "video" | "archive";
-
-interface BackendOk {
-  message: string;
-  files: string[];
-  processing: any;
-}
-
-// =====================
-// Config & helpers
-// =====================
-
-const CLOUDFLARE_BACKEND_URL = "https://newfoundland-logged-leader-tour.trycloudflare.com";
-
-const API_URL = `${CLOUDFLARE_BACKEND_URL}/upload`;
-const TRAIN_URL = `${CLOUDFLARE_BACKEND_URL}/train`; 
-const API_BASE = CLOUDFLARE_BACKEND_URL;
-const STATUS_URL = (jobId: string) => `${API_BASE}/status/${encodeURIComponent(jobId)}`;
-
-const TYPE_STYLES: Record<FileType, { chip: string; accent: string; border: string; label: string }> = {
-  image:   { chip: "bg-blue-50 text-blue-900",   accent: "bg-blue-500",  border: "border-blue-300",  label: "Obrázky" },
-  video:   { chip: "bg-green-50 text-green-900", accent: "bg-green-500", border: "border-green-300", label: "Video"   },
-  text:    { chip: "bg-red-50 text-red-900",     accent: "bg-red-500",   border: "border-red-300",   label: "PDF"     },
-  archive: { chip: "bg-amber-50 text-amber-900", accent: "bg-amber-500", border: "border-amber-300", label: "ZIP"     },
-};
-
-const EXT_GROUPS: Record<FileType, string[]> = {
-  text: [".pdf", ".txt", ".md", ".csv"],
-  image: [".png", ".jpg", ".jpeg", ".webp", ".heic", ".gif"],
-  video: [".mp4", ".avi", ".mov", ".mkv"],
-  archive: [".zip"],
-};
-
-function detectType(files: File[]): FileType | null {
-  const getGroup = (name: string): FileType | null => {
-    const lower = name.toLowerCase();
-    if (EXT_GROUPS.image.some((e) => lower.endsWith(e))) return "image";
-    if (EXT_GROUPS.video.some((e) => lower.endsWith(e))) return "video";
-    if (EXT_GROUPS.text.some((e) => lower.endsWith(e))) return "text";
-    if (EXT_GROUPS.archive.some((e) => lower.endsWith(e))) return "archive";
-    return null;
-  };
-  const types = new Set<FileType>();
-  for (const f of files) {
-    const t = getGroup(f.name);
-    if (!t) return null;
-    types.add(t);
-  }
-  if (types.size !== 1) return null;
-  return [...types][0];
-}
-
-function b64ToBlob(b64: string, contentType: string) {
-  const base64 = b64.includes(",") ? b64.split(",")[1] : b64;
-  const byteChars = atob(base64);
-  const byteNumbers = new Array(byteChars.length);
-  for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
-  const byteArray = new Uint8Array(byteNumbers);
-  return new Blob([byteArray], { type: contentType });
-}
-
-function downloadText(name: string, text: string, mime = "text/plain;charset=utf-8") {
-  const blob = new Blob([text], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-function downloadXLSX(x: unknown, filename = "output.xlsx") {
-  if (typeof x === "string") {
-    try {
-      const blob = b64ToBlob(x, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(url);
-      return;
-    } catch {}
-  }
-  downloadText(filename.replace(/\.xlsx$/, ".txt"), String(x));
-}
-
-function humanSize(bytes: number) {
-  if (!bytes && bytes !== 0) return "";
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  return (bytes / Math.pow(1024, i)).toFixed(1) + " " + ["B", "KB", "MB", "GB"][i];
-}
-
-function fileIcon(name: string) {
-  const lower = name.toLowerCase();
-  const cls = "h-7 w-7";
-  if ([".mp4", ".mov", ".avi", ".mkv"].some((e) => lower.endsWith(e))) return <FileVideo className={cls} />;
-  if ([".png", ".jpg", ".jpeg", ".webp"].some((e) => lower.endsWith(e))) return <ImageIcon className={cls} />;
-  if (lower.endsWith(".zip")) return <Archive className={cls} />;
-  return <FileText className={cls} />;
-}
-
-function uploaderBorder(type: FileType | null) {
-  if (!type) return "";
-  return TYPE_STYLES[type].border;
-}
-
-// Copy button
-function CopyButton({ getText }: { getText: () => string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs hover:bg-slate-100 dark:hover:bg-white/10"
-      onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(getText());
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1200);
-        } catch {}
-      }}
-      title="Zkopírovat do schránky"
-    >
-      {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-      {copied ? "Zkopírováno" : "Kopírovat"}
-    </button>
-  );
-}
-
-// Backend helpers (video, outputs)
-function getOutputs(proc: any): Record<string, unknown> {
-  return proc?.outputs || proc?.key_frame_analysis?.outputs || {};
-}
-function getProcType(proc: any): FileType | undefined {
-  return proc?.type;
-}
-
-// Funkce pro získání transkriptu
-function getTranscript(proc: any): string | null {
-  if (!proc) return null;
-
-  // Zkusíme najít 'transcriptions' z dict struktury (nová logika pro vícero souborů)
-  if (proc.tabular_output) {
-      // Vezmeme první soubor, pokud jich je více, spojíme je
-      const transcripts = Object.values(proc.tabular_output)
-          .map((v: any) => v.transcript)
-          .filter(Boolean)
-          .join('\n\n--- NEXT FILE ---\n\n');
-      if (transcripts) return transcripts;
-  }
-
-  // Fallback pro starší strukturu
-  if (proc.transcriptions && typeof proc.transcriptions === 'object') {
-    return Object.values(proc.transcriptions).join('\n\n--- NEXT FILE ---\n\n');
-  }
-
-  return (
-    (typeof proc.transcription === "string" && proc.transcription) ||
-    (typeof proc.transcript === "string" && proc.transcript) ||
-    (typeof proc.asr?.text === "string" && proc.asr.text) ||
-    (typeof proc.key_frame_analysis?.transcription === "string" && proc.key_frame_analysis.transcription) ||
-    null
-  );
-}
-
-// Status polling
-type StatusPayload = {
-  progress: number;
-  stage?: string;
-  eta_seconds?: number;
-  done?: boolean;
-  error?: string;
-};
-async function pollProgress(jobId: string, onTick: (s: StatusPayload) => void, signal: AbortSignal) {
-  while (!signal.aborted) {
-    try {
-      const r = await fetch(STATUS_URL(jobId), { signal, cache: "no-store" });
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-      const s: StatusPayload = await r.json();
-      onTick(s);
-      if (s.done || s.progress >= 100) break;
-    } catch { /* silent backoff */ }
-    await new Promise((res) => setTimeout(res, 600));
-  }
-}
-
-// ============
-// File merging & persistence helpers
-// ============
-type FileKey = string;
-const fileKey = (f: File): FileKey => `${f.name}__${f.size}__${f.lastModified}`;
-function mergeFiles(existing: File[], incoming: File[]): File[] {
-  const map = new Map<FileKey, File>();
-  for (const f of existing) map.set(fileKey(f), f);
-  for (const f of incoming) map.set(fileKey(f), f);
-  return Array.from(map.values());
-}
-
-// =====================
-// Guide
-// =====================
-function Guide({ open, onClose }: { open: boolean; onClose: () => void }) {
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
-      <Card className="relative z-10 max-w-2xl w-full border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-800">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-xl text-slate-900 dark:text-white">Jak používat Media Feature Lab</CardTitle>
-          <CardDescription className="text-slate-600 dark:text-slate-300">Krátký průvodce pro první použití</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3 text-sm leading-relaxed text-slate-800 dark:text-slate-100">
-          <div className="rounded-lg p-3 bg-slate-50 dark:bg-white/5">
-            <b>1) Připrav si soubory</b> — nahraj vždy <i>jeden typ</i> (PDF <b>nebo</b> obrázky <b>nebo</b> video <b>nebo</b> ZIP).
-          </div>
-          <div className="rounded-lg p-3 bg-slate-50 dark:bg-white/5">
-            <b>2) Klasifikace (NOVÉ)</b> — Zadej kategorie (např. "Podvod, Pravda"), pokud chceš video automaticky roztřídit.
-          </div>
-          <div className="rounded-lg p-3 bg-slate-50 dark:bg-white/5">
-            <b>3) Spusť extrakci</b> — Vyber si model (Qwen 2.5 je doporučený).
-          </div>
-          <div className="pt-2">
-            <Button onClick={onClose} className="w-full">Rozumím</Button>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-// =====================
-// Component
-// =====================
-
-// =====================
-// Training View Component 
-// =====================
-function TrainingView({ deluxe, onTrainStart, isTraining, trainStatus }: any) {
-    // Lokální stav pro soubor v tréninku
-    const [trainFile, setTrainFile] = useState<File | null>(null);
-
-    const onDrop = useCallback((acceptedFiles: File[]) => {
-        if (acceptedFiles.length > 0) {
-            setTrainFile(acceptedFiles[0]);
-        }
-    }, []);
-
-    const { getRootProps, getInputProps, isDragActive } = useDropzone({
-        onDrop,
-        accept: { 'application/zip': ['.zip'] },
-        multiple: false
-    });
-
-    const handleStart = () => {
-        if (trainFile) onTrainStart(trainFile);
-    };
-
-    return (
-        <Card className={`${deluxe ? "bg-white/5 border-white/10" : "bg-white border-slate-200"} backdrop-blur-xl`}>
-            <CardHeader>
-                <CardTitle className={deluxe ? "text-white" : "text-slate-900"}>Nahrát vlastní Dataset</CardTitle>
-                <CardDescription className={deluxe ? "text-slate-300" : "text-slate-600"}>
-                    Pro natrénování nového modelu nahrajte <b>.ZIP</b> soubor obsahující média (obrázky/videa) a soubor <b>data.csv</b> s anotacemi.
-                </CardDescription>
-            </CardHeader>
-            <CardContent>
-                {/* DROPZONE PRO DATASET */}
-                {!trainStatus && (
-                <div
-                  {...getRootProps()}
-                  className={`relative cursor-pointer rounded-2xl border-2 border-dashed p-8 transition mb-6
-                    ${isDragActive
-                      ? deluxe ? "border-green-400/60 bg-green-500/10" : "border-green-500 bg-green-50"
-                      : deluxe ? "border-white/10 hover:bg-white/5"     : "border-slate-300 hover:bg-slate-50"
-                    }`}
-                >
-                  <input {...getInputProps()} />
-                  <div className="flex flex-col items-center gap-3">
-                    <div className={`rounded-2xl ${deluxe ? "bg-white/10" : "bg-white"} p-4 shadow-sm`}>
-                       {trainFile ? <Check className="text-green-500 h-9 w-9"/> : <Archive className={`${deluxe ? "text-white" : "text-slate-800"} h-9 w-9`} />}
-                    </div>
-                    {trainFile ? (
-                        <p className={`text-lg font-bold ${deluxe ? "text-green-400" : "text-green-700"}`}>{trainFile.name}</p>
-                    ) : (
-                        <p className={`text-[15px] ${deluxe ? "text-slate-200" : "text-slate-700"} font-medium`}>Přetáhni ZIP dataset sem</p>
-                    )}
-                  </div>
-                </div>
-                )}
-
-                {trainStatus && (
-                     <div className={`mb-6 p-4 rounded-xl border ${deluxe ? "bg-green-900/20 border-green-500/30 text-green-200" : "bg-green-50 border-green-200 text-green-800"}`}>
-                        <h4 className="font-bold mb-2 flex items-center gap-2"><Check className="h-4 w-4"/> Trénink dokončen!</h4>
-                        <pre className="text-xs opacity-80 whitespace-pre-wrap">
-                            {JSON.stringify(trainStatus.details, null, 2)}
-                        </pre>
-                     </div>
-                )}
-
-                <div className="flex justify-center">
-                    <Button 
-                        size="lg" 
-                        onClick={handleStart} 
-                        disabled={!trainFile || isTraining}
-                        className="bg-green-600 hover:bg-green-700 text-white w-full md:w-auto min-w-[200px]"
-                    >
-                        {isTraining ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Analyzuji dataset...</> : "Spustit trénink modelu"}
-                    </Button>
-                </div>
-            </CardContent>
-        </Card>
-    )
-}
-
+// =====================================================
+// HLAVNÍ KOMPONENTA
+// =====================================================
 export default function MediaFeatureLabPro() {
-  // MÓD APLIKACE: Predikce vs Trénink
-  const [appMode, setAppMode] = useState<'predict' | 'train'>('predict');
+  const [appMode, setAppMode] = useState<"predict" | "train">("train");
+
+  // --- Training pipeline state ---
+  const [trainingStep, setTrainingStep] = useState<1 | 2 | 3 | 4 | 5>(1);
+  const [targetVariable, setTargetVariable] = useState("movie memorability score");
+  const [featureSpec, setFeatureSpec] = useState<Record<string, string> | null>(null);
+  const [isDiscovering, setIsDiscovering] = useState(false);
+
+  // Phase 2: extraction
+  const [extractionBusy, setExtractionBusy] = useState(false);
+  const [trainingDataX, setTrainingDataX] = useState<Record<string, unknown>[] | null>(null);
+  const [datasetYColumns, setDatasetYColumns] = useState<string[] | null>(null);
+
+  // Phase 3: training
   const [trainingBusy, setTrainingBusy] = useState(false);
-  const [trainStatus, setTrainStatus] = useState<any>(null);
+  const [trainResult, setTrainResult] = useState<TrainResult | null>(null);
+
+  // Phase 4: test extraction
+  const [testExtractionBusy, setTestExtractionBusy] = useState(false);
+  const [testingDataX, setTestingDataX] = useState<Record<string, unknown>[] | null>(null);
+
+  // Phase 5: predictions
+  const [predictBusy, setPredictBusy] = useState(false);
+  const [predictions, setPredictions] = useState<PredictionItem[] | null>(null);
 
   const [files, setFiles] = useState<File[]>([]);
   const [fileType, setFileType] = useState<FileType | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [response, setResponse] = useState<BackendOk | null>(null);
+  const [predictionResult, setPredictionResult] = useState<{
+    score: number;
+    rule_applied: string;
+    extracted_features: Record<string, unknown>;
+    testing_data_X: Record<string, unknown>;
+  } | null>(null);
 
   const [description, setDescription] = useState("");
   const [categories, setCategories] = useState("");
 
-  const [formats, setFormats] = useState<{ json: boolean; csv: boolean; xlsx: boolean; xml: boolean }>({
+  const [formats, setFormats] = useState<{
+    json: boolean;
+    csv: boolean;
+    xlsx: boolean;
+    xml: boolean;
+  }>({
     json: true,
     csv: false,
     xlsx: false,
     xml: false,
   });
 
-  // THEME: default light; remember user choice
   const [deluxe, setDeluxe] = useState<boolean>(() => {
     const saved = localStorage.getItem("mflTheme");
     if (saved === "dark") return true;
     if (saved === "light") return false;
-    return false; // default light
+    return false;
   });
 
-  // Model provider selection (Default: Qwen - 2. položka v seznamu)
-  const [modelProvider, setModelProvider] = useState<string>(AVAILABLE_MODELS[1].id);
+  const [modelProvider, setModelProvider] = useState<string>(
+    AVAILABLE_MODELS[1].id
+  );
 
   useEffect(() => {
     localStorage.setItem("mflTheme", deluxe ? "dark" : "light");
   }, [deluxe]);
 
-  // Guide only after click
   const [showGuide, setShowGuide] = useState(false);
 
-  // Real progress only
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState<string>("");
   const [hasRealProgress, setHasRealProgress] = useState(false);
 
-  // Stepper
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
-  // Upload cancellation
   const [uploadCtrl, setUploadCtrl] = useState<AbortController | null>(null);
 
-  // Append (not overwrite) + type guard + dedupe
-  const onDrop = useCallback((accepted: File[]) => {
-    setError(null);
-    setResponse(null);
-    if (!accepted.length) return;
+  const onDrop = useCallback(
+    (accepted: File[]) => {
+      setError(null);
+      setResponse(null);
+      if (!accepted.length) return;
 
-    const newType = detectType(accepted);
-    if (!newType) {
-      setError("Nahraj pouze jeden typ souborů (PDF / Obrázky / Video / ZIP) a správné přípony.");
-      return;
-    }
-    if (fileType && fileType !== newType) {
-      setError(`Už máš rozpracovaný výběr typu "${fileType}". Přidej další soubory stejného typu nebo výběr resetuj.`);
-      return;
-    }
+      const newType = detectType(accepted);
+      if (!newType) {
+        setError(
+          "Nahraj pouze jeden typ souborů (PDF / Obrázky / Video / ZIP) a správné přípony."
+        );
+        return;
+      }
+      if (fileType && fileType !== newType) {
+        setError(
+          `Už máš rozpracovaný výběr typu "${fileType}". Přidej další soubory stejného typu nebo výběr resetuj.`
+        );
+        return;
+      }
 
-    setFiles(prev => mergeFiles(prev, accepted));
-    if (!fileType) setFileType(newType);
+      setFiles((prev) => mergeFiles(prev, accepted));
+      if (!fileType) setFileType(newType);
 
-    setStep(1);
-    setProgress(0);
-    setProgressLabel("");
-    setHasRealProgress(false);
-  }, [fileType]);
+      setStep(1);
+      setProgress(0);
+      setProgressLabel("");
+      setHasRealProgress(false);
+    },
+    [fileType]
+  );
 
-  // Keep lightweight metadata in localStorage (names only)
   useEffect(() => {
     try {
-      const meta = files.map(f => ({ name: f.name, size: f.size, lastModified: f.lastModified, type: f.type }));
+      const meta = files.map((f) => ({
+        name: f.name,
+        size: f.size,
+        lastModified: f.lastModified,
+        type: f.type,
+      }));
       localStorage.setItem("mflFilesMeta", JSON.stringify(meta));
       if (fileType) localStorage.setItem("mflFileType", fileType);
       else localStorage.removeItem("mflFileType");
-    } catch {}
+    } catch {
+      /* localStorage unavailable */
+    }
   }, [files, fileType]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -473,39 +218,192 @@ export default function MediaFeatureLabPro() {
     return () => {
       if (uploadCtrl) uploadCtrl.abort();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [uploadCtrl]);
 
-  async function handleTraining(file: File) {
-      setTrainingBusy(true);
-      setTrainStatus(null);
-      
-      const formData = new FormData();
-      formData.append("file", file); // Přidáme ZIP do requestu
+  // =========================================================
+  // HANDLER: Fáze 1 – Feature Discovery
+  // =========================================================
+  async function handleDiscover(sampleFile: File) {
+    setIsDiscovering(true);
+    setFeatureSpec(null);
+    setError(null);
 
-      try {
-          const res = await fetch(TRAIN_URL, { 
-              method: "POST",
-              body: formData // Posíláme jako form data
-          });
-          
-          if (!res.ok) {
-              const errText = await res.text();
-              throw new Error(errText || "Training failed");
-          }
-          
-          const data = await res.json();
-          setTrainStatus(data);
-      } catch (e: any) {
-          setTrainStatus({ details: { status: "error", message: e.message } });
-      } finally {
-          setTrainingBusy(false);
+    const formData = new FormData();
+    formData.append("file", sampleFile);
+    formData.append("target_variable", targetVariable);
+    formData.append("model", modelProvider);
+
+    try {
+      const res = await fetch(DISCOVER_URL, { method: "POST", body: formData });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Feature Discovery selhala");
       }
+      const data = await res.json();
+      setFeatureSpec(data.suggested_features);
+    } catch (err: unknown) {
+      setError("Fáze 1 selhala: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setIsDiscovering(false);
+    }
   }
 
+  // =========================================================
+  // HANDLER: Fáze 2 – Feature Extraction (training data)
+  // =========================================================
+  async function handleExtractTraining(zipFile: File) {
+    setExtractionBusy(true);
+    setTrainingDataX(null);
+    setProgress(0);
+    setProgressLabel("Odesílám dataset...");
+    setError(null);
+
+    const formData = new FormData();
+    formData.append("file", zipFile);
+    formData.append("model", modelProvider);
+    formData.append("feature_spec", JSON.stringify(featureSpec));
+    formData.append("dataset_type", "training");
+
+    try {
+      const res = await fetch(EXTRACT_URL, { method: "POST", body: formData });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Extrakce selhala");
+      }
+      const data = await res.json();
+
+      if (data.job_id) {
+        const ctrl = new AbortController();
+        await pollProgress(
+          data.job_id,
+          (s: StatusPayload) => {
+            setProgress(Math.max(0, Math.min(100, s.progress ?? 0)));
+            setProgressLabel(s.stage || "");
+
+            if (s.done && s.details?.status === "success") {
+              setTrainingDataX(s.details.dataset_X);
+              setDatasetYColumns(s.details.dataset_Y_columns || null);
+            }
+            if (s.done && s.error) {
+              setError("Fáze 2 selhala: " + s.error);
+            }
+          },
+          ctrl.signal,
+        );
+      }
+    } catch (e: unknown) {
+      setError("Fáze 2 selhala: " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setExtractionBusy(false);
+    }
+  }
+
+  // =========================================================
+  // HANDLER: Fáze 3 – ML Training (RuleKit)
+  // =========================================================
+  async function handleTrain(targetColumn: string) {
+    setTrainingBusy(true);
+    setTrainResult(null);
+    setError(null);
+
+    try {
+      const res = await fetch(TRAIN_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target_column: targetColumn }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Trénink selhal");
+      }
+      const data: TrainResult = await res.json();
+      setTrainResult(data);
+    } catch (e: unknown) {
+      setError("Fáze 3 selhala: " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setTrainingBusy(false);
+    }
+  }
+
+  // =========================================================
+  // HANDLER: Fáze 4 – Test Data Feature Extraction
+  // =========================================================
+  async function handleExtractTesting(zipFile: File) {
+    setTestExtractionBusy(true);
+    setTestingDataX(null);
+    setProgress(0);
+    setProgressLabel("Odesílám testovací dataset...");
+    setError(null);
+
+    const formData = new FormData();
+    formData.append("file", zipFile);
+    formData.append("model", modelProvider);
+    formData.append("feature_spec", JSON.stringify(featureSpec));
+    formData.append("dataset_type", "testing");
+
+    try {
+      const res = await fetch(EXTRACT_URL, { method: "POST", body: formData });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Extrakce selhala");
+      }
+      const data = await res.json();
+
+      if (data.job_id) {
+        const ctrl = new AbortController();
+        await pollProgress(
+          data.job_id,
+          (s: StatusPayload) => {
+            setProgress(Math.max(0, Math.min(100, s.progress ?? 0)));
+            setProgressLabel(s.stage || "");
+
+            if (s.done && s.details?.status === "success") {
+              setTestingDataX(s.details.dataset_X);
+            }
+            if (s.done && s.error) {
+              setError("Fáze 4 selhala: " + s.error);
+            }
+          },
+          ctrl.signal,
+        );
+      }
+    } catch (e: unknown) {
+      setError("Fáze 4 selhala: " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setTestExtractionBusy(false);
+    }
+  }
+
+  // =========================================================
+  // HANDLER: Fáze 5 – Predikce
+  // =========================================================
+  async function handlePredict() {
+    setPredictBusy(true);
+    setPredictions(null);
+    setError(null);
+
+    try {
+      const res = await fetch(PREDICT_URL, { method: "POST" });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Predikce selhala");
+      }
+      const data = await res.json();
+      setPredictions(data.predictions);
+    } catch (e: unknown) {
+      setError("Fáze 5 selhala: " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setPredictBusy(false);
+    }
+  }
+
+  // =========================================================
+  // HANDLER: Upload / Predict
+  // =========================================================
   async function handleUpload() {
     if (!files.length) return setError("Nejdřív nahraj soubory.");
-    if (!fileType) return setError("Detekce typu selhala – smíchal jsi různé přípony?");
+    if (!fileType)
+      return setError("Detekce typu selhala – smíchal jsi různé přípony?");
 
     if (uploadCtrl) uploadCtrl.abort();
 
@@ -517,7 +415,6 @@ export default function MediaFeatureLabPro() {
     setResponse(null);
     setStep(2);
 
-    // reset real progress
     setHasRealProgress(false);
     setProgress(0);
     setProgressLabel("");
@@ -527,56 +424,37 @@ export default function MediaFeatureLabPro() {
       for (const f of files) form.append("files", f, f.name);
       if (outputFormatsString) form.append("output_formats", outputFormatsString);
       if (description.trim()) form.append("description", description.trim());
-      
+
       form.append("model", modelProvider);
       form.append("file_type", fileType);
       form.append("categories", categories);
 
-      const res = await fetch(API_URL, { method: "POST", body: form, signal: ctrl.signal });
+      const res = await fetch(PREDICT_URL, {
+        method: "POST",
+        body: form,
+        signal: ctrl.signal,
+      });
       if (!res.ok) {
         const text = await res.text();
         throw new Error(text || `${res.status} ${res.statusText}`);
       }
-      
+
       const jsonRaw = await res.json();
-      
-      // --- ZDE BYLA CHYBA: Backend vrací obálku s klíčem 'processing' ---
-      // Předtím jsme přiřadili celou odpověď do 'processing', čímž vznikl double nesting.
-      // Opraveno:
-      const wrappedJson: BackendOk = {
-        message: "Analysis successful",
-        files: files.map(f => f.name),
-        // Nyní správně vytahujeme vnitřní objekt 'processing', kde jsou 'outputs'
-        processing: jsonRaw.processing 
-      };
 
-      // Real progress via job_id (pokud to backend podporuje)
-      const jobId = (wrappedJson as any)?.processing?.job_id as string | undefined;
-      if (jobId) {
-        setHasRealProgress(true);
-        const progCtrl = new AbortController();
-        setUploadCtrl(progCtrl);
-        await pollProgress(
-          jobId,
-          (s) => {
-            const p = Math.max(0, Math.min(100, s.progress ?? 0));
-            setProgress(p);
-            const stage = s.stage || "";
-            const eta = s.eta_seconds != null ? ` · zbývá ~${Math.ceil(s.eta_seconds)}s` : "";
-            setProgressLabel(`${stage}${eta}`);
-          },
-          progCtrl.signal
-        );
-        setProgress(100);
-        setProgressLabel("Hotovo");
-        setHasRealProgress(false);
+      // Predict mód – odpověď z /predict
+      if (jsonRaw.predictions) {
+        setPredictionResult({
+          score: jsonRaw.predictions[0]?.predicted_score ?? 0,
+          rule_applied: jsonRaw.predictions[0]?.rule_applied ?? "",
+          extracted_features: jsonRaw.predictions[0]?.extracted_features ?? {},
+          testing_data_X: jsonRaw.predictions[0]?.extracted_features ?? {},
+        });
       }
-
-      setResponse(wrappedJson);
+      setResponse(null);
       setStep(3);
-    } catch (e: any) {
-      if (e?.name !== "AbortError") {
-        setError(e?.message || "Nahrání selhalo");
+    } catch (e: unknown) {
+      if (e instanceof Error && e.name !== "AbortError") {
+        setError(e.message || "Nahrání selhalo");
         setStep(1);
       }
       setProgress(0);
@@ -589,7 +467,7 @@ export default function MediaFeatureLabPro() {
   }
 
   function handleRemove(index: number) {
-    setFiles(prev => {
+    setFiles((prev) => {
       const next = prev.filter((_, i) => i !== index);
       if (next.length === 0) setFileType(null);
       return next;
@@ -604,49 +482,69 @@ export default function MediaFeatureLabPro() {
     setFileType(null);
     setError(null);
     setResponse(null);
-    setCategories(""); // Reset kategorii
+    setPredictionResult(null);
+    setCategories("");
     setProgress(0);
     setProgressLabel("");
     setHasRealProgress(false);
     setStep(1);
+    // Reset training state
+    setTrainingStep(1);
+    setTargetVariable("movie memorability score");
+    setFeatureSpec(null);
+    setIsDiscovering(false);
+    setExtractionBusy(false);
+    setTrainingDataX(null);
+    setDatasetYColumns(null);
+    setTrainingBusy(false);
+    setTrainResult(null);
+    setTestExtractionBusy(false);
+    setTestingDataX(null);
+    setPredictBusy(false);
+    setPredictions(null);
     try {
       localStorage.removeItem("mflFilesMeta");
       localStorage.removeItem("mflFileType");
-    } catch {}
+    } catch {
+      /* localStorage unavailable */
+    }
   }
 
-  const outputs: Record<string, unknown> = useMemo(() => getOutputs(response?.processing), [response]);
-  const procType: FileType | undefined = getProcType(response?.processing);
-  const transcript = useMemo(() => getTranscript(response?.processing), [response]);
+  const outputs: Record<string, unknown> = useMemo(
+    () => getOutputs(response?.processing),
+    [response]
+  );
+  const procType = useMemo(
+    () => getProcType(response?.processing),
+    [response]
+  );
+  const transcript = useMemo(
+    () => getTranscript(response?.processing),
+    [response]
+  );
 
   const [previews, setPreviews] = useState<string[]>([]);
   useEffect(() => {
     previews.forEach((u) => URL.revokeObjectURL(u));
     const next = files
-      .filter((f) => f.type.startsWith("image/") || f.type.startsWith("video/"))
+      .filter(
+        (f) => f.type.startsWith("image/") || f.type.startsWith("video/")
+      )
       .map((f) => URL.createObjectURL(f));
     setPreviews(next);
     return () => next.forEach((u) => URL.revokeObjectURL(u));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [files]);
 
-  // Default tab preference: show "downloads" first if outputs exist
-  const defaultTab = useMemo<"overview" | "details" | "downloads" | "image" | "video">(
+  const defaultTab = useMemo<
+    "overview" | "details" | "downloads" | "image" | "video"
+  >(
     () => (Object.keys(outputs).length ? "downloads" : "overview"),
     [outputs]
   );
 
-  // Helper for colorful inner tile background
-  function tileBg(type: FileType | null) {
-    switch (type) {
-      case "image": return { bg: "#EFF6FF", fg: "#1E3A8A" };   // blue-50 / blue-900
-      case "video": return { bg: "#ECFDF5", fg: "#065F46" };   // green-50 / green-900
-      case "text": return { bg: "#FEF2F2", fg: "#7F1D1D" };    // red-50 / red-900
-      case "archive": return { bg: "#FFFBEB", fg: "#92400E" }; // amber-50 / amber-900
-      default: return { bg: "#F1F5F9", fg: "#0F172A" };        // slate-100 / slate-900
-    }
-  }
-
+  // =========================================================
+  // RENDER
+  // =========================================================
   return (
     <div
       className={`min-h-screen ${
@@ -656,25 +554,44 @@ export default function MediaFeatureLabPro() {
       }`}
     >
       <div className="mx-auto max-w-5xl px-6 py-6">
-        {/* ================= HEADER ================= */}
+        {/* HEADER */}
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <a href="https://www.vse.cz/" target="_blank" rel="noopener noreferrer">
-              <img src="/VSE_logo_CZ_circle_blue.png" alt="Logo školy" className="h-12 w-12 rounded-full shadow" />
+            <a
+              href="https://www.vse.cz/"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <img
+                src="/VSE_logo_CZ_circle_blue.png"
+                alt="Logo školy"
+                className="h-12 w-12 rounded-full shadow"
+              />
             </a>
             <div>
-              <h1 className={`text-[28px] font-semibold tracking-tight ${deluxe ? "text-white" : "text-slate-900"}`}>
+              <h1
+                className={`text-[28px] font-semibold tracking-tight ${
+                  deluxe ? "text-white" : "text-slate-900"
+                }`}
+              >
                 Media Feature Lab — Pro
               </h1>
-              <p className={`mt-0.5 text-sm ${deluxe ? "text-slate-300" : "text-slate-600"}`}>
+              <p
+                className={`mt-0.5 text-sm ${
+                  deluxe ? "text-slate-300" : "text-slate-600"
+                }`}
+              >
                 Prague University of Economics and Business
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            {/* PŘEPÍNAČ: Predikce / Trénink */}
-            <div className={`p-1 rounded-lg flex ${deluxe ? "bg-white/10" : "bg-slate-200"}`}>
+            <div
+              className={`p-1 rounded-lg flex ${
+                deluxe ? "bg-white/10" : "bg-slate-200"
+              }`}
+            >
               <button
                 onClick={() => setAppMode("predict")}
                 className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${
@@ -705,7 +622,6 @@ export default function MediaFeatureLabPro() {
               </button>
             </div>
 
-            {/* Motiv */}
             <Button
               variant={deluxe ? "secondary" : "outline"}
               size="icon"
@@ -713,10 +629,13 @@ export default function MediaFeatureLabPro() {
               onClick={() => setDeluxe((v) => !v)}
               title="Přepnout motiv"
             >
-              {deluxe ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              {deluxe ? (
+                <Sun className="h-4 w-4" />
+              ) : (
+                <Moon className="h-4 w-4" />
+              )}
             </Button>
 
-            {/* Nápověda */}
             <Button
               variant={deluxe ? "secondary" : "default"}
               size="icon"
@@ -727,34 +646,76 @@ export default function MediaFeatureLabPro() {
               <HelpCircle className="h-4 w-4" />
             </Button>
 
-            {/* Reset */}
             <Button variant="outline" onClick={handleReset}>
               <RefreshCw className="mr-2 h-4 w-4" /> Reset
             </Button>
           </div>
         </div>
 
-        {/* ================= HLAVNÍ OBSAH (PŘEPÍNAČ) ================= */}
+        {/* BODY */}
         {appMode === "train" ? (
-          /* --- ZOBRAZENÍ PRO TRÉNINK --- */
           <TrainingView
             deluxe={deluxe}
-            onTrainStart={handleTraining}
+            /* Phase 1 */
+            onDiscoverStart={handleDiscover}
+            isDiscovering={isDiscovering}
+            targetVariable={targetVariable}
+            setTargetVariable={setTargetVariable}
+            featureSpec={featureSpec}
+            setFeatureSpec={setFeatureSpec}
+            /* Phase 2 */
+            onExtractTraining={handleExtractTraining}
+            isExtracting={extractionBusy}
+            trainingDataX={trainingDataX}
+            datasetYColumns={datasetYColumns}
+            /* Phase 3 */
+            onTrain={handleTrain}
             isTraining={trainingBusy}
-            trainStatus={trainStatus}
+            trainResult={trainResult}
+            /* Phase 4 */
+            onExtractTesting={handleExtractTesting}
+            isExtractingTest={testExtractionBusy}
+            testingDataX={testingDataX}
+            /* Phase 5 */
+            onPredict={handlePredict}
+            isPredicting={predictBusy}
+            predictions={predictions}
+            /* Common */
+            modelProvider={modelProvider}
+            setModelProvider={setModelProvider}
+            step={trainingStep}
+            onGoToStep={(s) => setTrainingStep(s as 1 | 2 | 3 | 4 | 5)}
+            progress={progress}
+            progressLabel={progressLabel}
+            error={error}
+            clearError={() => setError(null)}
           />
         ) : (
-          /* --- ZOBRAZENÍ PRO PREDIKCI (Uploader) --- */
           <div className="grid grid-cols-1 gap-6">
-            <Card className={`${deluxe ? "bg-white/5 border-white/10" : "bg-white border-slate-200"} backdrop-blur-xl`}>
+            <Card
+              className={`${
+                deluxe
+                  ? "bg-white/5 border-white/10"
+                  : "bg-white border-slate-200"
+              } backdrop-blur-xl`}
+            >
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle className={`${deluxe ? "text-white" : "text-slate-900"} text-xl`}>
+                    <CardTitle
+                      className={`${
+                        deluxe ? "text-white" : "text-slate-900"
+                      } text-xl`}
+                    >
                       Vstupní média
                     </CardTitle>
-                    <CardDescription className={`${deluxe ? "text-slate-300" : "text-slate-600"}`}>
-                      Nahraj více souborů stejného typu. Backend nepovoluje mix typů v jednom requestu.
+                    <CardDescription
+                      className={`${
+                        deluxe ? "text-slate-300" : "text-slate-600"
+                      }`}
+                    >
+                      Nahraj více souborů stejného typu. Backend nepovoluje mix
+                      typů v jednom requestu.
                     </CardDescription>
                   </div>
                   {fileType && (
@@ -767,7 +728,10 @@ export default function MediaFeatureLabPro() {
                 </div>
               </CardHeader>
               <CardContent>
-                <motion.div whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }}>
+                <motion.div
+                  whileHover={{ scale: 1.01 }}
+                  whileTap={{ scale: 0.99 }}
+                >
                   <div
                     {...getRootProps()}
                     className={`relative cursor-pointer rounded-2xl border-2 border-dashed p-8 transition ${
@@ -782,13 +746,29 @@ export default function MediaFeatureLabPro() {
                   >
                     <input {...getInputProps()} />
                     <div className="flex flex-col items-center gap-3">
-                      <div className={`rounded-2xl ${deluxe ? "bg-white/10" : "bg-white"} p-4 shadow-sm`}>
-                        <UploadCloud className={`${deluxe ? "text-white" : "text-slate-800"} h-9 w-9`} />
+                      <div
+                        className={`rounded-2xl ${
+                          deluxe ? "bg-white/10" : "bg-white"
+                        } p-4 shadow-sm`}
+                      >
+                        <UploadCloud
+                          className={`${
+                            deluxe ? "text-white" : "text-slate-800"
+                          } h-9 w-9`}
+                        />
                       </div>
-                      <p className={`text-[15px] ${deluxe ? "text-slate-200" : "text-slate-700"} font-medium`}>
+                      <p
+                        className={`text-[15px] ${
+                          deluxe ? "text-slate-200" : "text-slate-700"
+                        } font-medium`}
+                      >
                         Přetáhni soubory nebo klikni pro výběr
                       </p>
-                      <p className={`text-xs ${deluxe ? "text-slate-400" : "text-slate-500"}`}>
+                      <p
+                        className={`text-xs ${
+                          deluxe ? "text-slate-400" : "text-slate-500"
+                        }`}
+                      >
                         PDF / JPG / PNG / WEBP / MP4 / MOV / AVI / MKV / ZIP
                       </p>
                     </div>
@@ -798,7 +778,9 @@ export default function MediaFeatureLabPro() {
                 {error && (
                   <div
                     className={`mt-4 rounded-xl p-3 text-sm ${
-                      deluxe ? "bg-red-400/10 text-red-200" : "bg-red-50 text-red-700"
+                      deluxe
+                        ? "bg-red-400/10 text-red-200"
+                        : "bg-red-50 text-red-700"
                     }`}
                   >
                     {error}
@@ -807,7 +789,11 @@ export default function MediaFeatureLabPro() {
 
                 {files.length > 0 && (
                   <div className="mt-4">
-                    <div className={`mb-2 text-xs ${deluxe ? "text-slate-300" : "text-slate-600"}`}>
+                    <div
+                      className={`mb-2 text-xs ${
+                        deluxe ? "text-slate-300" : "text-slate-600"
+                      }`}
+                    >
                       Vybráno {files.length} souborů
                     </div>
                     <div className="flex flex-wrap gap-3">
@@ -817,7 +803,9 @@ export default function MediaFeatureLabPro() {
                           <div
                             key={fileKey(f)}
                             className={`group flex items-center gap-3 rounded-2xl border px-4 py-3 shadow-sm ${
-                              fileType ? TYPE_STYLES[fileType].border : "border-slate-300"
+                              fileType
+                                ? TYPE_STYLES[fileType].border
+                                : "border-slate-300"
                             } ${deluxe ? "bg-white/5" : "bg-white"}`}
                             style={{ minWidth: 300 }}
                           >
@@ -827,16 +815,29 @@ export default function MediaFeatureLabPro() {
                             />
                             <div
                               className="flex items-center gap-2 rounded-xl px-3 py-2"
-                              style={{ background: pal.bg, color: pal.fg }}
+                              style={{
+                                background: pal.bg,
+                                color: pal.fg,
+                              }}
                             >
-                              <span className="opacity-90">{fileIcon(f.name)}</span>
+                              <span className="opacity-90">
+                                {fileIcon(f.name)}
+                              </span>
                               <div className="flex flex-col">
-                                <span className="text-[13px] font-medium truncate max-w-[30ch]">{f.name}</span>
-                                <span className="text-[11px] opacity-80">{humanSize(f.size)}</span>
+                                <span className="text-[13px] font-medium truncate max-w-[30ch]">
+                                  {f.name}
+                                </span>
+                                <span className="text-[11px] opacity-80">
+                                  {humanSize(f.size)}
+                                </span>
                               </div>
                             </div>
                             <button
-                              className={`ml-auto rounded-md p-1 ${deluxe ? "hover:bg-white/10" : "hover:bg-slate-100"}`}
+                              className={`ml-auto rounded-md p-1 ${
+                                deluxe
+                                  ? "hover:bg-white/10"
+                                  : "hover:bg-slate-100"
+                              }`}
                               onClick={() => handleRemove(i)}
                               title="Odebrat"
                             >
@@ -849,7 +850,6 @@ export default function MediaFeatureLabPro() {
                   </div>
                 )}
 
-                {/* --- OVLÁDACÍ PRVKY (BEZ KLASIFIKACE) --- */}
                 <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3">
                   <div className="space-y-2 md:col-span-2">
                     <Label>Popis / Kontext</Label>
@@ -867,7 +867,9 @@ export default function MediaFeatureLabPro() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label className={deluxe ? "text-slate-200" : ""}>Formáty výstupu</Label>
+                    <Label className={deluxe ? "text-slate-200" : ""}>
+                      Formáty výstupu
+                    </Label>
                     <div className="flex flex-wrap gap-3 text-sm">
                       {(["json", "csv", "xlsx", "xml"] as const).map((k) => (
                         <label
@@ -878,20 +880,29 @@ export default function MediaFeatureLabPro() {
                         >
                           <input
                             type="checkbox"
-                            checked={(formats as any)[k]}
-                            onChange={(e) => setFormats((s) => ({ ...s, [k]: e.target.checked }))}
+                            checked={formats[k]}
+                            onChange={(e) =>
+                              setFormats((s) => ({
+                                ...s,
+                                [k]: e.target.checked,
+                              }))
+                            }
                           />
                           {k.toUpperCase()}
                         </label>
                       ))}
                     </div>
-                    <p className={`text-xs ${deluxe ? "text-slate-400" : "text-slate-500"}`}>
-                      Backend očekává <code>output_formats</code> jako comma-separated string.
+                    <p
+                      className={`text-xs ${
+                        deluxe ? "text-slate-400" : "text-slate-500"
+                      }`}
+                    >
+                      Backend očekává <code>output_formats</code> jako
+                      comma-separated string.
                     </p>
                   </div>
                 </div>
 
-                {/* --- PROGRESS BAR --- */}
                 {(busy || hasRealProgress) && (
                   <div className="mt-6">
                     {hasRealProgress ? (
@@ -900,26 +911,34 @@ export default function MediaFeatureLabPro() {
                           <Progress value={progress} />
                           <div
                             className={`pointer-events-none absolute -top-6 right-0 rounded-md px-2 py-0.5 text-xs font-medium ${
-                              deluxe ? "bg-white/10 text-white" : "bg-black/10 text-slate-800"
+                              deluxe
+                                ? "bg-white/10 text-white"
+                                : "bg-black/10 text-slate-800"
                             } backdrop-blur`}
                           >
                             {Math.round(progress)}%
                           </div>
                         </div>
                         {progressLabel && (
-                          <p className={`mt-1 text-xs ${deluxe ? "text-slate-300" : "text-slate-600"}`}>
+                          <p
+                            className={`mt-1 text-xs ${
+                              deluxe ? "text-slate-300" : "text-slate-600"
+                            }`}
+                          >
                             {progressLabel}
                           </p>
                         )}
                       </>
                     ) : (
-                      <div className={`flex items-center gap-2 text-sm ${deluxe ? "text-slate-300" : "text-slate-600"}`}>
-                      </div>
+                      <div
+                        className={`flex items-center gap-2 text-sm ${
+                          deluxe ? "text-slate-300" : "text-slate-600"
+                        }`}
+                      />
                     )}
                   </div>
                 )}
 
-                {/* --- ACTION BAR --- */}
                 <div className="mt-6 pt-4 border-t border-slate-100 dark:border-white/5 flex flex-wrap items-center justify-between gap-4">
                   <div className="flex items-center flex-wrap gap-3">
                     <Button
@@ -929,21 +948,39 @@ export default function MediaFeatureLabPro() {
                     >
                       {busy ? (
                         <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Zpracovávám…
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />{" "}
+                          Zpracovávám…
                         </>
                       ) : (
                         <>
-                          <PlayCircle className="mr-2 h-4 w-4" /> Spustit extrakci
+                          <PlayCircle className="mr-2 h-4 w-4" /> Spustit
+                          extrakci
                         </>
                       )}
                     </Button>
 
-                    <div className={`flex items-center gap-2 text-xs ${deluxe ? "text-slate-300" : "text-slate-500"}`}>
-                      <span className={step >= 1 ? "font-medium" : "opacity-60"}>Krok 1: Nahrát</span>
+                    <div
+                      className={`flex items-center gap-2 text-xs ${
+                        deluxe ? "text-slate-300" : "text-slate-500"
+                      }`}
+                    >
+                      <span
+                        className={step >= 1 ? "font-medium" : "opacity-60"}
+                      >
+                        Krok 1: Nahrát
+                      </span>
                       <span>→</span>
-                      <span className={step >= 2 ? "font-medium" : "opacity-60"}>Krok 2: Extrakce</span>
+                      <span
+                        className={step >= 2 ? "font-medium" : "opacity-60"}
+                      >
+                        Krok 2: Extrakce
+                      </span>
                       <span>→</span>
-                      <span className={step >= 3 ? "font-medium" : "opacity-60"}>Krok 3: Export</span>
+                      <span
+                        className={step >= 3 ? "font-medium" : "opacity-60"}
+                      >
+                        Krok 3: Export
+                      </span>
                     </div>
                   </div>
 
@@ -972,7 +1009,11 @@ export default function MediaFeatureLabPro() {
                           <option
                             key={model.id}
                             value={model.id}
-                            className={deluxe ? "bg-slate-800 text-white font-normal" : "bg-white font-normal"}
+                            className={
+                              deluxe
+                                ? "bg-slate-800 text-white font-normal"
+                                : "bg-white font-normal"
+                            }
                           >
                             {model.name}
                           </option>
@@ -991,15 +1032,140 @@ export default function MediaFeatureLabPro() {
           </div>
         )}
 
-        {/* ================= RESULTS (Zobrazí se jen pokud máme výsledky) ================= */}
+        {/* RESULTS */}
+        {predictionResult && appMode === "predict" && (
+          <div className="mt-6">
+            <Card
+              className={`${
+                deluxe
+                  ? "bg-white/5 border-white/10"
+                  : "bg-white border-slate-200"
+              } backdrop-blur-xl`}
+            >
+              <CardHeader>
+                <CardTitle
+                  className={deluxe ? "text-white" : "text-slate-900"}
+                >
+                  🎯 Výsledek Predikce
+                </CardTitle>
+                <CardDescription
+                  className={deluxe ? "text-slate-300" : "text-slate-600"}
+                >
+                  Fáze 5: Predikce z ML modelu
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Fáze 5c: Predikovaný score */}
+                <div
+                  className={`rounded-xl p-4 ${
+                    deluxe
+                      ? "bg-green-900/30 border border-green-700/50"
+                      : "bg-green-50 border border-green-200"
+                  }`}
+                >
+                  <div
+                    className={`text-sm space-y-2 ${
+                      deluxe ? "text-slate-200" : "text-slate-700"
+                    }`}
+                  >
+                    <div>
+                      <span className="opacity-70">Predikovaná hodnota:</span>{" "}
+                      <b className="text-lg text-green-600">{predictionResult.score.toFixed(4)}</b>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Fáze 5c: Použité pravidlo */}
+                <div
+                  className={`rounded-xl p-4 ${
+                    deluxe
+                      ? "bg-blue-900/30 border border-blue-700/50"
+                      : "bg-blue-50 border border-blue-200"
+                  }`}
+                >
+                  <p
+                    className={`text-xs font-bold mb-2 ${
+                      deluxe ? "text-blue-300" : "text-blue-900"
+                    }`}
+                  >
+                    📋 Použité pravidlo:
+                  </p>
+                  <p
+                    className={`text-xs font-mono ${
+                      deluxe ? "text-slate-300" : "text-slate-600"
+                    }`}
+                  >
+                    {predictionResult.rule_applied}
+                  </p>
+                </div>
+
+                {/* Extracted features */}
+                <div
+                  className={`rounded-xl p-4 ${
+                    deluxe
+                      ? "bg-slate-800/50 border border-slate-700/50"
+                      : "bg-slate-50 border border-slate-200"
+                  }`}
+                >
+                  <p
+                    className={`text-xs font-bold mb-2 ${
+                      deluxe ? "text-slate-300" : "text-slate-900"
+                    }`}
+                  >
+                    🔍 Extrahované vlastnosti:
+                  </p>
+                  <div
+                    className={`text-xs space-y-1 font-mono ${
+                      deluxe ? "text-slate-400" : "text-slate-600"
+                    }`}
+                  >
+                    {Object.entries(predictionResult.extracted_features).map(
+                      ([key, val]) => (
+                        <div key={key}>
+                          <span className="opacity-60">{key}:</span>{" "}
+                          <span className="font-bold">{String(val)}</span>
+                        </div>
+                      )
+                    )}
+                  </div>
+                </div>
+
+                {/* Download button */}
+                <button
+                  onClick={() =>
+                    downloadTestingDataWithPrediction(
+                      predictionResult.testing_data_X,
+                      predictionResult.score,
+                      predictionResult.rule_applied
+                    )
+                  }
+                  className="w-full mt-4 px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 text-sm font-medium flex items-center justify-center gap-2"
+                >
+                  <Download className="w-4 h-4" /> Stáhnout výsledky
+                </button>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
         {response && appMode === "predict" && (
           <div className="mt-6">
             <Card
-              className={`${deluxe ? "bg-white/5 border-white/10" : "bg-white border-slate-200"} backdrop-blur-xl`}
+              className={`${
+                deluxe
+                  ? "bg-white/5 border-white/10"
+                  : "bg-white border-slate-200"
+              } backdrop-blur-xl`}
             >
               <CardHeader>
-                <CardTitle className={deluxe ? "text-white" : "text-slate-900"}>Výsledky z backendu</CardTitle>
-                <CardDescription className={deluxe ? "text-slate-300" : "text-slate-600"}>
+                <CardTitle
+                  className={deluxe ? "text-white" : "text-slate-900"}
+                >
+                  Výsledky z backendu
+                </CardTitle>
+                <CardDescription
+                  className={deluxe ? "text-slate-300" : "text-slate-600"}
+                >
                   {response.message}
                 </CardDescription>
               </CardHeader>
@@ -1009,17 +1175,30 @@ export default function MediaFeatureLabPro() {
                     <TabsTrigger value="overview">Overview</TabsTrigger>
                     <TabsTrigger value="details">Processing JSON</TabsTrigger>
                     <TabsTrigger value="downloads">Downloads</TabsTrigger>
-                    {procType === "image" && <TabsTrigger value="image">Image Features</TabsTrigger>}
-                    {procType === "video" && <TabsTrigger value="video">Video Transcript</TabsTrigger>}
+                    {procType === "image" && (
+                      <TabsTrigger value="image">Image Features</TabsTrigger>
+                    )}
+                    {procType === "video" && (
+                      <TabsTrigger value="video">Video Transcript</TabsTrigger>
+                    )}
                   </TabsList>
 
                   <TabsContent value="overview" className="mt-4 space-y-4">
                     <div
-                      className={`rounded-xl p-4 ${deluxe ? "bg-white/5 border border-white/10" : "bg-slate-50"}`}
+                      className={`rounded-xl p-4 ${
+                        deluxe
+                          ? "bg-white/5 border border-white/10"
+                          : "bg-slate-50"
+                      }`}
                     >
-                      <div className={`text-sm ${deluxe ? "text-slate-200" : "text-slate-700"}`}>
+                      <div
+                        className={`text-sm ${
+                          deluxe ? "text-slate-200" : "text-slate-700"
+                        }`}
+                      >
                         <div>
-                          <span className="opacity-70">Uložené soubory:</span> {response.files?.join(", ")}
+                          <span className="opacity-70">Uložené soubory:</span>{" "}
+                          {response.files?.join(", ")}
                         </div>
                         <div className="mt-1">
                           <span className="opacity-70">Typ zpracování:</span>{" "}
@@ -1027,12 +1206,14 @@ export default function MediaFeatureLabPro() {
                         </div>
                         {response.processing?.description && (
                           <div className="mt-1">
-                            <span className="opacity-70">Popis:</span> {String(response.processing.description)}
+                            <span className="opacity-70">Popis:</span>{" "}
+                            {String(response.processing.description)}
                           </div>
                         )}
                         {response.processing?.status && (
                           <div className="mt-1">
-                            <span className="opacity-70">Status:</span> {String(response.processing.status)}
+                            <span className="opacity-70">Status:</span>{" "}
+                            {String(response.processing.status)}
                           </div>
                         )}
                       </div>
@@ -1040,7 +1221,13 @@ export default function MediaFeatureLabPro() {
 
                     {previews.length > 0 && (
                       <div>
-                        <p className={`mb-2 text-sm ${deluxe ? "text-slate-300" : "text-slate-700"}`}>Náhledy</p>
+                        <p
+                          className={`mb-2 text-sm ${
+                            deluxe ? "text-slate-300" : "text-slate-700"
+                          }`}
+                        >
+                          Náhledy
+                        </p>
                         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
                           {previews.map((src, idx) =>
                             files[idx]?.type.startsWith("video/") ? (
@@ -1053,7 +1240,11 @@ export default function MediaFeatureLabPro() {
                                 autoPlay
                               />
                             ) : (
-                              <img key={idx} src={src} className="h-28 w-full rounded-xl object-cover" />
+                              <img
+                                key={idx}
+                                src={src}
+                                className="h-28 w-full rounded-xl object-cover"
+                              />
                             )
                           )}
                         </div>
@@ -1063,12 +1254,24 @@ export default function MediaFeatureLabPro() {
 
                   <TabsContent value="details" className="mt-4">
                     <div className="mb-2 flex items-center justify-between">
-                      <span className={`text-sm ${deluxe ? "text-slate-300" : "text-slate-700"}`}>Processing JSON</span>
-                      <CopyButton getText={() => JSON.stringify(response.processing, null, 2)} />
+                      <span
+                        className={`text-sm ${
+                          deluxe ? "text-slate-300" : "text-slate-700"
+                        }`}
+                      >
+                        Processing JSON
+                      </span>
+                      <CopyButton
+                        getText={() =>
+                          JSON.stringify(response.processing, null, 2)
+                        }
+                      />
                     </div>
                     <pre
                       className={`max-h-[420px] overflow-auto rounded-xl p-4 text-xs ${
-                        deluxe ? "bg-black/30 text-slate-100" : "bg-slate-100 text-slate-900"
+                        deluxe
+                          ? "bg-black/30 text-slate-100"
+                          : "bg-slate-100 text-slate-900"
                       }`}
                     >
                       {JSON.stringify(response.processing, null, 2)}
@@ -1077,7 +1280,11 @@ export default function MediaFeatureLabPro() {
 
                   <TabsContent value="downloads" className="mt-4">
                     {Object.keys(outputs).length === 0 ? (
-                      <p className={`${deluxe ? "text-slate-300" : "text-slate-600"} text-sm`}>
+                      <p
+                        className={`${
+                          deluxe ? "text-slate-300" : "text-slate-600"
+                        } text-sm`}
+                      >
                         Žádné soubory k dispozici.
                       </p>
                     ) : (
@@ -1085,27 +1292,55 @@ export default function MediaFeatureLabPro() {
                         {Object.entries(outputs).map(([k, v]) => (
                           <Button
                             key={k}
-                            className={`rounded-xl ${deluxe ? "bg-white/10 text-white hover:bg-white/20" : ""}`}
+                            className={`rounded-xl ${
+                              deluxe
+                                ? "bg-white/10 text-white hover:bg-white/20"
+                                : ""
+                            }`}
                             onClick={() => {
                               if (k === "json") {
-                                const text = typeof v === "string" ? v : JSON.stringify(v, null, 2);
-                                downloadText("output.json", text, "application/json;charset=utf-8");
+                                const text =
+                                  typeof v === "string"
+                                    ? v
+                                    : JSON.stringify(v, null, 2);
+                                downloadText(
+                                  "output.json",
+                                  text,
+                                  "application/json;charset=utf-8"
+                                );
                               } else if (k === "csv") {
-                                downloadText("output.csv", String(v), "text/csv;charset=utf-8");
+                                downloadText(
+                                  "output.csv",
+                                  String(v),
+                                  "text/csv;charset=utf-8"
+                                );
                               } else if (k === "xlsx") {
                                 downloadXLSX(v, "output.xlsx");
                               } else if (k === "xml") {
-                                downloadText("output.xml", String(v), "application/xml;charset=utf-8");
+                                downloadText(
+                                  "output.xml",
+                                  String(v),
+                                  "application/xml;charset=utf-8"
+                                );
                               } else if (k === "srt") {
-                                downloadText("transcript.srt", String(v), "text/plain;charset=utf-8");
+                                downloadText(
+                                  "transcript.srt",
+                                  String(v),
+                                  "text/plain;charset=utf-8"
+                                );
                               } else if (k === "vtt") {
-                                downloadText("transcript.vtt", String(v), "text/vtt;charset=utf-8");
+                                downloadText(
+                                  "transcript.vtt",
+                                  String(v),
+                                  "text/vtt;charset=utf-8"
+                                );
                               } else {
                                 downloadText(`${k}.txt`, String(v));
                               }
                             }}
                           >
-                            <Download className="mr-2 h-4 w-4" /> {k.toUpperCase()}
+                            <Download className="mr-2 h-4 w-4" />{" "}
+                            {k.toUpperCase()}
                           </Button>
                         ))}
                       </div>
@@ -1117,29 +1352,49 @@ export default function MediaFeatureLabPro() {
                       {response.processing?.feature_specification ? (
                         <div>
                           <div className="mb-2 flex items-center justify-between">
-                            <p className={`text-sm ${deluxe ? "text-slate-300" : "text-slate-700"}`}>
+                            <p
+                              className={`text-sm ${
+                                deluxe ? "text-slate-300" : "text-slate-700"
+                              }`}
+                            >
                               Feature specification (echo)
                             </p>
                             <CopyButton
                               getText={() =>
-                                typeof response.processing.feature_specification === "string"
+                                typeof response.processing
+                                  .feature_specification === "string"
                                   ? response.processing.feature_specification
-                                  : JSON.stringify(response.processing.feature_specification, null, 2)
+                                  : JSON.stringify(
+                                      response.processing.feature_specification,
+                                      null,
+                                      2
+                                    )
                               }
                             />
                           </div>
                           <pre
                             className={`max-h-[360px] overflow-auto rounded-xl p-4 text-xs ${
-                              deluxe ? "bg-black/30 text-slate-100" : "bg-slate-100 text-slate-900"
+                              deluxe
+                                ? "bg-black/30 text-slate-100"
+                                : "bg-slate-100 text-slate-900"
                             }`}
                           >
-                            {typeof response.processing.feature_specification === "string"
+                            {typeof response.processing
+                              .feature_specification === "string"
                               ? response.processing.feature_specification
-                              : JSON.stringify(response.processing.feature_specification, null, 2)}
+                              : JSON.stringify(
+                                  response.processing.feature_specification,
+                                  null,
+                                  2
+                                )}
                           </pre>
                         </div>
                       ) : (
-                        <p className={`${deluxe ? "text-slate-300" : "text-slate-600"} text-sm`}>
+                        <p
+                          className={`${
+                            deluxe ? "text-slate-300" : "text-slate-600"
+                          } text-sm`}
+                        >
                           Chybí feature_specification.
                         </p>
                       )}
@@ -1147,25 +1402,42 @@ export default function MediaFeatureLabPro() {
                       {response.processing?.tabular_output ? (
                         <div>
                           <div className="mb-2 flex items-center justify-between">
-                            <p className={`text-sm ${deluxe ? "text-slate-300" : "text-slate-700"}`}>
+                            <p
+                              className={`text-sm ${
+                                deluxe ? "text-slate-300" : "text-slate-700"
+                              }`}
+                            >
                               Tabular output
                             </p>
                             <CopyButton
                               getText={() =>
-                                typeof response.processing.tabular_output === "string"
-                                  ? response.processing.tabular_output
-                                  : JSON.stringify(response.processing.tabular_output, null, 2)
+                                typeof response.processing
+                                  .tabular_output === "string"
+                                  ? (response.processing
+                                      .tabular_output as string)
+                                  : JSON.stringify(
+                                      response.processing.tabular_output,
+                                      null,
+                                      2
+                                    )
                               }
                             />
                           </div>
                           <pre
                             className={`max-h-[360px] overflow-auto rounded-xl p-4 text-xs ${
-                              deluxe ? "bg-black/30 text-slate-100" : "bg-slate-100 text-slate-900"
+                              deluxe
+                                ? "bg-black/30 text-slate-100"
+                                : "bg-slate-100 text-slate-900"
                             }`}
                           >
-                            {typeof response.processing.tabular_output === "string"
+                            {typeof response.processing.tabular_output ===
+                            "string"
                               ? response.processing.tabular_output
-                              : JSON.stringify(response.processing.tabular_output, null, 2)}
+                              : JSON.stringify(
+                                  response.processing.tabular_output,
+                                  null,
+                                  2
+                                )}
                           </pre>
                         </div>
                       ) : null}
@@ -1175,19 +1447,33 @@ export default function MediaFeatureLabPro() {
                   {procType === "video" && (
                     <TabsContent value="video" className="mt-4 space-y-4">
                       <div className="mb-2 flex items-center justify-between">
-                        <p className={`text-sm ${deluxe ? "text-slate-300" : "text-slate-700"}`}>ASR Transkript</p>
-                        <CopyButton getText={() => String(transcript || "")} />
+                        <p
+                          className={`text-sm ${
+                            deluxe ? "text-slate-300" : "text-slate-700"
+                          }`}
+                        >
+                          ASR Transkript
+                        </p>
+                        <CopyButton
+                          getText={() => String(transcript || "")}
+                        />
                       </div>
                       {transcript ? (
                         <pre
                           className={`max-h-[360px] whitespace-pre-wrap overflow-auto rounded-xl p-4 text-xs ${
-                            deluxe ? "bg-black/30 text-slate-100" : "bg-slate-100 text-slate-900"
+                            deluxe
+                              ? "bg-black/30 text-slate-100"
+                              : "bg-slate-100 text-slate-900"
                           }`}
                         >
                           {transcript}
                         </pre>
                       ) : (
-                        <p className={`${deluxe ? "text-slate-300" : "text-slate-600"} text-sm`}>
+                        <p
+                          className={`${
+                            deluxe ? "text-slate-300" : "text-slate-600"
+                          } text-sm`}
+                        >
                           Transkript nebyl vrácen.
                         </p>
                       )}
@@ -1199,7 +1485,7 @@ export default function MediaFeatureLabPro() {
           </div>
         )}
 
-        {/* Footer */}
+        {/* FOOTER */}
         <footer className="mt-10">
           <div
             className={`h-px w-full ${
@@ -1209,22 +1495,32 @@ export default function MediaFeatureLabPro() {
             }`}
           />
           <div className="mt-5 flex flex-col items-center gap-2 text-center">
-            <a href="https://www.vse.cz/" target="_blank" rel="noopener noreferrer">
+            <a
+              href="https://www.vse.cz/"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
               <img
                 src="/VSE_logo_CZ_circle_blue.png"
                 alt="Logo školy"
-                className={`h-10 w-10 ${deluxe ? "opacity-90" : "opacity-80"}`}
+                className={`h-10 w-10 ${
+                  deluxe ? "opacity-90" : "opacity-80"
+                }`}
               />
             </a>
-            <p className={`${deluxe ? "text-slate-300" : "text-slate-600"} text-sm`}>
-              &copy; {new Date().getFullYear()} Prague University of Economics and Business · Team 2 – Media Feature Lab
+            <p
+              className={`${
+                deluxe ? "text-slate-300" : "text-slate-600"
+              } text-sm`}
+            >
+              &copy; {new Date().getFullYear()} Prague University of Economics
+              and Business · Team 2 – Media Feature Lab
             </p>
           </div>
         </footer>
       </div>
 
-      {/* Guide overlay */}
-      {typeof setShowGuide === 'function' && <div />} 
+      <Guide open={showGuide} onClose={() => setShowGuide(false)} />
     </div>
   );
 }
