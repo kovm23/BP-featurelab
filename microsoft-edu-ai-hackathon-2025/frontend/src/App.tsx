@@ -70,31 +70,61 @@ import { TrainingView } from "@/components/TrainingView";
 // HLAVNÍ KOMPONENTA
 // =====================================================
 export default function MediaFeatureLabPro() {
-  const [appMode, setAppMode] = useState<"predict" | "train">("train");
+  // --- Restore persisted pipeline state ---
+  const savedPipeline = useMemo(() => {
+    try {
+      const raw = localStorage.getItem("mflPipeline");
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const [appMode, setAppMode] = useState<"predict" | "train">(
+    savedPipeline?.appMode ?? "train"
+  );
 
   // --- Training pipeline state ---
-  const [trainingStep, setTrainingStep] = useState<1 | 2 | 3 | 4 | 5>(1);
-  const [targetVariable, setTargetVariable] = useState("movie memorability score");
-  const [featureSpec, setFeatureSpec] = useState<Record<string, string> | null>(null);
+  const [trainingStep, setTrainingStep] = useState<1 | 2 | 3 | 4 | 5>(
+    savedPipeline?.trainingStep ?? 1
+  );
+  const [targetVariable, setTargetVariable] = useState(
+    savedPipeline?.targetVariable ?? "movie memorability score"
+  );
+  const [featureSpec, setFeatureSpec] = useState<Record<string, string> | null>(
+    savedPipeline?.featureSpec ?? null
+  );
   const [isDiscovering, setIsDiscovering] = useState(false);
 
   // Phase 2: extraction
   const [extractionBusy, setExtractionBusy] = useState(false);
-  const [trainingDataX, setTrainingDataX] = useState<Record<string, unknown>[] | null>(null);
-  const [datasetYColumns, setDatasetYColumns] = useState<string[] | null>(null);
+  const [trainingDataX, setTrainingDataX] = useState<Record<string, unknown>[] | null>(
+    savedPipeline?.trainingDataX ?? null
+  );
+  const [datasetYColumns, setDatasetYColumns] = useState<string[] | null>(
+    savedPipeline?.datasetYColumns ?? null
+  );
 
   // Phase 3: training
   const [trainingBusy, setTrainingBusy] = useState(false);
-  const [trainResult, setTrainResult] = useState<TrainResult | null>(null);
+  const [trainResult, setTrainResult] = useState<TrainResult | null>(
+    savedPipeline?.trainResult ?? null
+  );
 
   // Phase 4: test extraction
   const [testExtractionBusy, setTestExtractionBusy] = useState(false);
-  const [testingDataX, setTestingDataX] = useState<Record<string, unknown>[] | null>(null);
+  const [testingDataX, setTestingDataX] = useState<Record<string, unknown>[] | null>(
+    savedPipeline?.testingDataX ?? null
+  );
 
   // Phase 5: predictions
   const [predictBusy, setPredictBusy] = useState(false);
-  const [predictions, setPredictions] = useState<PredictionItem[] | null>(null);
-  const [predictionMetrics, setPredictionMetrics] = useState<PredictionMetrics | null>(null);
+  const [predictions, setPredictions] = useState<PredictionItem[] | null>(
+    savedPipeline?.predictions ?? null
+  );
+  const [predictionMetrics, setPredictionMetrics] = useState<PredictionMetrics | null>(
+    savedPipeline?.predictionMetrics ?? null
+  );
 
   const [files, setFiles] = useState<File[]>([]);
   const [fileType, setFileType] = useState<FileType | null>(null);
@@ -130,15 +160,59 @@ export default function MediaFeatureLabPro() {
     return false;
   });
 
-  const [modelProvider, setModelProvider] = useState<string>(
-    AVAILABLE_MODELS[1].id
-  );
+  const [modelProvider, setModelProvider] = useState<string>(() => {
+    const saved = localStorage.getItem("mflModelProvider");
+    if (saved && AVAILABLE_MODELS.some((m) => m.id === saved)) return saved;
+    return AVAILABLE_MODELS[1].id;
+  });
+
+  useEffect(() => {
+    localStorage.setItem("mflModelProvider", modelProvider);
+  }, [modelProvider]);
 
   useEffect(() => {
     localStorage.setItem("mflTheme", deluxe ? "dark" : "light");
   }, [deluxe]);
 
-  const [showGuide, setShowGuide] = useState(false);
+  // --- Persist pipeline state ---
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "mflPipeline",
+        JSON.stringify({
+          appMode,
+          trainingStep,
+          targetVariable,
+          featureSpec,
+          trainingDataX,
+          datasetYColumns,
+          trainResult,
+          testingDataX,
+          predictions,
+          predictionMetrics,
+        })
+      );
+    } catch {
+      /* localStorage unavailable or quota exceeded */
+    }
+  }, [
+    appMode, trainingStep, targetVariable, featureSpec,
+    trainingDataX, datasetYColumns, trainResult,
+    testingDataX, predictions, predictionMetrics,
+  ]);
+
+  const [showGuide, setShowGuide] = useState(() => {
+    try {
+      return !localStorage.getItem("mflGuideSeen");
+    } catch {
+      return false;
+    }
+  });
+
+  const closeGuide = useCallback(() => {
+    setShowGuide(false);
+    try { localStorage.setItem("mflGuideSeen", "1"); } catch { /* */ }
+  }, []);
 
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState<string>("");
@@ -225,13 +299,15 @@ export default function MediaFeatureLabPro() {
   // =========================================================
   // HANDLER: Fáze 1 – Feature Discovery
   // =========================================================
-  async function handleDiscover(sampleFile: File, labelsFile?: File | null) {
+  async function handleDiscover(sampleFiles: File[], labelsFile?: File | null) {
     setIsDiscovering(true);
     setFeatureSpec(null);
     setError(null);
 
     const formData = new FormData();
-    formData.append("file", sampleFile);
+    for (const f of sampleFiles) {
+      formData.append("files", f, f.name);
+    }
     formData.append("target_variable", targetVariable);
     formData.append("model", modelProvider);
     if (labelsFile) {
@@ -523,6 +599,8 @@ export default function MediaFeatureLabPro() {
     try {
       localStorage.removeItem("mflFilesMeta");
       localStorage.removeItem("mflFileType");
+      localStorage.removeItem("mflPipeline");
+      localStorage.removeItem("mflGuideSeen");
     } catch {
       /* localStorage unavailable */
     }
@@ -1539,7 +1617,7 @@ export default function MediaFeatureLabPro() {
         </footer>
       </div>
 
-      <Guide open={showGuide} onClose={() => setShowGuide(false)} />
+      <Guide open={showGuide} onClose={closeGuide} />
     </div>
   );
 }

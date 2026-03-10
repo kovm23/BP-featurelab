@@ -201,7 +201,7 @@ export function CopyButton({ getText }: { getText: () => string }) {
  */
 export function downloadFeatureSpec(
   featureSpec: Record<string, string>,
-  filename = "feature_spec.json"
+  filename = `feature_spec_${new Date().toISOString().slice(0, 10)}.json`
 ) {
   const json = JSON.stringify(featureSpec, null, 2);
   downloadText(filename, json, "application/json;charset=utf-8");
@@ -212,7 +212,7 @@ export function downloadFeatureSpec(
  */
 export function downloadTrainingDataCSV(
   trainingData: Record<string, unknown>[],
-  filename = "training_dataset_X.csv"
+  filename = `training_dataset_X_${new Date().toISOString().slice(0, 10)}.csv`
 ) {
   if (!trainingData || trainingData.length === 0) return;
   
@@ -238,7 +238,7 @@ export function downloadTrainingDataCSV(
 export function downloadRulesModel(
   rules: string[],
   mse?: number,
-  filename = "rules_model.json"
+  filename = `rules_model_${new Date().toISOString().slice(0, 10)}.json`
 ) {
   const model = {
     rules,
@@ -257,7 +257,7 @@ export function downloadTestingDataWithPrediction(
   testingData: Record<string, unknown>,
   prediction: number,
   ruleApplied: string,
-  filename = "testing_prediction_result.json"
+  filename = `testing_prediction_${new Date().toISOString().slice(0, 10)}.json`
 ) {
   const result = {
     testing_data_X: testingData,

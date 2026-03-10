@@ -219,6 +219,11 @@ class MachineLearningPipeline:
                     if val is None:
                         missing.append(feat_key)
                         val = 0
+                    # Flatten lists/dicts to scalar values for DataFrame compatibility
+                    if isinstance(val, list):
+                        val = ", ".join(str(v) for v in val) if val else ""
+                    elif isinstance(val, dict):
+                        val = json.dumps(val, ensure_ascii=False)
                     row[feat_key] = val
                 if missing:
                     logger.warning(f"{file_name}: chybějící features {missing}")
@@ -294,7 +299,10 @@ class MachineLearningPipeline:
         if not feature_cols:
             raise Exception("Žádná z features nebyla nalezena v datech.")
 
-        X = df_merged[feature_cols]
+        X = df_merged[feature_cols].copy()
+        # Flatten any list/dict values that slipped through extraction
+        for col in X.columns:
+            X[col] = X[col].apply(lambda v: ", ".join(str(i) for i in v) if isinstance(v, list) else v)
         X = pd.get_dummies(X)
 
         if target_column in df_merged.columns:
@@ -341,6 +349,8 @@ class MachineLearningPipeline:
 
         feature_cols = [c for c in self.feature_spec if c in self.testing_X.columns]
         X_test = self.testing_X[feature_cols].copy()
+        for col in X_test.columns:
+            X_test[col] = X_test[col].apply(lambda v: ", ".join(str(i) for i in v) if isinstance(v, list) else v)
         X_test = pd.get_dummies(X_test)
 
         # Zajisti stejné sloupce jako při tréninku
@@ -430,19 +440,16 @@ pipeline = MachineLearningPipeline()
 
 @app.route("/discover", methods=["POST"])
 def api_discover():
-    """Fáze 1: Feature Discovery z ukázkových médií (ZIP nebo single file)."""
-    if "file" not in request.files:
+    """Fáze 1: Feature Discovery z ukázkových médií (multiple files nebo ZIP)."""
+    # Accept both "files" (multiple) and legacy "file" (single)
+    uploaded = request.files.getlist("files")
+    if not uploaded:
+        uploaded = request.files.getlist("file")
+    if not uploaded:
         return jsonify({"error": "No file uploaded"}), 400
-
-    file = request.files["file"]
-    if not allowed_file(file.filename):
-        return jsonify({"error": "Nepodporovaný typ souboru."}), 400
 
     target_var = request.form.get("target_variable", "target value")
     model_name = request.form.get("model", "qwen2.5vl:7b")
-
-    path = os.path.join(UPLOAD_FOLDER, secure_filename(file.filename))
-    file.save(path)
 
     # Volitelný labels CSV
     labels_df = None
@@ -461,24 +468,36 @@ def api_discover():
 
     media_paths = []
     extract_path = None
+    saved_paths = []
 
     try:
-        if path.lower().endswith(".zip"):
-            # Rozbal ZIP, vezmi vzorky
-            extract_path = os.path.join(UPLOAD_FOLDER, f"discover_{uuid.uuid4().hex[:8]}")
-            os.makedirs(extract_path, exist_ok=True)
-            media_files, csv_in_zip = _extract_zip_contents(path, extract_path)
-            media_paths = media_files[:3]  # max 3 vzorky
-            if not media_paths:
-                return jsonify({"error": "ZIP neobsahuje žádná média."}), 400
-            # Pokud labels_df není nahraný zvlášť, zkus CSV ze ZIPu
-            if labels_df is None and csv_in_zip:
-                try:
-                    labels_df = pd.read_csv(csv_in_zip)
-                except Exception:
-                    pass
-        else:
-            media_paths = [path]
+        for f in uploaded:
+            if not allowed_file(f.filename):
+                continue
+            path = os.path.join(UPLOAD_FOLDER, secure_filename(f.filename))
+            f.save(path)
+            saved_paths.append(path)
+
+        if not saved_paths:
+            return jsonify({"error": "Žádné podporované soubory."}), 400
+
+        for path in saved_paths:
+            if path.lower().endswith(".zip"):
+                # Rozbal ZIP, vezmi vzorky
+                extract_path = os.path.join(UPLOAD_FOLDER, f"discover_{uuid.uuid4().hex[:8]}")
+                os.makedirs(extract_path, exist_ok=True)
+                media_files, csv_in_zip = _extract_zip_contents(path, extract_path)
+                media_paths.extend(media_files)
+                if labels_df is None and csv_in_zip:
+                    try:
+                        labels_df = pd.read_csv(csv_in_zip)
+                    except Exception:
+                        pass
+            else:
+                media_paths.append(path)
+
+        if not media_paths:
+            return jsonify({"error": "Žádná média k analýze."}), 400
 
         features = pipeline.discover_features(media_paths, target_var, model_name, labels_df)
         return jsonify({"suggested_features": features})

@@ -30,7 +30,7 @@ import {
 export interface TrainingViewProps {
   deluxe: boolean;
   /* Phase 1 */
-  onDiscoverStart: (file: File, labelsFile?: File | null) => void;
+  onDiscoverStart: (files: File[], labelsFile?: File | null) => void;
   isDiscovering: boolean;
   targetVariable: string;
   setTargetVariable: (v: string) => void;
@@ -304,7 +304,7 @@ function FeatureSpecBox({
               <span className="font-mono bg-black/10 px-1 rounded">{key}</span>:{" "}
               <span className="flex-1">{String(desc)}</span>
               {editable && (
-                <span className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                <span className="flex gap-0.5 opacity-60 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                   <button onClick={() => startEdit(key, desc)} title="Upravit" className="p-0.5 rounded hover:bg-black/10">
                     <Pencil className="h-3 w-3" />
                   </button>
@@ -437,7 +437,7 @@ export function TrainingView({
   error,
   clearError,
 }: TrainingViewProps) {
-  const [discoveryFile, setDiscoveryFile] = useState<File | null>(null);
+  const [discoveryFiles, setDiscoveryFiles] = useState<File[]>([]);
   const [trainZipFile, setTrainZipFile] = useState<File | null>(null);
   const [testZipFile, setTestZipFile] = useState<File | null>(null);
   const [targetColumn, setTargetColumn] = useState("");
@@ -481,7 +481,7 @@ export function TrainingView({
     >
       {/* ---- ERROR BANNER ---- */}
       {error && (
-        <div className="mb-4 flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-red-800">
+        <div className={`mb-4 flex items-start gap-2 p-3 rounded-lg border ${cls(deluxe, "bg-red-50 border-red-200 text-red-800", "bg-red-900/30 border-red-800/50 text-red-300")}`}>
           <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
           <p className="text-sm flex-1">{error}</p>
           <button onClick={clearError} className="p-0.5 rounded hover:bg-red-100">
@@ -613,15 +613,59 @@ export function TrainingView({
             />
           </div>
 
-          <FileDropZone
-            deluxe={deluxe}
-            file={discoveryFile}
-            onFile={setDiscoveryFile}
-            accept=".zip,video/*,image/*,.mp4,.avi,.mov,.mkv,.png,.jpg,.jpeg"
-            inputId="discovery-upload"
-            label="Nahrajte ZIP s ukázkovými médii (nebo 1 video/obrázek)"
-            pickLabel="Vybrat soubor z disku"
-          />
+          <div
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (e.dataTransfer.files?.length) {
+                setDiscoveryFiles((prev) => [...prev, ...Array.from(e.dataTransfer.files)]);
+              }
+            }}
+            className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors ${cls(
+              deluxe,
+              "border-slate-200 hover:border-blue-400/50 bg-slate-50/50",
+              "border-slate-700 hover:border-blue-500/50 bg-slate-900/50"
+            )}`}
+          >
+            <UploadCloud className={`h-8 w-8 mx-auto mb-3 ${cls(deluxe, "text-slate-400", "text-slate-500")}`} />
+            <p className={`text-sm font-medium mb-1 ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>
+              Nahrajte ukázková média (více souborů = lepší návrh featur)
+            </p>
+            <input
+              type="file"
+              id="discovery-upload"
+              className="hidden"
+              multiple
+              onChange={(e) => {
+                if (e.target.files?.length) {
+                  setDiscoveryFiles((prev) => [...prev, ...Array.from(e.target.files!)]);
+                }
+              }}
+              accept=".zip,video/*,image/*,.mp4,.avi,.mov,.mkv,.png,.jpg,.jpeg"
+            />
+            <label
+              htmlFor="discovery-upload"
+              className="cursor-pointer text-blue-500 hover:text-blue-600 text-sm font-medium"
+            >
+              Vybrat soubory z disku
+            </label>
+            {discoveryFiles.length > 0 && (
+              <div className="mt-2 space-y-1">
+                {discoveryFiles.map((f, i) => (
+                  <div key={i} className="flex items-center justify-center gap-2 text-xs text-green-500 font-medium">
+                    <span className="truncate max-w-[30ch]">{f.name}</span>
+                    <button
+                      onClick={() => setDiscoveryFiles((prev) => prev.filter((_, j) => j !== i))}
+                      className="text-red-400 hover:text-red-600"
+                      title="Odebrat"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           {/* Optional labels for discovery */}
           <div className={`p-3 rounded-lg border ${cls(deluxe, "bg-amber-50/50 border-amber-200", "bg-amber-900/20 border-amber-800/50")}`}>
@@ -656,8 +700,9 @@ export function TrainingView({
 
           <div className="flex justify-center mt-6">
             <Button
-              onClick={() => discoveryFile && onDiscoverStart(discoveryFile, useDiscoveryLabels ? discoveryLabels : null)}
-              disabled={!discoveryFile || !targetVariable || isDiscovering}
+              onClick={() => discoveryFiles.length > 0 && onDiscoverStart(discoveryFiles, useDiscoveryLabels ? discoveryLabels : null)}
+              disabled={discoveryFiles.length === 0 || !targetVariable || isDiscovering}
+              title={discoveryFiles.length === 0 ? "Nejdříve nahrajte vzorková média" : !targetVariable ? "Zadejte cílovou proměnnou" : undefined}
             >
               {isDiscovering ? (
                 <>
@@ -672,6 +717,12 @@ export function TrainingView({
           </div>
 
           {/* Feature spec výsledek + pokračovat */}
+          {featureSpec && !isDiscovering && (
+            <div className={`flex items-center gap-2 p-2 rounded-lg ${cls(deluxe, "bg-green-50 text-green-700", "bg-green-900/30 text-green-400")}`}>
+              <CheckCircle2 className="h-4 w-4" />
+              <span className="text-sm font-medium">Feature Discovery dokončena — {Object.keys(featureSpec).length} featur navrženo</span>
+            </div>
+          )}
           {featureSpec && (
             <>
               <FeatureSpecBox
@@ -754,6 +805,7 @@ export function TrainingView({
             <Button
               onClick={() => trainZipFile && onExtractTraining(trainZipFile, useExtractionLabels ? extractionLabels : null)}
               disabled={!trainZipFile || isExtracting}
+              title={!trainZipFile ? "Nejdříve nahrajte trénovací ZIP" : undefined}
             >
               {isExtracting ? (
                 <>
@@ -772,6 +824,12 @@ export function TrainingView({
           )}
 
           {/* Výsledek extrakce + pokračovat */}
+          {trainingDataX && !isExtracting && (
+            <div className={`flex items-center gap-2 p-2 rounded-lg ${cls(deluxe, "bg-green-50 text-green-700", "bg-green-900/30 text-green-400")}`}>
+              <CheckCircle2 className="h-4 w-4" />
+              <span className="text-sm font-medium">Extrakce dokončena — {trainingDataX.length} řádků</span>
+            </div>
+          )}
           {trainingDataX && (
             <>
               <DatasetTable deluxe={deluxe} data={trainingDataX} title="Training Dataset X" />
@@ -842,6 +900,7 @@ export function TrainingView({
             <Button
               onClick={() => onTrain(targetColumn)}
               disabled={!targetColumn || isTraining}
+              title={!targetColumn ? "Vyberte sloupec s cílovou proměnnou" : undefined}
             >
               {isTraining ? (
                 <>
@@ -857,9 +916,12 @@ export function TrainingView({
 
           {/* Train results */}
           {trainResult && trainResult.status === "success" && (
-            <div className="bg-green-50 border border-green-100 rounded-xl p-4 space-y-3">
-              <p className="text-sm font-bold text-green-800">Trénink dokončen!</p>
-              <div className="text-xs text-green-700">
+            <div className={`rounded-xl p-4 space-y-3 border ${cls(deluxe, "bg-green-50 border-green-100", "bg-green-900/20 border-green-800/50")}`}>
+              <div className={`flex items-center gap-2 ${cls(deluxe, "text-green-800", "text-green-400")}`}>
+                <CheckCircle2 className="h-4 w-4" />
+                <p className="text-sm font-bold">Trénink dokončen!</p>
+              </div>
+              <div className={`text-xs ${cls(deluxe, "text-green-700", "text-green-400/80")}`}>
                 <p>MSE (chyba modelu): <strong>{trainResult.mse}</strong></p>
                 <p>Vygenerováno pravidel: <strong>{trainResult.rules_count}</strong></p>
               </div>
@@ -939,6 +1001,7 @@ export function TrainingView({
             <Button
               onClick={() => testZipFile && onExtractTesting(testZipFile)}
               disabled={!testZipFile || isExtractingTest}
+              title={!testZipFile ? "Nejdříve nahrajte testovací ZIP" : undefined}
             >
               {isExtractingTest ? (
                 <>
@@ -957,6 +1020,12 @@ export function TrainingView({
           )}
 
           {/* Výsledek extrakce + pokračovat */}
+          {testingDataX && !isExtractingTest && (
+            <div className={`flex items-center gap-2 p-2 rounded-lg ${cls(deluxe, "bg-green-50 text-green-700", "bg-green-900/30 text-green-400")}`}>
+              <CheckCircle2 className="h-4 w-4" />
+              <span className="text-sm font-medium">Testovací extrakce dokončena — {testingDataX.length} řádků</span>
+            </div>
+          )}
           {testingDataX && (
             <>
               <DatasetTable deluxe={deluxe} data={testingDataX} title="Testing Dataset X" />
@@ -1038,10 +1107,13 @@ export function TrainingView({
 
           {/* Predictions table */}
           {predictions && predictions.length > 0 && (
-            <div className="bg-green-50 border border-green-100 rounded-xl p-4 space-y-3">
-              <p className="text-sm font-bold text-green-800">
-                Predikce dokončena ({predictions.length} objektů)
-              </p>
+            <div className={`rounded-xl p-4 space-y-3 border ${cls(deluxe, "bg-green-50 border-green-100", "bg-green-900/20 border-green-800/50")}`}>
+              <div className={`flex items-center gap-2 ${cls(deluxe, "text-green-800", "text-green-400")}`}>
+                <CheckCircle2 className="h-4 w-4" />
+                <p className="text-sm font-bold">
+                  Predikce dokončena ({predictions.length} objektů)
+                </p>
+              </div>
 
               {/* Metrics panel */}
               {predictionMetrics && (
@@ -1050,26 +1122,46 @@ export function TrainingView({
                     Vyhodnocení modelu (predikce vs. skutečnost):
                   </p>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <div className="text-center">
-                      <p className={`text-lg font-bold ${cls(deluxe, "text-blue-700", "text-blue-400")}`}>{predictionMetrics.mse}</p>
-                      <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>MSE</p>
-                    </div>
-                    <div className="text-center">
-                      <p className={`text-lg font-bold ${cls(deluxe, "text-blue-700", "text-blue-400")}`}>{predictionMetrics.mae}</p>
-                      <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>MAE</p>
-                    </div>
-                    <div className="text-center">
-                      <p className={`text-lg font-bold ${cls(deluxe, "text-blue-700", "text-blue-400")}`}>
-                        {predictionMetrics.correlation !== null ? predictionMetrics.correlation : "N/A"}
-                      </p>
-                      <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>Korelace</p>
-                    </div>
-                    <div className="text-center">
-                      <p className={`text-lg font-bold ${cls(deluxe, "text-blue-700", "text-blue-400")}`}>
-                        {predictionMetrics.matched_count}/{predictionMetrics.total_count}
-                      </p>
-                      <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>Spárováno</p>
-                    </div>
+                    {(() => {
+                      const mse = typeof predictionMetrics.mse === "number" ? predictionMetrics.mse : 0;
+                      const mae = typeof predictionMetrics.mae === "number" ? predictionMetrics.mae : 0;
+                      const corr = predictionMetrics.correlation;
+                      const matchPct = predictionMetrics.total_count > 0
+                        ? Math.round((predictionMetrics.matched_count / predictionMetrics.total_count) * 100)
+                        : 0;
+                      // Color based on quality: lower MSE/MAE = better (green), higher corr = better
+                      const corrColor = corr !== null && corr > 0.5 ? "text-green-600" : corr !== null && corr > 0 ? "text-yellow-600" : "text-red-500";
+                      return (
+                        <>
+                          <div className="text-center">
+                            <p className={`text-lg font-bold ${cls(deluxe, "text-blue-700", "text-blue-400")}`}>
+                              {typeof mse === "number" ? mse.toFixed(4) : mse}
+                            </p>
+                            <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>MSE (nižší = lepší)</p>
+                          </div>
+                          <div className="text-center">
+                            <p className={`text-lg font-bold ${cls(deluxe, "text-blue-700", "text-blue-400")}`}>
+                              {typeof mae === "number" ? mae.toFixed(4) : mae}
+                            </p>
+                            <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>MAE (nižší = lepší)</p>
+                          </div>
+                          <div className="text-center">
+                            <p className={`text-lg font-bold ${corrColor}`}>
+                              {corr !== null ? (typeof corr === "number" ? corr.toFixed(4) : corr) : "N/A"}
+                            </p>
+                            <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>Korelace (vyšší = lepší)</p>
+                          </div>
+                          <div className="text-center">
+                            <p className={`text-lg font-bold ${matchPct === 100 ? "text-green-600" : matchPct > 50 ? "text-yellow-600" : "text-red-500"}`}>
+                              {matchPct}%
+                            </p>
+                            <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>
+                              Spárováno ({predictionMetrics.matched_count}/{predictionMetrics.total_count})
+                            </p>
+                          </div>
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
               )}
@@ -1134,7 +1226,7 @@ export function TrainingView({
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement("a");
                     a.href = url;
-                    a.download = "predictions.csv";
+                    a.download = `predictions_${new Date().toISOString().slice(0, 10)}.csv`;
                     a.click();
                     URL.revokeObjectURL(url);
                   }}
