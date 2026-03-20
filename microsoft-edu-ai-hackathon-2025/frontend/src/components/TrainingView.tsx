@@ -61,6 +61,7 @@ export interface TrainingViewProps {
   setModelProvider: (v: string) => void;
   step: number;
   onGoToStep?: (step: number) => void;
+  onCancel?: () => void;
   progress: number;
   progressLabel: string;
   error: string | null;
@@ -436,6 +437,7 @@ export function TrainingView({
   setModelProvider,
   step,
   onGoToStep,
+  onCancel,
   progress,
   progressLabel,
   error,
@@ -445,10 +447,10 @@ export function TrainingView({
   const [trainZipFile, setTrainZipFile] = useState<File | null>(null);
   const [testZipFile, setTestZipFile] = useState<File | null>(null);
   const [useServerPathTrain, setUseServerPathTrain] = useState(false);
-  const [serverPathTrain, setServerPathTrain] = useState("/home/kovm23/train.zip");
+  const [serverPathTrain, setServerPathTrain] = useState("/home/kovm23/train_split.zip");
   const [serverLabelsPathTrain, setServerLabelsPathTrain] = useState("");
   const [useServerPathTest, setUseServerPathTest] = useState(false);
-  const [serverPathTest, setServerPathTest] = useState("/home/kovm23/test.zip");
+  const [serverPathTest, setServerPathTest] = useState("/home/kovm23/test_split.zip");
   const [targetColumn, setTargetColumn] = useState("");
   // Optional labels files
   const [discoveryLabels, setDiscoveryLabels] = useState<File | null>(null);
@@ -810,7 +812,7 @@ export function TrainingView({
                 type="text"
                 value={serverLabelsPathTrain}
                 onChange={(e) => setServerLabelsPathTrain(e.target.value)}
-                placeholder="/home/kovm23/devset_videolist_GT.csv"
+                placeholder="(volitelné, CSV je součástí ZIPu)"
                 className={`w-full px-3 py-2 rounded border text-sm font-mono ${cls(deluxe, "bg-white border-slate-300 text-slate-800", "bg-slate-900 border-slate-600 text-slate-200")}`}
               />
             </div>
@@ -877,7 +879,16 @@ export function TrainingView({
           </div>
 
           {isExtracting && (
-            <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel} />
+            <div className="space-y-2">
+              <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel} />
+              <div className="flex gap-2">
+                {onCancel && (
+                  <Button variant="outline" size="sm" onClick={onCancel} className="text-xs">
+                    ✕ Zastavit
+                  </Button>
+                )}
+              </div>
+            </div>
           )}
 
           {/* Výsledek extrakce + pokračovat */}
@@ -1000,19 +1011,19 @@ export function TrainingView({
               <div className="grid grid-cols-2 gap-2 mt-3">
                 <button
                   onClick={() => { if (trainResult.feature_spec) downloadFeatureSpec(trainResult.feature_spec); }}
-                  className="px-2 py-1 bg-blue-500 text-white rounded text-xs hover:bg-blue-600 flex items-center justify-center gap-1"
+                  className="px-2 py-1 bg-zinc-600 text-white rounded text-xs hover:bg-zinc-700 flex items-center justify-center gap-1"
                 >
                   <Download className="w-3 h-3" /> Feature Spec
                 </button>
                 <button
                   onClick={() => { if (trainResult.training_data_X) downloadTrainingDataCSV(trainResult.training_data_X); }}
-                  className="px-2 py-1 bg-green-500 text-white rounded text-xs hover:bg-green-600 flex items-center justify-center gap-1"
+                  className="px-2 py-1 bg-zinc-600 text-white rounded text-xs hover:bg-zinc-700 flex items-center justify-center gap-1"
                 >
                   <Download className="w-3 h-3" /> Training Data (X)
                 </button>
                 <button
                   onClick={() => { if (trainResult.rules) downloadRulesModel(trainResult.rules, trainResult.mse); }}
-                  className="col-span-2 px-2 py-1 bg-purple-500 text-white rounded text-xs hover:bg-purple-600 flex items-center justify-center gap-1"
+                  className="col-span-2 px-2 py-1 bg-zinc-600 text-white rounded text-xs hover:bg-zinc-700 flex items-center justify-center gap-1"
                 >
                   <Download className="w-3 h-3" /> Pravidlový model
                 </button>
@@ -1109,7 +1120,16 @@ export function TrainingView({
           </div>
 
           {isExtractingTest && (
-            <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel} />
+            <div className="space-y-2">
+              <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel} />
+              <div className="flex gap-2">
+                {onCancel && (
+                  <Button variant="outline" size="sm" onClick={onCancel} className="text-xs">
+                    ✕ Zastavit
+                  </Button>
+                )}
+              </div>
+            </div>
           )}
 
           {/* Výsledek extrakce + pokračovat */}

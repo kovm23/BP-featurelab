@@ -348,7 +348,7 @@ class MachineLearningPipeline:
                 "details": {
                     "status": "success",
                     "dataset_type": dataset_type,
-                    "dataset_X": df_X.to_dict(orient="records"),
+                    "dataset_X": json.loads(df_X.to_json(orient="records")),
                     "feature_spec": feature_spec,
                     "rows_count": len(df_X),
                 }
@@ -430,7 +430,7 @@ class MachineLearningPipeline:
             "rules_count": len(self.rules),
             "rules": self.rules,
             "feature_spec": self.feature_spec,
-            "training_data_X": self.training_X.to_dict(orient="records"),
+            "training_data_X": json.loads(self.training_X.to_json(orient="records")),
         }
 
     # ==========================================

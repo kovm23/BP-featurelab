@@ -97,6 +97,21 @@ export default function MediaFeatureLabPro() {
     savedPipeline?.featureSpec ?? null
   );
   const [isDiscovering, setIsDiscovering] = useState(false);
+  const [activeCtrl, setActiveCtrl] = useState<AbortController | null>(null);
+
+  function handleCancelActive() {
+    if (activeCtrl) {
+      activeCtrl.abort();
+      setActiveCtrl(null);
+    }
+    setExtractionBusy(false);
+    setTrainingBusy(false);
+    setTestExtractionBusy(false);
+    setPredictBusy(false);
+    setIsDiscovering(false);
+    setProgress(0);
+    setProgressLabel("");
+  }
 
   // Phase 2: extraction
   const [extractionBusy, setExtractionBusy] = useState(false);
@@ -360,6 +375,7 @@ export default function MediaFeatureLabPro() {
 
       if (data.job_id) {
         const ctrl = new AbortController();
+        setActiveCtrl(ctrl);
         await pollProgress(
           data.job_id,
           (s: StatusPayload) => {
@@ -437,6 +453,7 @@ export default function MediaFeatureLabPro() {
 
       if (data.job_id) {
         const ctrl = new AbortController();
+        setActiveCtrl(ctrl);
         await pollProgress(
           data.job_id,
           (s: StatusPayload) => {
@@ -490,6 +507,7 @@ export default function MediaFeatureLabPro() {
 
       if (data.job_id) {
         const ctrl = new AbortController();
+        setActiveCtrl(ctrl);
         await pollProgress(
           data.job_id,
           (s: StatusPayload) => {
@@ -540,6 +558,7 @@ export default function MediaFeatureLabPro() {
 
       if (data.job_id) {
         const ctrl = new AbortController();
+        setActiveCtrl(ctrl);
         await pollProgress(
           data.job_id,
           (s: StatusPayload) => {
@@ -839,6 +858,7 @@ export default function MediaFeatureLabPro() {
         {appMode === "train" ? (
           <TrainingView
             deluxe={deluxe}
+            onCancel={handleCancelActive}
             /* Phase 1 */
             onDiscoverStart={handleDiscover}
             isDiscovering={isDiscovering}
