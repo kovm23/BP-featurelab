@@ -6,6 +6,7 @@ import zipfile
 import threading
 import uuid
 import json
+import pickle
 import pandas as pd
 from werkzeug.utils import secure_filename
 from services.processing import process_single_media, _is_media_file
@@ -25,7 +26,7 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
 CORS(app, resources={r"/*": {"origins": ALLOWED_ORIGINS}})
 
-app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024
+app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024 * 1024  # 2 GB
 
 ALLOWED_EXTENSIONS = {
     "image": {"png", "jpg", "jpeg", "webp", "heic", "gif"},
@@ -37,8 +38,10 @@ ALL_ALLOWED = MEDIA_EXTS | ALLOWED_EXTENSIONS["zip"]
 
 UPLOAD_FOLDER = "uploads"
 DATASET_FOLDER = "dataset"
+CHECKPOINT_FOLDER = "checkpoints"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(DATASET_FOLDER, exist_ok=True)
+os.makedirs(CHECKPOINT_FOLDER, exist_ok=True)
 
 JOBS = {}  # Async job tracking
 
@@ -59,13 +62,15 @@ def _extract_zip_contents(zip_path: str, extract_path: str):
     media_files = []
     for root, _dirs, files in os.walk(extract_path):
         for f in files:
-            if f.startswith("._") or f.startswith("__MACOSX"):
+            if f.startswith("._") or "__MACOSX" in root:
                 continue
             full = os.path.join(root, f)
+            logger.info(f"ZIP obsah: {full}")
             if f.lower().endswith((".csv", ".xlsx")):
                 csv_file = full
             elif _is_media_file(full):
                 media_files.append(full)
+    logger.info(f"Nalezeno médií: {len(media_files)}, CSV: {csv_file}")
     return media_files, csv_file
 
 
@@ -88,6 +93,55 @@ class MachineLearningPipeline:
         self.is_trained: bool = False
         # Phase 4 outputs
         self.testing_X: pd.DataFrame | None = None
+
+    PIPELINE_STATE_FILE = os.path.join(CHECKPOINT_FOLDER, "pipeline_state.pkl")
+
+    def save_state(self):
+        """Uloží stav pipeline na disk."""
+        try:
+            with open(self.PIPELINE_STATE_FILE, "wb") as f:
+                pickle.dump({
+                    "feature_spec": self.feature_spec,
+                    "target_variable": self.target_variable,
+                    "training_X": self.training_X,
+                    "training_Y_df": getattr(self, "training_Y_df", None),
+                    "training_Y": self.training_Y,
+                    "training_Y_column": self.training_Y_column,
+                    "model": self.model,
+                    "rules": self.rules,
+                    "mse": self.mse,
+                    "is_trained": self.is_trained,
+                    "testing_X": self.testing_X,
+                    "_training_columns": getattr(self, "_training_columns", []),
+                }, f)
+            logger.info("Pipeline stav uložen na disk.")
+        except Exception as e:
+            logger.warning(f"Nelze uložit pipeline stav: {e}")
+
+    def load_state(self):
+        """Načte stav pipeline z disku pokud existuje."""
+        if not os.path.exists(self.PIPELINE_STATE_FILE):
+            return False
+        try:
+            with open(self.PIPELINE_STATE_FILE, "rb") as f:
+                state = pickle.load(f)
+            self.feature_spec = state.get("feature_spec", {})
+            self.target_variable = state.get("target_variable", "")
+            self.training_X = state.get("training_X")
+            self.training_Y_df = state.get("training_Y_df")
+            self.training_Y = state.get("training_Y")
+            self.training_Y_column = state.get("training_Y_column", "")
+            self.model = state.get("model")
+            self.rules = state.get("rules", [])
+            self.mse = state.get("mse")
+            self.is_trained = state.get("is_trained", False)
+            self.testing_X = state.get("testing_X")
+            self._training_columns = state.get("_training_columns", [])
+            logger.info("Pipeline stav načten z disku.")
+            return True
+        except Exception as e:
+            logger.warning(f"Nelze načíst pipeline stav: {e}")
+            return False
 
     # ==========================================
     # FÁZE 1: Feature Discovery
@@ -190,11 +244,36 @@ class MachineLearningPipeline:
                 f"No extra keys, no explanations."
             )
 
-            JOBS[job_id] = {"progress": 5, "stage": "Zahajuji extrakci features...", "done": False}
+            # Checkpoint soubor pro resume
+            checkpoint_file = os.path.join(CHECKPOINT_FOLDER, f"extract_{dataset_type}.json")
             features_data = []
+            done_names = set()
+            if os.path.exists(checkpoint_file):
+                try:
+                    with open(checkpoint_file, "r", encoding="utf-8") as cf:
+                        features_data = json.load(cf)
+                    done_names = {row["media_name"] for row in features_data}
+                    logger.info(f"Resume: načteno {len(features_data)} záznamů z checkpointu.")
+                except Exception as e:
+                    logger.warning(f"Nelze načíst checkpoint: {e}")
+                    features_data = []
+
+            JOBS[job_id] = {"progress": 5, "stage": f"Zahajuji extrakci features... ({len(done_names)} již hotovo)", "done": False}
 
             for i, media_path in enumerate(media_files):
                 file_name = os.path.basename(media_path)
+                media_name = os.path.splitext(file_name)[0]
+
+                # Přeskoč již zpracované
+                if media_name in done_names:
+                    progress = 5 + int((i / total) * 90)
+                    JOBS[job_id] = {
+                        "progress": progress,
+                        "stage": f"Přeskakuji ({i+1}/{total}): {file_name} (již hotovo)",
+                        "done": False,
+                    }
+                    continue
+
                 progress = 5 + int((i / total) * 90)
                 JOBS[job_id] = {
                     "progress": progress,
@@ -212,7 +291,7 @@ class MachineLearningPipeline:
                 else:
                     attrs = {}
 
-                row = {"media_name": os.path.splitext(file_name)[0]}
+                row = {"media_name": media_name}
                 missing = []
                 for feat_key in feature_spec:
                     val = attrs.get(feat_key)
@@ -228,6 +307,13 @@ class MachineLearningPipeline:
                 if missing:
                     logger.warning(f"{file_name}: chybějící features {missing}")
                 features_data.append(row)
+
+                # Průběžně ulož checkpoint
+                try:
+                    with open(checkpoint_file, "w", encoding="utf-8") as cf:
+                        json.dump(features_data, cf, ensure_ascii=False)
+                except Exception as e:
+                    logger.warning(f"Nelze zapsat checkpoint: {e}")
 
             df_X = pd.DataFrame(features_data)
 
@@ -246,6 +332,14 @@ class MachineLearningPipeline:
                     self.training_Y_df = df_Y
             elif dataset_type == "testing":
                 self.testing_X = df_X
+
+            # Persistuj stav na disk + smaž checkpoint (extrakce dokončena)
+            self.save_state()
+            try:
+                if os.path.exists(checkpoint_file):
+                    os.remove(checkpoint_file)
+            except Exception:
+                pass
 
             result_payload = {
                 "progress": 100,
@@ -327,6 +421,8 @@ class MachineLearningPipeline:
         self.target_variable = target_column
         # Store training columns order for prediction compatibility
         self._training_columns = list(X.columns)
+
+        self.save_state()
 
         return {
             "status": "success",
@@ -432,6 +528,7 @@ class MachineLearningPipeline:
 
 
 pipeline = MachineLearningPipeline()
+pipeline.load_state()  # Obnov stav po restartu serveru
 
 
 # ================================================================
@@ -575,6 +672,61 @@ def api_extract():
     return jsonify({"job_id": job_id, "media_count": len(media_files)})
 
 
+@app.route("/extract-local", methods=["POST"])
+def api_extract_local():
+    """Fáze 2 & 4: Extrakce features ze ZIP souboru již uloženého na serveru."""
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Očekáváno JSON tělo."}), 400
+
+    zip_path = data.get("zip_path")
+    model_name = data.get("model", "qwen2.5vl:7b")
+    feature_spec = data.get("feature_spec", {})
+    dataset_type = data.get("dataset_type", "training")
+    labels_df = None
+
+    if not zip_path or not os.path.exists(zip_path):
+        return jsonify({"error": f"Soubor nenalezen: {zip_path}"}), 400
+    if not feature_spec:
+        return jsonify({"error": "Chybí feature_spec."}), 400
+
+    labels_path = data.get("labels_path")
+    if labels_path and os.path.exists(labels_path):
+        try:
+            labels_df = pd.read_csv(labels_path)
+        except Exception as e:
+            logger.warning(f"Nelze načíst labels CSV: {e}")
+
+    job_id = str(uuid.uuid4())
+    JOBS[job_id] = {"progress": 0, "stage": "Startuji extrakci...", "done": False}
+
+    extract_path = os.path.join(DATASET_FOLDER, f"extract_{job_id}")
+    os.makedirs(extract_path, exist_ok=True)
+
+    try:
+        media_files, csv_path = _extract_zip_contents(zip_path, extract_path)
+    except Exception as e:
+        shutil.rmtree(extract_path, ignore_errors=True)
+        return jsonify({"error": f"Nelze rozbalit ZIP: {e}"}), 400
+
+    if not media_files:
+        shutil.rmtree(extract_path, ignore_errors=True)
+        return jsonify({"error": "ZIP neobsahuje žádná média."}), 400
+
+    def _run():
+        try:
+            pipeline.extract_features_async(
+                media_files, feature_spec, job_id, model_name, dataset_type, csv_path, labels_df
+            )
+        finally:
+            shutil.rmtree(extract_path, ignore_errors=True)
+
+    thread = threading.Thread(target=_run)
+    thread.start()
+
+    return jsonify({"job_id": job_id, "media_count": len(media_files)})
+
+
 @app.route("/train", methods=["POST"])
 def api_train():
     """Fáze 3: Trénink RuleKit modelu z uložených dataset_X + dataset_Y."""
@@ -618,6 +770,70 @@ def api_predict():
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 400
+
+
+@app.route("/analyze", methods=["POST"])
+def api_analyze():
+    """Standalone LLM analýza médií – bez ML modelu."""
+    uploaded = request.files.getlist("files")
+    if not uploaded:
+        uploaded = request.files.getlist("file")
+    if not uploaded:
+        return jsonify({"error": "Žádný soubor nebyl nahrán."}), 400
+
+    description = request.form.get("description", "Analyze this media and describe its key visual and audio properties.")
+    model_name = request.form.get("model", "qwen2.5vl:7b")
+
+    # Ulož soubory a rozbal ZIP
+    saved_paths = []
+    for f in uploaded:
+        fname = secure_filename(f.filename)
+        dest = os.path.join(UPLOAD_FOLDER, fname)
+        f.save(dest)
+        if fname.lower().endswith(".zip"):
+            extract_dir = os.path.join(UPLOAD_FOLDER, f"analyze_{uuid.uuid4().hex}")
+            os.makedirs(extract_dir, exist_ok=True)
+            with zipfile.ZipFile(dest, "r") as zf:
+                zf.extractall(extract_dir)
+            os.remove(dest)
+            for root, _, files in os.walk(extract_dir):
+                for fn in files:
+                    fp = os.path.join(root, fn)
+                    if _is_media_file(fp):
+                        saved_paths.append(fp)
+        else:
+            if _is_media_file(dest):
+                saved_paths.append(dest)
+
+    if not saved_paths:
+        return jsonify({"error": "Žádné podporované mediální soubory nebyly nalezeny."}), 400
+
+    results = []
+    for media_path in saved_paths:
+        media_name = os.path.splitext(os.path.basename(media_path))[0]
+        try:
+            result = process_single_media(media_path, prompt=description, model_name=model_name)
+            analysis = result.get("analysis")
+            if isinstance(analysis, dict):
+                attrs = analysis.get("attributes", analysis)
+                for key in ("summary", "classification", "reasoning"):
+                    attrs.pop(key, None)
+            else:
+                attrs = {"response": str(analysis)} if analysis else {}
+            results.append({
+                "media_name": media_name,
+                "analysis": attrs,
+                "transcript": result.get("transcript", ""),
+            })
+        except Exception as e:
+            results.append({"media_name": media_name, "error": str(e), "analysis": {}})
+        finally:
+            try:
+                os.remove(media_path)
+            except Exception:
+                pass
+
+    return jsonify({"status": "success", "results": results, "count": len(results)})
 
 
 @app.route("/status/<job_id>", methods=["GET"])

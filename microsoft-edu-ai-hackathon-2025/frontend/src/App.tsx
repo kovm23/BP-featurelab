@@ -42,8 +42,10 @@ import {
   AVAILABLE_MODELS,
   DISCOVER_URL,
   EXTRACT_URL,
+  EXTRACT_LOCAL_URL,
   TRAIN_URL,
   PREDICT_URL,
+  ANALYZE_URL,
   TYPE_STYLES,
 } from "@/lib/api";
 import {
@@ -60,7 +62,7 @@ import {
   getTranscript,
   tileBg,
   CopyButton,
-  downloadTestingDataWithPrediction,
+
 } from "@/lib/helpers";
 import { pollProgress } from "@/hooks/usePollProgress";
 import { Guide } from "@/components/Guide";
@@ -131,12 +133,12 @@ export default function MediaFeatureLabPro() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [response, setResponse] = useState<BackendOk | null>(null);
-  const [predictionResult, setPredictionResult] = useState<{
-    score: number;
-    rule_applied: string;
-    extracted_features: Record<string, unknown>;
-    testing_data_X: Record<string, unknown>;
-  } | null>(null);
+  const [analyzeResults, setAnalyzeResults] = useState<Array<{
+    media_name: string;
+    analysis: Record<string, unknown>;
+    transcript?: string;
+    error?: string;
+  }> | null>(null);
 
   const [description, setDescription] = useState("");
   const [categories, setCategories] = useState("");
@@ -459,6 +461,104 @@ export default function MediaFeatureLabPro() {
   }
 
   // =========================================================
+  // HANDLER: Fáze 2 – Feature Extraction ze serveru (local path)
+  // =========================================================
+  async function handleExtractTrainingLocal(zipPath: string, labelsPath?: string) {
+    setExtractionBusy(true);
+    setTrainingDataX(null);
+    setProgress(0);
+    setProgressLabel("Spouštím extrakci ze serveru...");
+    setError(null);
+
+    try {
+      const res = await fetch(EXTRACT_LOCAL_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          zip_path: zipPath,
+          labels_path: labelsPath || undefined,
+          model: modelProvider,
+          feature_spec: featureSpec,
+          dataset_type: "training",
+        }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Extrakce selhala");
+      }
+      const data = await res.json();
+
+      if (data.job_id) {
+        const ctrl = new AbortController();
+        await pollProgress(
+          data.job_id,
+          (s: StatusPayload) => {
+            setProgress(Math.max(0, Math.min(100, s.progress ?? 0)));
+            setProgressLabel(s.stage || "");
+            if (s.done && s.details?.status === "success") {
+              setTrainingDataX(s.details.dataset_X);
+              setDatasetYColumns(s.details.dataset_Y_columns || null);
+            }
+            if (s.done && s.error) setError("Fáze 2 selhala: " + s.error);
+          },
+          ctrl.signal,
+        );
+      }
+    } catch (e: unknown) {
+      setError("Fáze 2 selhala: " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setExtractionBusy(false);
+    }
+  }
+
+  // =========================================================
+  // HANDLER: Fáze 4 – Test Extraction ze serveru (local path)
+  // =========================================================
+  async function handleExtractTestingLocal(zipPath: string) {
+    setTestExtractionBusy(true);
+    setTestingDataX(null);
+    setProgress(0);
+    setProgressLabel("Spouštím extrakci ze serveru...");
+    setError(null);
+
+    try {
+      const res = await fetch(EXTRACT_LOCAL_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          zip_path: zipPath,
+          model: modelProvider,
+          feature_spec: featureSpec,
+          dataset_type: "testing",
+        }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Extrakce selhala");
+      }
+      const data = await res.json();
+
+      if (data.job_id) {
+        const ctrl = new AbortController();
+        await pollProgress(
+          data.job_id,
+          (s: StatusPayload) => {
+            setProgress(Math.max(0, Math.min(100, s.progress ?? 0)));
+            setProgressLabel(s.stage || "");
+            if (s.done && s.details?.status === "success") setTestingDataX(s.details.dataset_X);
+            if (s.done && s.error) setError("Fáze 4 selhala: " + s.error);
+          },
+          ctrl.signal,
+        );
+      }
+    } catch (e: unknown) {
+      setError("Fáze 4 selhala: " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setTestExtractionBusy(false);
+    }
+  }
+
+  // =========================================================
   // HANDLER: Fáze 5 – Predikce
   // =========================================================
   async function handlePredict(labelsFile?: File | null) {
@@ -515,14 +615,10 @@ export default function MediaFeatureLabPro() {
     try {
       const form = new FormData();
       for (const f of files) form.append("files", f, f.name);
-      if (outputFormatsString) form.append("output_formats", outputFormatsString);
       if (description.trim()) form.append("description", description.trim());
-
       form.append("model", modelProvider);
-      form.append("file_type", fileType);
-      form.append("categories", categories);
 
-      const res = await fetch(PREDICT_URL, {
+      const res = await fetch(ANALYZE_URL, {
         method: "POST",
         body: form,
         signal: ctrl.signal,
@@ -533,16 +629,7 @@ export default function MediaFeatureLabPro() {
       }
 
       const jsonRaw = await res.json();
-
-      // Predict mód – odpověď z /predict
-      if (jsonRaw.predictions) {
-        setPredictionResult({
-          score: jsonRaw.predictions[0]?.predicted_score ?? 0,
-          rule_applied: jsonRaw.predictions[0]?.rule_applied ?? "",
-          extracted_features: jsonRaw.predictions[0]?.extracted_features ?? {},
-          testing_data_X: jsonRaw.predictions[0]?.extracted_features ?? {},
-        });
-      }
+      setAnalyzeResults(jsonRaw.results ?? []);
       setResponse(null);
       setStep(3);
     } catch (e: unknown) {
@@ -575,7 +662,7 @@ export default function MediaFeatureLabPro() {
     setFileType(null);
     setError(null);
     setResponse(null);
-    setPredictionResult(null);
+    setAnalyzeResults(null);
     setCategories("");
     setProgress(0);
     setProgressLabel("");
@@ -700,7 +787,7 @@ export default function MediaFeatureLabPro() {
                     : "text-slate-600 hover:text-slate-900"
                 }`}
               >
-                Predikce
+                Analýza médií
               </button>
               <button
                 onClick={() => setAppMode("train")}
@@ -714,7 +801,7 @@ export default function MediaFeatureLabPro() {
                     : "text-slate-600 hover:text-slate-900"
                 }`}
               >
-                Trénink
+                Trénink & Predikce
               </button>
             </div>
 
@@ -761,6 +848,7 @@ export default function MediaFeatureLabPro() {
             setFeatureSpec={setFeatureSpec}
             /* Phase 2 */
             onExtractTraining={handleExtractTraining}
+            onExtractTrainingLocal={handleExtractTrainingLocal}
             isExtracting={extractionBusy}
             trainingDataX={trainingDataX}
             datasetYColumns={datasetYColumns}
@@ -770,6 +858,7 @@ export default function MediaFeatureLabPro() {
             trainResult={trainResult}
             /* Phase 4 */
             onExtractTesting={handleExtractTesting}
+            onExtractTestingLocal={handleExtractTestingLocal}
             isExtractingTest={testExtractionBusy}
             testingDataX={testingDataX}
             /* Phase 5 */
@@ -1129,119 +1218,63 @@ export default function MediaFeatureLabPro() {
           </div>
         )}
 
-        {/* RESULTS */}
-        {predictionResult && appMode === "predict" && (
-          <div className="mt-6">
-            <Card
-              className={`${
-                deluxe
-                  ? "bg-white/5 border-white/10"
-                  : "bg-white border-slate-200"
-              } backdrop-blur-xl`}
-            >
-              <CardHeader>
-                <CardTitle
-                  className={deluxe ? "text-white" : "text-slate-900"}
-                >
-                  🎯 Výsledek Predikce
-                </CardTitle>
-                <CardDescription
-                  className={deluxe ? "text-slate-300" : "text-slate-600"}
-                >
-                  Fáze 5: Predikce z ML modelu
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Fáze 5c: Predikovaný score */}
-                <div
-                  className={`rounded-xl p-4 ${
-                    deluxe
-                      ? "bg-green-900/30 border border-green-700/50"
-                      : "bg-green-50 border border-green-200"
-                  }`}
-                >
-                  <div
-                    className={`text-sm space-y-2 ${
-                      deluxe ? "text-slate-200" : "text-slate-700"
-                    }`}
-                  >
-                    <div>
-                      <span className="opacity-70">Predikovaná hodnota:</span>{" "}
-                      <b className="text-lg text-green-600">{predictionResult.score.toFixed(4)}</b>
+        {/* RESULTS – LLM analýza */}
+        {analyzeResults && analyzeResults.length > 0 && appMode === "predict" && (
+          <div className="mt-6 space-y-4">
+            {analyzeResults.map((item, idx) => (
+              <Card
+                key={idx}
+                className={`${
+                  deluxe ? "bg-white/5 border-white/10" : "bg-white border-slate-200"
+                } backdrop-blur-xl`}
+              >
+                <CardHeader>
+                  <CardTitle className={`text-sm font-mono ${deluxe ? "text-white" : "text-slate-900"}`}>
+                    {item.media_name}
+                  </CardTitle>
+                  {item.error && (
+                    <CardDescription className="text-red-500">{item.error}</CardDescription>
+                  )}
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {Object.keys(item.analysis).length > 0 && (
+                    <div className={`rounded-xl p-4 ${deluxe ? "bg-slate-800/50 border border-slate-700/50" : "bg-slate-50 border border-slate-200"}`}>
+                      <p className={`text-xs font-bold mb-2 ${deluxe ? "text-slate-300" : "text-slate-900"}`}>
+                        Analýza:
+                      </p>
+                      <div className={`text-xs space-y-1 font-mono ${deluxe ? "text-slate-400" : "text-slate-600"}`}>
+                        {Object.entries(item.analysis).map(([key, val]) => (
+                          <div key={key}>
+                            <span className="opacity-60">{key}:</span>{" "}
+                            <span className="font-bold">{String(val)}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                </div>
-
-                {/* Fáze 5c: Použité pravidlo */}
-                <div
-                  className={`rounded-xl p-4 ${
-                    deluxe
-                      ? "bg-blue-900/30 border border-blue-700/50"
-                      : "bg-blue-50 border border-blue-200"
-                  }`}
-                >
-                  <p
-                    className={`text-xs font-bold mb-2 ${
-                      deluxe ? "text-blue-300" : "text-blue-900"
-                    }`}
-                  >
-                    📋 Použité pravidlo:
-                  </p>
-                  <p
-                    className={`text-xs font-mono ${
-                      deluxe ? "text-slate-300" : "text-slate-600"
-                    }`}
-                  >
-                    {predictionResult.rule_applied}
-                  </p>
-                </div>
-
-                {/* Extracted features */}
-                <div
-                  className={`rounded-xl p-4 ${
-                    deluxe
-                      ? "bg-slate-800/50 border border-slate-700/50"
-                      : "bg-slate-50 border border-slate-200"
-                  }`}
-                >
-                  <p
-                    className={`text-xs font-bold mb-2 ${
-                      deluxe ? "text-slate-300" : "text-slate-900"
-                    }`}
-                  >
-                    🔍 Extrahované vlastnosti:
-                  </p>
-                  <div
-                    className={`text-xs space-y-1 font-mono ${
-                      deluxe ? "text-slate-400" : "text-slate-600"
-                    }`}
-                  >
-                    {Object.entries(predictionResult.extracted_features).map(
-                      ([key, val]) => (
-                        <div key={key}>
-                          <span className="opacity-60">{key}:</span>{" "}
-                          <span className="font-bold">{String(val)}</span>
-                        </div>
-                      )
-                    )}
-                  </div>
-                </div>
-
-                {/* Download button */}
-                <button
-                  onClick={() =>
-                    downloadTestingDataWithPrediction(
-                      predictionResult.testing_data_X,
-                      predictionResult.score,
-                      predictionResult.rule_applied
-                    )
-                  }
-                  className="w-full mt-4 px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 text-sm font-medium flex items-center justify-center gap-2"
-                >
-                  <Download className="w-4 h-4" /> Stáhnout výsledky
-                </button>
-              </CardContent>
-            </Card>
+                  )}
+                  {item.transcript && (
+                    <div className={`rounded-xl p-4 ${deluxe ? "bg-blue-900/30 border border-blue-700/50" : "bg-blue-50 border border-blue-200"}`}>
+                      <p className={`text-xs font-bold mb-1 ${deluxe ? "text-blue-300" : "text-blue-900"}`}>Přepis:</p>
+                      <p className={`text-xs ${deluxe ? "text-slate-300" : "text-slate-600"}`}>{item.transcript}</p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+            <button
+              onClick={() => {
+                const csv = ["media_name," + Object.keys(analyzeResults[0]?.analysis ?? {}).join(",")]
+                  .concat(analyzeResults.map(r => [r.media_name, ...Object.values(r.analysis).map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")].join(",")))
+                  .join("\n");
+                const a = document.createElement("a");
+                a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+                a.download = `analyze_${new Date().toISOString().slice(0,10)}.csv`;
+                a.click();
+              }}
+              className="w-full px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 text-sm font-medium flex items-center justify-center gap-2"
+            >
+              <Download className="w-4 h-4" /> Stáhnout výsledky (CSV)
+            </button>
           </div>
         )}
 

@@ -1,12 +1,14 @@
 // =====================================================
 // API URL KONFIGURACE
 // =====================================================
-const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:5000";
+const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
 export const DISCOVER_URL = `${API_BASE}/discover`;
 export const EXTRACT_URL = `${API_BASE}/extract`;
 export const TRAIN_URL = `${API_BASE}/train`;
 export const PREDICT_URL = `${API_BASE}/predict`;
+export const ANALYZE_URL = `${API_BASE}/analyze`;
+export const EXTRACT_LOCAL_URL = `${API_BASE}/extract-local`;
 export const STATUS_URL = (jobId: string) =>
   `${API_BASE}/status/${encodeURIComponent(jobId)}`;
 

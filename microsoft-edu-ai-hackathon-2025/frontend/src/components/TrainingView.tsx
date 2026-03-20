@@ -38,6 +38,7 @@ export interface TrainingViewProps {
   setFeatureSpec: (spec: Record<string, string>) => void;
   /* Phase 2 */
   onExtractTraining: (file: File, labelsFile?: File | null) => void;
+  onExtractTrainingLocal: (zipPath: string, labelsPath?: string) => void;
   isExtracting: boolean;
   trainingDataX: Record<string, unknown>[] | null;
   datasetYColumns: string[] | null;
@@ -47,6 +48,7 @@ export interface TrainingViewProps {
   trainResult: TrainResult | null;
   /* Phase 4 */
   onExtractTesting: (file: File) => void;
+  onExtractTestingLocal: (zipPath: string) => void;
   isExtractingTest: boolean;
   testingDataX: Record<string, unknown>[] | null;
   /* Phase 5 */
@@ -415,6 +417,7 @@ export function TrainingView({
   featureSpec,
   setFeatureSpec,
   onExtractTraining,
+  onExtractTrainingLocal,
   isExtracting,
   trainingDataX,
   datasetYColumns,
@@ -422,6 +425,7 @@ export function TrainingView({
   isTraining,
   trainResult,
   onExtractTesting,
+  onExtractTestingLocal,
   isExtractingTest,
   testingDataX,
   onPredict,
@@ -440,6 +444,11 @@ export function TrainingView({
   const [discoveryFiles, setDiscoveryFiles] = useState<File[]>([]);
   const [trainZipFile, setTrainZipFile] = useState<File | null>(null);
   const [testZipFile, setTestZipFile] = useState<File | null>(null);
+  const [useServerPathTrain, setUseServerPathTrain] = useState(false);
+  const [serverPathTrain, setServerPathTrain] = useState("/home/kovm23/train.zip");
+  const [serverLabelsPathTrain, setServerLabelsPathTrain] = useState("");
+  const [useServerPathTest, setUseServerPathTest] = useState(false);
+  const [serverPathTest, setServerPathTest] = useState("/home/kovm23/test.zip");
   const [targetColumn, setTargetColumn] = useState("");
   // Optional labels files
   const [discoveryLabels, setDiscoveryLabels] = useState<File | null>(null);
@@ -757,55 +766,103 @@ export function TrainingView({
             />
           )}
 
-          <FileDropZone
-            deluxe={deluxe}
-            file={trainZipFile}
-            onFile={setTrainZipFile}
-            accept=".zip"
-            inputId="train-zip-upload"
-            label="Nahrajte .ZIP trénovací dataset (média + CSV s labels)"
-            pickLabel="Vybrat ZIP soubor"
-          />
-
-          {/* Optional separate labels for extraction */}
-          <div className={`p-3 rounded-lg border ${cls(deluxe, "bg-amber-50/50 border-amber-200", "bg-amber-900/20 border-amber-800/50")}`}>
+          {/* Toggle: upload vs server path */}
+          <div className={`p-3 rounded-lg border ${cls(deluxe, "bg-slate-50 border-slate-200", "bg-slate-800/50 border-slate-700")}`}>
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
-                checked={useExtractionLabels}
-                onChange={(e) => {
-                  setUseExtractionLabels(e.target.checked);
-                  if (!e.target.checked) setExtractionLabels(null);
-                }}
+                checked={useServerPathTrain}
+                onChange={(e) => setUseServerPathTrain(e.target.checked)}
                 className="rounded"
               />
-              <span className={`text-sm font-medium ${cls(deluxe, "text-amber-800", "text-amber-300")}`}>
-                Use labels for this phase (dataset_Y)
+              <span className={`text-sm font-medium ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>
+                Soubor je již na serveru (velký dataset)
               </span>
             </label>
-            <p className={`text-xs mt-1 ${cls(deluxe, "text-amber-600", "text-amber-400/70")}`}>
-              Pokud je CSV s labels v ZIPu, nahrajeme ho automaticky. Zde ho lze nahrát zvlášť.
-            </p>
-            {useExtractionLabels && (
-              <div className="mt-2">
-                <input
-                  type="file"
-                  accept=".csv"
-                  onChange={(e) => { if (e.target.files?.[0]) setExtractionLabels(e.target.files[0]); }}
-                  className={`text-xs ${cls(deluxe, "text-slate-600", "text-slate-400")}`}
-                />
-                {extractionLabels && (
-                  <p className="mt-1 text-xs text-green-500 font-medium">CSV: {extractionLabels.name}</p>
-                )}
-              </div>
-            )}
           </div>
+
+          {!useServerPathTrain ? (
+            <FileDropZone
+              deluxe={deluxe}
+              file={trainZipFile}
+              onFile={setTrainZipFile}
+              accept=".zip"
+              inputId="train-zip-upload"
+              label="Nahrajte .ZIP trénovací dataset (média + CSV s labels)"
+              pickLabel="Vybrat ZIP soubor"
+            />
+          ) : (
+            <div className="space-y-2">
+              <label className={`text-sm font-medium ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>
+                Cesta k ZIP souboru na serveru
+              </label>
+              <input
+                type="text"
+                value={serverPathTrain}
+                onChange={(e) => setServerPathTrain(e.target.value)}
+                placeholder="/home/kovm23/train.zip"
+                className={`w-full px-3 py-2 rounded border text-sm font-mono ${cls(deluxe, "bg-white border-slate-300 text-slate-800", "bg-slate-900 border-slate-600 text-slate-200")}`}
+              />
+              <label className={`text-sm font-medium ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>
+                Cesta k CSV labels (volitelné)
+              </label>
+              <input
+                type="text"
+                value={serverLabelsPathTrain}
+                onChange={(e) => setServerLabelsPathTrain(e.target.value)}
+                placeholder="/home/kovm23/devset_videolist_GT.csv"
+                className={`w-full px-3 py-2 rounded border text-sm font-mono ${cls(deluxe, "bg-white border-slate-300 text-slate-800", "bg-slate-900 border-slate-600 text-slate-200")}`}
+              />
+            </div>
+          )}
+
+          {/* Optional separate labels for extraction (only for upload mode) */}
+          {!useServerPathTrain && (
+            <div className={`p-3 rounded-lg border ${cls(deluxe, "bg-amber-50/50 border-amber-200", "bg-amber-900/20 border-amber-800/50")}`}>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={useExtractionLabels}
+                  onChange={(e) => {
+                    setUseExtractionLabels(e.target.checked);
+                    if (!e.target.checked) setExtractionLabels(null);
+                  }}
+                  className="rounded"
+                />
+                <span className={`text-sm font-medium ${cls(deluxe, "text-amber-800", "text-amber-300")}`}>
+                  Use labels for this phase (dataset_Y)
+                </span>
+              </label>
+              <p className={`text-xs mt-1 ${cls(deluxe, "text-amber-600", "text-amber-400/70")}`}>
+                Pokud je CSV s labels v ZIPu, nahrajeme ho automaticky. Zde ho lze nahrát zvlášť.
+              </p>
+              {useExtractionLabels && (
+                <div className="mt-2">
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={(e) => { if (e.target.files?.[0]) setExtractionLabels(e.target.files[0]); }}
+                    className={`text-xs ${cls(deluxe, "text-slate-600", "text-slate-400")}`}
+                  />
+                  {extractionLabels && (
+                    <p className="mt-1 text-xs text-green-500 font-medium">CSV: {extractionLabels.name}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="flex justify-center mt-6">
             <Button
-              onClick={() => trainZipFile && onExtractTraining(trainZipFile, useExtractionLabels ? extractionLabels : null)}
-              disabled={!trainZipFile || isExtracting}
-              title={!trainZipFile ? "Nejdříve nahrajte trénovací ZIP" : undefined}
+              onClick={() => {
+                if (useServerPathTrain) {
+                  onExtractTrainingLocal(serverPathTrain, serverLabelsPathTrain || undefined);
+                } else {
+                  trainZipFile && onExtractTraining(trainZipFile, useExtractionLabels ? extractionLabels : null);
+                }
+              }}
+              disabled={(useServerPathTrain ? !serverPathTrain : !trainZipFile) || isExtracting}
+              title={!useServerPathTrain && !trainZipFile ? "Nejdříve nahrajte trénovací ZIP" : undefined}
             >
               {isExtracting ? (
                 <>
@@ -987,21 +1044,57 @@ export function TrainingView({
             />
           )}
 
-          <FileDropZone
-            deluxe={deluxe}
-            file={testZipFile}
-            onFile={setTestZipFile}
-            accept=".zip"
-            inputId="test-zip-upload"
-            label="Nahrajte testovací ZIP dataset (jiná média než trénovací)"
-            pickLabel="Vybrat testovací ZIP"
-          />
+          {/* Toggle: upload vs server path */}
+          <div className={`p-3 rounded-lg border ${cls(deluxe, "bg-slate-50 border-slate-200", "bg-slate-800/50 border-slate-700")}`}>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={useServerPathTest}
+                onChange={(e) => setUseServerPathTest(e.target.checked)}
+                className="rounded"
+              />
+              <span className={`text-sm font-medium ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>
+                Soubor je již na serveru (velký dataset)
+              </span>
+            </label>
+          </div>
+
+          {!useServerPathTest ? (
+            <FileDropZone
+              deluxe={deluxe}
+              file={testZipFile}
+              onFile={setTestZipFile}
+              accept=".zip"
+              inputId="test-zip-upload"
+              label="Nahrajte testovací ZIP dataset (jiná média než trénovací)"
+              pickLabel="Vybrat testovací ZIP"
+            />
+          ) : (
+            <div className="space-y-2">
+              <label className={`text-sm font-medium ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>
+                Cesta k ZIP souboru na serveru
+              </label>
+              <input
+                type="text"
+                value={serverPathTest}
+                onChange={(e) => setServerPathTest(e.target.value)}
+                placeholder="/home/kovm23/test.zip"
+                className={`w-full px-3 py-2 rounded border text-sm font-mono ${cls(deluxe, "bg-white border-slate-300 text-slate-800", "bg-slate-900 border-slate-600 text-slate-200")}`}
+              />
+            </div>
+          )}
 
           <div className="flex justify-center mt-6">
             <Button
-              onClick={() => testZipFile && onExtractTesting(testZipFile)}
-              disabled={!testZipFile || isExtractingTest}
-              title={!testZipFile ? "Nejdříve nahrajte testovací ZIP" : undefined}
+              onClick={() => {
+                if (useServerPathTest) {
+                  onExtractTestingLocal(serverPathTest);
+                } else {
+                  testZipFile && onExtractTesting(testZipFile);
+                }
+              }}
+              disabled={(useServerPathTest ? !serverPathTest : !testZipFile) || isExtractingTest}
+              title={!useServerPathTest && !testZipFile ? "Nejdříve nahrajte testovací ZIP" : undefined}
             >
               {isExtractingTest ? (
                 <>
