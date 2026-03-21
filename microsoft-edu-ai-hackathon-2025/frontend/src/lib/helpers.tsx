@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import JSZip from "jszip";
 import { Check, Copy } from "lucide-react";
 import {
   FileVideo,
@@ -267,4 +268,93 @@ export function downloadTestingDataWithPrediction(
   };
   const json = JSON.stringify(result, null, 2);
   downloadText(filename, json, "application/json;charset=utf-8");
+}
+
+/**
+ * Download all experiment artifacts as a single ZIP file.
+ */
+export async function downloadExperimentZip(params: {
+  featureSpec?: Record<string, string> | null;
+  trainingDataX?: Record<string, unknown>[] | null;
+  testingDataX?: Record<string, unknown>[] | null;
+  rules?: string[] | null;
+  mse?: number;
+  predictions?: Record<string, unknown>[] | null;
+  metrics?: Record<string, unknown> | null;
+}) {
+  const zip = new JSZip();
+  const ts = new Date().toISOString().slice(0, 19).replace(/:/g, "-");
+
+  if (params.featureSpec) {
+    zip.file("feature_spec.json", JSON.stringify(params.featureSpec, null, 2));
+  }
+
+  if (params.trainingDataX && params.trainingDataX.length > 0) {
+    const headers = Object.keys(params.trainingDataX[0]);
+    const csv = [
+      headers.join(","),
+      ...params.trainingDataX.map((row) =>
+        headers.map((h) => {
+          const val = row[h];
+          if (val === null || val === undefined) return "";
+          const str = String(val);
+          return str.includes(",") ? `"${str}"` : str;
+        }).join(",")
+      ),
+    ].join("\n");
+    zip.file("training_dataset_X.csv", csv);
+  }
+
+  if (params.testingDataX && params.testingDataX.length > 0) {
+    const headers = Object.keys(params.testingDataX[0]);
+    const csv = [
+      headers.join(","),
+      ...params.testingDataX.map((row) =>
+        headers.map((h) => {
+          const val = row[h];
+          if (val === null || val === undefined) return "";
+          const str = String(val);
+          return str.includes(",") ? `"${str}"` : str;
+        }).join(",")
+      ),
+    ].join("\n");
+    zip.file("testing_dataset_X.csv", csv);
+  }
+
+  if (params.rules) {
+    zip.file("rules_model.json", JSON.stringify({
+      rules: params.rules,
+      mse: params.mse,
+      count: params.rules.length,
+      timestamp: new Date().toISOString(),
+    }, null, 2));
+  }
+
+  if (params.predictions && params.predictions.length > 0) {
+    const headers = Object.keys(params.predictions[0]);
+    const csv = [
+      headers.join(","),
+      ...params.predictions.map((row) =>
+        headers.map((h) => {
+          const val = row[h];
+          if (val === null || val === undefined) return "";
+          const str = String(val);
+          return str.includes(",") ? `"${str}"` : str;
+        }).join(",")
+      ),
+    ].join("\n");
+    zip.file("predictions.csv", csv);
+
+    if (params.metrics) {
+      zip.file("metrics.json", JSON.stringify(params.metrics, null, 2));
+    }
+  }
+
+  const blob = await zip.generateAsync({ type: "blob" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `experiment_${ts}.zip`;
+  a.click();
+  URL.revokeObjectURL(url);
 }

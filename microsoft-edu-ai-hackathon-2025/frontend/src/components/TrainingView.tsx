@@ -21,6 +21,7 @@ import {
   downloadFeatureSpec,
   downloadTrainingDataCSV,
   downloadRulesModel,
+  downloadExperimentZip,
 } from "@/lib/helpers";
 
 /* ------------------------------------------------------------------ */
@@ -1320,7 +1321,7 @@ export function TrainingView({
               </div>
 
               {/* Download */}
-              <div className="flex justify-center">
+              <div className="flex justify-center gap-2 flex-wrap">
                 <button
                   onClick={() => {
                     const hasActual = predictions.some((p) => p.actual_score !== undefined);
@@ -1343,9 +1344,23 @@ export function TrainingView({
                     a.click();
                     URL.revokeObjectURL(url);
                   }}
-                  className="px-3 py-1.5 bg-blue-500 text-white rounded text-xs hover:bg-blue-600 flex items-center gap-1"
+                  className="px-3 py-1.5 bg-slate-500 text-white rounded text-xs hover:bg-slate-600 flex items-center gap-1"
                 >
-                  <Download className="w-3 h-3" /> Stáhnout predikce (CSV)
+                  <Download className="w-3 h-3" /> Predikce (CSV)
+                </button>
+                <button
+                  onClick={() => downloadExperimentZip({
+                    featureSpec: featureSpec ?? undefined,
+                    trainingDataX: trainResult?.training_data_X ?? undefined,
+                    testingDataX: testingDataX ?? undefined,
+                    rules: trainResult?.rules ?? undefined,
+                    mse: trainResult?.mse ?? undefined,
+                    predictions: predictions as unknown as Record<string, unknown>[],
+                    metrics: predictionMetrics as unknown as Record<string, unknown> ?? undefined,
+                  })}
+                  className="px-3 py-1.5 bg-slate-700 text-white rounded text-xs hover:bg-slate-800 flex items-center gap-1"
+                >
+                  <Download className="w-3 h-3" /> Stáhnout experiment (ZIP)
                 </button>
               </div>
             </div>
