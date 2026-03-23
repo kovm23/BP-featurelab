@@ -23,7 +23,7 @@ ALLOWED_EXTENSIONS = {
     "image": {"png", "jpg", "jpeg"},
     "video": {"mp4", "avi", "mov", "mkv"},
 }
-VIDEO_KEY_FRAME_LIMIT = 8
+VIDEO_KEY_FRAME_LIMIT = 10
 
 MEDIA_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".jpg", ".jpeg", ".png", ".webp", ".heic", ".gif"}
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".heic", ".gif"}
@@ -53,27 +53,91 @@ def _image_to_base64(image_path: str) -> str:
     return base64.b64encode(buffered.getvalue()).decode("utf-8")
 
 
+def _compute_histogram(frame: np.ndarray) -> np.ndarray:
+    """Compute a normalised HSV histogram for scene comparison."""
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    hist = cv2.calcHist([hsv], [0, 1], None, [32, 32], [0, 180, 0, 256])
+    cv2.normalize(hist, hist)
+    return hist
+
+
 def extract_key_frames_with_timestamps(
-    video_path: str, frame_limit: int = 8
+    video_path: str, frame_limit: int = 10
 ) -> List[Tuple[np.ndarray, float]]:
+    """Extract keyframes using scene-change detection.
+
+    Selects frames at points where the visual content changes significantly
+    (based on histogram Bhattacharyya distance). Falls back to uniform
+    sampling when too few scene changes are detected.
+    Always includes the first and last frames.
+    """
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         return []
     total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     fps = cap.get(cv2.CAP_PROP_FPS)
     if total == 0 or fps == 0:
+        cap.release()
         return []
-    step = max(1, total // frame_limit)
-    res = []
-    for i in range(0, total, step):
-        cap.set(cv2.CAP_PROP_POS_FRAMES, i)
+
+    # Pass 1: sample every N-th frame and compute histogram distances
+    sample_step = max(1, total // 200)  # ~200 samples for efficiency
+    frame_indices = list(range(0, total, sample_step))
+
+    histograms: List[Tuple[int, np.ndarray, np.ndarray]] = []  # (idx, frame, hist)
+    for idx in frame_indices:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
         ret, frame = cap.read()
         if ret:
-            res.append((frame, round(i / fps, 2)))
-        if len(res) >= frame_limit:
+            hist = _compute_histogram(frame)
+            histograms.append((idx, frame, hist))
+
+    if len(histograms) < 2:
+        cap.release()
+        return [(h[1], round(h[0] / fps, 2)) for h in histograms]
+
+    # Compute distances between consecutive frames
+    distances = []
+    for i in range(1, len(histograms)):
+        dist = cv2.compareHist(
+            histograms[i - 1][2], histograms[i][2], cv2.HISTCMP_BHATTACHARYYA
+        )
+        distances.append((i, dist))
+
+    # Sort by distance descending — top peaks are scene changes
+    distances.sort(key=lambda x: x[1], reverse=True)
+
+    # Threshold: take frames with distance > 0.35 (significant change)
+    SCENE_THRESHOLD = 0.35
+    scene_change_indices = {0, len(histograms) - 1}  # always include first & last
+    for frame_i, dist in distances:
+        if dist < SCENE_THRESHOLD and len(scene_change_indices) >= 3:
             break
+        scene_change_indices.add(frame_i)
+        if len(scene_change_indices) >= frame_limit:
+            break
+
+    # If too few scene changes, fill with uniformly distributed frames
+    if len(scene_change_indices) < frame_limit:
+        uniform_step = max(1, len(histograms) // frame_limit)
+        for j in range(0, len(histograms), uniform_step):
+            scene_change_indices.add(j)
+            if len(scene_change_indices) >= frame_limit:
+                break
+
+    # Collect selected frames in temporal order
+    selected = sorted(scene_change_indices)[:frame_limit]
+    result = []
+    for si in selected:
+        idx, frame, _ = histograms[si]
+        result.append((frame, round(idx / fps, 2)))
+
     cap.release()
-    return res
+    logger.info(
+        "Keyframe selection for %s: %d scene-based frames from %d total",
+        os.path.basename(video_path), len(result), total,
+    )
+    return result
 
 
 # ================================================================

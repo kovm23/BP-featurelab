@@ -1,13 +1,31 @@
-"""Phase 3: RuleKit model training, and Phase 5: batch prediction."""
+"""Phase 3: Model training (RuleKit + XGBoost ensemble), and Phase 5: batch prediction.
+
+Training pipeline:
+  1. Preprocess features (one-hot encoding, null handling)
+  2. Normalise with StandardScaler
+  3. Train RuleKit RuleRegressor (interpretable rules)
+  4. Train XGBoost Regressor (high accuracy)
+  5. Ensemble: weighted average of both predictions
+  6. K-fold cross-validation for realistic error estimate
+  7. Feature importance from XGBoost + rule frequency from RuleKit
+"""
 import json
 import logging
+import re
 
 import numpy as np
 import pandas as pd
 from rulekit.regression import RuleRegressor
-from sklearn.metrics import mean_squared_error
+from sklearn.metrics import mean_squared_error, mean_absolute_error
+from sklearn.model_selection import KFold
+from sklearn.preprocessing import StandardScaler
+from xgboost import XGBRegressor
 
 logger = logging.getLogger(__name__)
+
+# Ensemble weights (RuleKit is interpretable, XGBoost is more accurate)
+RULEKIT_WEIGHT = 0.4
+XGB_WEIGHT = 0.6
 
 
 def _preprocess_features(df: pd.DataFrame, training_columns: list[str] | None = None) -> pd.DataFrame:
@@ -44,8 +62,75 @@ def _preprocess_features(df: pd.DataFrame, training_columns: list[str] | None = 
     return X
 
 
+def _count_rule_features(rules: list[str], feature_names: list[str]) -> dict:
+    """Count how often each feature appears in RuleKit rules."""
+    counts = {}
+    for feat in feature_names:
+        count = 0
+        for rule in rules:
+            if feat in rule:
+                count += 1
+        if count > 0:
+            counts[feat] = count
+    total = sum(counts.values()) or 1
+    return {k: round(v / total, 4) for k, v in sorted(counts.items(), key=lambda x: -x[1])}
+
+
+def _run_cross_validation(X: pd.DataFrame, y: pd.Series, n_splits: int = 5) -> dict:
+    """Run K-fold CV with the ensemble approach. Returns CV metrics."""
+    n_splits = min(n_splits, len(X))
+    if n_splits < 2:
+        return {"cv_mse": None, "cv_std": None, "cv_mae": None, "note": "Too few samples for CV"}
+
+    kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+    fold_mse = []
+    fold_mae = []
+
+    for train_idx, val_idx in kf.split(X):
+        X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
+        y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
+
+        # Scale
+        scaler = StandardScaler()
+        X_train_scaled = pd.DataFrame(
+            scaler.fit_transform(X_train), columns=X_train.columns, index=X_train.index
+        )
+        X_val_scaled = pd.DataFrame(
+            scaler.transform(X_val), columns=X_val.columns, index=X_val.index
+        )
+
+        # RuleKit
+        rk = RuleRegressor()
+        try:
+            rk.fit(X_train, y_train)
+            rk_pred = rk.predict(X_val)
+        except Exception:
+            rk_pred = np.full(len(X_val), y_train.mean())
+
+        # XGBoost
+        xgb = XGBRegressor(
+            n_estimators=100, max_depth=4, learning_rate=0.1,
+            random_state=42, verbosity=0,
+        )
+        xgb.fit(X_train_scaled, y_train)
+        xgb_pred = xgb.predict(X_val_scaled)
+
+        # Ensemble
+        ensemble_pred = RULEKIT_WEIGHT * rk_pred + XGB_WEIGHT * xgb_pred
+
+        fold_mse.append(float(mean_squared_error(y_val, ensemble_pred)))
+        fold_mae.append(float(mean_absolute_error(y_val, ensemble_pred)))
+
+    return {
+        "cv_mse": round(float(np.mean(fold_mse)), 6),
+        "cv_std": round(float(np.std(fold_mse)), 6),
+        "cv_mae": round(float(np.mean(fold_mae)), 6),
+        "n_folds": n_splits,
+    }
+
+
 def train_model(pipeline, target_column: str) -> dict:
-    """Train a RuleKit regression model from stored training_X + training_Y_df.
+    """Train RuleKit + XGBoost ensemble from stored training_X + training_Y_df.
 
     Updates pipeline state in-place and persists to disk.
     Returns a result dict suitable for JSON serialisation.
@@ -59,7 +144,7 @@ def train_model(pipeline, target_column: str) -> dict:
             "It must be included in the training ZIP."
         )
 
-    df_gt = pipeline.training_Y_df
+    df_gt = pipeline.training_Y_df.copy()
     join_col = df_gt.columns[0]
     df_gt = df_gt.rename(columns={join_col: "media_name"})
 
@@ -94,33 +179,109 @@ def train_model(pipeline, target_column: str) -> dict:
                 f"Available columns: {list(df_gt.columns)}"
             )
 
-    pipeline.model = RuleRegressor()
-    pipeline.model.fit(X, y)
+    # --- StandardScaler ---
+    scaler = StandardScaler()
+    X_scaled = pd.DataFrame(scaler.fit_transform(X), columns=X.columns, index=X.index)
 
-    pipeline.rules = (
-        [str(rule) for rule in pipeline.model.model.rules]
-        if hasattr(pipeline.model, 'model')
+    # --- RuleKit ---
+    logger.info("Training RuleKit model...")
+    rulekit_model = RuleRegressor()
+    rulekit_model.fit(X, y)  # RuleKit works on unscaled data
+
+    rules = (
+        [str(rule) for rule in rulekit_model.model.rules]
+        if hasattr(rulekit_model, 'model')
         else []
     )
-    pipeline.mse = round(float(mean_squared_error(y, pipeline.model.predict(X))), 4)
+    rulekit_pred = rulekit_model.predict(X)
+    rulekit_mse = round(float(mean_squared_error(y, rulekit_pred)), 6)
+
+    # --- XGBoost ---
+    logger.info("Training XGBoost model...")
+    xgb_model = XGBRegressor(
+        n_estimators=100, max_depth=4, learning_rate=0.1,
+        random_state=42, verbosity=0,
+    )
+    xgb_model.fit(X_scaled, y)
+    xgb_pred = xgb_model.predict(X_scaled)
+    xgb_mse = round(float(mean_squared_error(y, xgb_pred)), 6)
+
+    # --- Ensemble ---
+    ensemble_pred = RULEKIT_WEIGHT * rulekit_pred + XGB_WEIGHT * xgb_pred
+    ensemble_mse = round(float(mean_squared_error(y, ensemble_pred)), 6)
+
+    logger.info(
+        "Training MSE — RuleKit: %.6f, XGBoost: %.6f, Ensemble: %.6f",
+        rulekit_mse, xgb_mse, ensemble_mse,
+    )
+
+    # --- Cross-Validation ---
+    logger.info("Running %d-fold cross-validation...", min(5, len(X)))
+    cv_results = _run_cross_validation(X, y)
+    logger.info("CV results: %s", cv_results)
+
+    # --- Feature Importance ---
+    xgb_importance = {}
+    if hasattr(xgb_model, 'feature_importances_'):
+        for fname, imp in zip(X.columns, xgb_model.feature_importances_):
+            if imp > 0.001:
+                xgb_importance[fname] = round(float(imp), 4)
+        xgb_importance = dict(sorted(xgb_importance.items(), key=lambda x: -x[1]))
+
+    rulekit_importance = _count_rule_features(rules, list(X.columns))
+
+    # --- Store in pipeline ---
+    pipeline.model = rulekit_model
+    pipeline.xgb_model = xgb_model
+    pipeline.scaler = scaler
+    pipeline.rules = rules
+    pipeline.mse = ensemble_mse
+    pipeline.rulekit_mse = rulekit_mse
+    pipeline.xgb_mse = xgb_mse
     pipeline.is_trained = True
     pipeline.target_variable = target_column
     pipeline._training_columns = list(X.columns)
+    pipeline._scaler_mean = scaler.mean_.tolist()
+    pipeline._scaler_scale = scaler.scale_.tolist()
 
     pipeline.save_state()
 
+    # --- Overfitting warning ---
+    warnings = []
+    if cv_results.get("cv_mse") is not None:
+        if cv_results["cv_mse"] > 2 * ensemble_mse:
+            warnings.append(
+                f"Possible overfitting: CV MSE ({cv_results['cv_mse']:.6f}) "
+                f"is much higher than training MSE ({ensemble_mse:.6f}). "
+                f"Consider adding more training data."
+            )
+
     return {
         "status": "success",
-        "mse": pipeline.mse,
-        "rules_count": len(pipeline.rules),
-        "rules": pipeline.rules,
+        "mse": ensemble_mse,
+        "rulekit_mse": rulekit_mse,
+        "xgb_mse": xgb_mse,
+        "cv_mse": cv_results.get("cv_mse"),
+        "cv_std": cv_results.get("cv_std"),
+        "cv_mae": cv_results.get("cv_mae"),
+        "cv_folds": cv_results.get("n_folds"),
+        "rules_count": len(rules),
+        "rules": rules,
         "feature_spec": pipeline.feature_spec,
+        "feature_importance": {
+            "xgboost": xgb_importance,
+            "rulekit": rulekit_importance,
+        },
+        "warnings": warnings,
         "training_data_X": json.loads(pipeline.training_X.to_json(orient="records")),
     }
 
 
 def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None) -> dict:
-    """Predict for all objects in testing_X, optionally comparing with testing_Y_df."""
+    """Predict for all objects in testing_X using the ensemble model.
+
+    Optionally compares with testing_Y_df for evaluation metrics.
+    """
     if not pipeline.is_trained:
         raise Exception("Model is not trained. Complete Phase 3 first.")
     if pipeline.testing_X is None or pipeline.testing_X.empty:
@@ -132,7 +293,34 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None) -> dict:
         training_columns=pipeline._training_columns,
     )
 
-    predictions = pipeline.model.predict(X_test)
+    # RuleKit prediction
+    rulekit_pred = pipeline.model.predict(X_test)
+
+    # XGBoost prediction (with scaling)
+    if hasattr(pipeline, 'scaler') and pipeline.scaler is not None:
+        X_test_scaled = pd.DataFrame(
+            pipeline.scaler.transform(X_test),
+            columns=X_test.columns, index=X_test.index,
+        )
+    elif hasattr(pipeline, '_scaler_mean') and pipeline._scaler_mean:
+        # Reconstruct scaler from saved params
+        scaler = StandardScaler()
+        scaler.mean_ = np.array(pipeline._scaler_mean)
+        scaler.scale_ = np.array(pipeline._scaler_scale)
+        scaler.n_features_in_ = len(pipeline._scaler_mean)
+        X_test_scaled = pd.DataFrame(
+            scaler.transform(X_test),
+            columns=X_test.columns, index=X_test.index,
+        )
+    else:
+        X_test_scaled = X_test
+
+    if hasattr(pipeline, 'xgb_model') and pipeline.xgb_model is not None:
+        xgb_pred = pipeline.xgb_model.predict(X_test_scaled)
+        predictions = RULEKIT_WEIGHT * rulekit_pred + XGB_WEIGHT * xgb_pred
+    else:
+        # Fallback: RuleKit only (legacy models)
+        predictions = rulekit_pred
 
     actual_values: dict[str, float] = {}
     if testing_Y_df is not None:

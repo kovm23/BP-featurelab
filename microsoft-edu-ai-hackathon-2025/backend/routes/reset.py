@@ -18,12 +18,13 @@ def api_reset():
     from app import pipeline
 
     removed = []
-    for f in glob.glob(os.path.join(CHECKPOINT_FOLDER, "*.json")):
-        try:
-            os.remove(f)
-            removed.append(os.path.basename(f))
-        except OSError as e:
-            logger.warning("Failed to remove %s: %s", f, e)
+    for pattern in ("*.json", "*.pkl", "*.csv"):
+        for f in glob.glob(os.path.join(CHECKPOINT_FOLDER, pattern)):
+            try:
+                os.remove(f)
+                removed.append(os.path.basename(f))
+            except OSError as e:
+                logger.warning("Failed to remove %s: %s", f, e)
 
     # Reset pipeline in-memory state (must match model.py __init__)
     pipeline.feature_spec = {}
@@ -33,11 +34,17 @@ def api_reset():
     pipeline.training_Y_df = None
     pipeline.training_Y_column = ""
     pipeline.model = None
+    pipeline.xgb_model = None
+    pipeline.scaler = None
     pipeline.rules = []
     pipeline.mse = None
+    pipeline.rulekit_mse = None
+    pipeline.xgb_mse = None
     pipeline.is_trained = False
     pipeline.testing_X = None
     pipeline._training_columns = []
+    pipeline._scaler_mean = []
+    pipeline._scaler_scale = []
     pipeline.save_state()
 
     logger.info("Reset: removed checkpoints %s", removed)
