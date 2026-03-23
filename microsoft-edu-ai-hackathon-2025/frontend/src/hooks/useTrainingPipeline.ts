@@ -1,0 +1,428 @@
+/**
+ * Custom hook that encapsulates all training pipeline state and handlers.
+ * Extracted from App.tsx to reduce component complexity.
+ */
+import { useState, useMemo } from "react";
+import type {
+  StatusPayload,
+  TrainResult,
+  PredictionItem,
+  PredictionMetrics,
+} from "@/lib/api";
+import {
+  DISCOVER_URL,
+  EXTRACT_URL,
+  EXTRACT_LOCAL_URL,
+  TRAIN_URL,
+  PREDICT_URL,
+  RESET_URL,
+} from "@/lib/api";
+import { pollProgress } from "@/hooks/usePollProgress";
+
+/* ------------------------------------------------------------------ */
+/*  Persisted state shape (localStorage)                               */
+/* ------------------------------------------------------------------ */
+interface PersistedPipeline {
+  appMode?: "predict" | "train";
+  trainingStep?: 1 | 2 | 3 | 4 | 5;
+  targetVariable?: string;
+  featureSpec?: Record<string, string> | null;
+  modelProvider?: string;
+}
+
+const STORAGE_KEY = "mflPipeline";
+
+function loadPersisted(): PersistedPipeline | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function savePersisted(data: PersistedPipeline) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch {
+    /* quota exceeded or localStorage unavailable */
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Generic extraction helper                                          */
+/* ------------------------------------------------------------------ */
+interface ExtractConfig {
+  url: string;
+  body: BodyInit | string;
+  headers?: Record<string, string>;
+  datasetType: "training" | "testing";
+  phaseLabel: string;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Hook                                                               */
+/* ------------------------------------------------------------------ */
+export function useTrainingPipeline() {
+  const saved = useMemo(loadPersisted, []);
+
+  // --- Phase navigation ---
+  const [trainingStep, setTrainingStep] = useState<1 | 2 | 3 | 4 | 5>(
+    saved?.trainingStep ?? 1,
+  );
+
+  // --- Phase 1: Discovery ---
+  const [targetVariable, setTargetVariable] = useState(
+    saved?.targetVariable ?? "movie memorability score",
+  );
+  const [featureSpec, setFeatureSpec] = useState<Record<string, string> | null>(
+    saved?.featureSpec ?? null,
+  );
+  const [isDiscovering, setIsDiscovering] = useState(false);
+
+  // --- Phase 2: Training extraction ---
+  const [extractionBusy, setExtractionBusy] = useState(false);
+  const [trainingDataX, setTrainingDataX] = useState<Record<string, unknown>[] | null>(null);
+  const [datasetYColumns, setDatasetYColumns] = useState<string[] | null>(null);
+
+  // --- Phase 3: Training ---
+  const [trainingBusy, setTrainingBusy] = useState(false);
+  const [trainResult, setTrainResult] = useState<TrainResult | null>(null);
+
+  // --- Phase 4: Test extraction ---
+  const [testExtractionBusy, setTestExtractionBusy] = useState(false);
+  const [testingDataX, setTestingDataX] = useState<Record<string, unknown>[] | null>(null);
+
+  // --- Phase 5: Prediction ---
+  const [predictBusy, setPredictBusy] = useState(false);
+  const [predictions, setPredictions] = useState<PredictionItem[] | null>(null);
+  const [predictionMetrics, setPredictionMetrics] = useState<PredictionMetrics | null>(null);
+
+  // --- Shared ---
+  const [activeCtrl, setActiveCtrl] = useState<AbortController | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [progressLabel, setProgressLabel] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [modelProvider, setModelProvider] = useState<string>(
+    saved?.modelProvider ?? "qwen2.5vl:7b",
+  );
+
+  // --- Persistence (lightweight — only metadata, no large datasets) ---
+  function persist() {
+    savePersisted({
+      trainingStep,
+      targetVariable,
+      featureSpec,
+      modelProvider,
+    });
+  }
+
+  /* ---------------------------------------------------------------- */
+  /*  Cancel                                                           */
+  /* ---------------------------------------------------------------- */
+  function handleCancelActive() {
+    if (activeCtrl) {
+      activeCtrl.abort();
+      setActiveCtrl(null);
+    }
+    setExtractionBusy(false);
+    setTrainingBusy(false);
+    setTestExtractionBusy(false);
+    setPredictBusy(false);
+    setIsDiscovering(false);
+    setProgress(0);
+    setProgressLabel("");
+  }
+
+  /* ---------------------------------------------------------------- */
+  /*  Phase 1: Discovery                                               */
+  /* ---------------------------------------------------------------- */
+  async function handleDiscover(sampleFiles: File[], labelsFile?: File | null) {
+    setIsDiscovering(true);
+    setFeatureSpec(null);
+    setError(null);
+
+    const formData = new FormData();
+    for (const f of sampleFiles) formData.append("files", f, f.name);
+    formData.append("target_variable", targetVariable);
+    formData.append("model", modelProvider);
+    if (labelsFile) formData.append("labels_file", labelsFile);
+
+    try {
+      const res = await fetch(DISCOVER_URL, { method: "POST", body: formData });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Feature Discovery selhala");
+      }
+      const data = await res.json();
+      if (data.job_id) {
+        const ctrl = new AbortController();
+        setActiveCtrl(ctrl);
+        await pollProgress(
+          data.job_id,
+          (s) => {
+            setProgress(Math.max(0, Math.min(100, s.progress ?? 0)));
+            setProgressLabel(s.stage || "");
+            if (s.done && !s.error) {
+              const features = (s as unknown as Record<string, unknown>)
+                .suggested_features as Record<string, string>;
+              if (features) setFeatureSpec(features);
+            }
+            if (s.done && s.error) setError("Fáze 1 selhala: " + s.error);
+          },
+          ctrl.signal,
+        );
+      } else if (data.suggested_features) {
+        setFeatureSpec(data.suggested_features);
+      }
+    } catch (err: unknown) {
+      setError("Fáze 1 selhala: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setIsDiscovering(false);
+      setActiveCtrl(null);
+    }
+  }
+
+  /* ---------------------------------------------------------------- */
+  /*  Generic extraction (Phase 2 + 4)                                 */
+  /* ---------------------------------------------------------------- */
+  async function _runExtract(config: ExtractConfig) {
+    const isTraining = config.datasetType === "training";
+    const setBusy = isTraining ? setExtractionBusy : setTestExtractionBusy;
+    const setData = isTraining ? setTrainingDataX : setTestingDataX;
+
+    setBusy(true);
+    setData(null);
+    setProgress(0);
+    setProgressLabel("Spouštím extrakci...");
+    setError(null);
+
+    try {
+      const res = await fetch(config.url, {
+        method: "POST",
+        body: config.body,
+        headers: config.headers,
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Extrakce selhala");
+      }
+      const data = await res.json();
+
+      if (data.job_id) {
+        const ctrl = new AbortController();
+        setActiveCtrl(ctrl);
+        await pollProgress(
+          data.job_id,
+          (s: StatusPayload) => {
+            setProgress(Math.max(0, Math.min(100, s.progress ?? 0)));
+            setProgressLabel(s.stage || "");
+            if (s.done && s.details?.status === "success") {
+              setData(s.details.dataset_X);
+              if (isTraining) setDatasetYColumns(s.details.dataset_Y_columns || null);
+            }
+            if (s.done && s.error) setError(`${config.phaseLabel} selhala: ${s.error}`);
+          },
+          ctrl.signal,
+        );
+      }
+    } catch (e: unknown) {
+      setError(`${config.phaseLabel} selhala: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /* Phase 2: upload */
+  async function handleExtractTraining(zipFile: File, labelsFile?: File | null) {
+    const formData = new FormData();
+    formData.append("file", zipFile);
+    formData.append("model", modelProvider);
+    formData.append("feature_spec", JSON.stringify(featureSpec));
+    formData.append("dataset_type", "training");
+    if (labelsFile) formData.append("labels_file", labelsFile);
+
+    return _runExtract({
+      url: EXTRACT_URL,
+      body: formData,
+      datasetType: "training",
+      phaseLabel: "Fáze 2",
+    });
+  }
+
+  /* Phase 2: server path */
+  async function handleExtractTrainingLocal(zipPath: string, labelsPath?: string) {
+    return _runExtract({
+      url: EXTRACT_LOCAL_URL,
+      body: JSON.stringify({
+        zip_path: zipPath,
+        labels_path: labelsPath || undefined,
+        model: modelProvider,
+        feature_spec: featureSpec,
+        dataset_type: "training",
+      }),
+      headers: { "Content-Type": "application/json" },
+      datasetType: "training",
+      phaseLabel: "Fáze 2",
+    });
+  }
+
+  /* Phase 4: upload */
+  async function handleExtractTesting(zipFile: File) {
+    const formData = new FormData();
+    formData.append("file", zipFile);
+    formData.append("model", modelProvider);
+    formData.append("feature_spec", JSON.stringify(featureSpec));
+    formData.append("dataset_type", "testing");
+
+    return _runExtract({
+      url: EXTRACT_URL,
+      body: formData,
+      datasetType: "testing",
+      phaseLabel: "Fáze 4",
+    });
+  }
+
+  /* Phase 4: server path */
+  async function handleExtractTestingLocal(zipPath: string) {
+    return _runExtract({
+      url: EXTRACT_LOCAL_URL,
+      body: JSON.stringify({
+        zip_path: zipPath,
+        model: modelProvider,
+        feature_spec: featureSpec,
+        dataset_type: "testing",
+      }),
+      headers: { "Content-Type": "application/json" },
+      datasetType: "testing",
+      phaseLabel: "Fáze 4",
+    });
+  }
+
+  /* ---------------------------------------------------------------- */
+  /*  Phase 3: Training                                                */
+  /* ---------------------------------------------------------------- */
+  async function handleTrain(targetColumn: string) {
+    setTrainingBusy(true);
+    setTrainResult(null);
+    setError(null);
+
+    try {
+      const res = await fetch(TRAIN_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target_column: targetColumn }),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Trénink selhal");
+      }
+      const data: TrainResult = await res.json();
+      setTrainResult(data);
+    } catch (e: unknown) {
+      setError("Fáze 3 selhala: " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setTrainingBusy(false);
+    }
+  }
+
+  /* ---------------------------------------------------------------- */
+  /*  Phase 5: Prediction                                              */
+  /* ---------------------------------------------------------------- */
+  async function handlePredict(labelsFile?: File | null) {
+    setPredictBusy(true);
+    setPredictions(null);
+    setPredictionMetrics(null);
+    setError(null);
+
+    try {
+      let res: Response;
+      if (labelsFile) {
+        const formData = new FormData();
+        formData.append("labels_file", labelsFile);
+        res = await fetch(PREDICT_URL, { method: "POST", body: formData });
+      } else {
+        res = await fetch(PREDICT_URL, { method: "POST" });
+      }
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Predikce selhala");
+      }
+      const data = await res.json();
+      setPredictions(data.predictions);
+      setPredictionMetrics(data.metrics || null);
+    } catch (e: unknown) {
+      setError("Fáze 5 selhala: " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setPredictBusy(false);
+    }
+  }
+
+  /* ---------------------------------------------------------------- */
+  /*  Reset                                                            */
+  /* ---------------------------------------------------------------- */
+  function resetPipeline() {
+    setTrainingStep(1);
+    setTargetVariable("movie memorability score");
+    setFeatureSpec(null);
+    setIsDiscovering(false);
+    setExtractionBusy(false);
+    setTrainingDataX(null);
+    setDatasetYColumns(null);
+    setTrainingBusy(false);
+    setTrainResult(null);
+    setTestExtractionBusy(false);
+    setTestingDataX(null);
+    setPredictBusy(false);
+    setPredictions(null);
+    setPredictionMetrics(null);
+    setProgress(0);
+    setProgressLabel("");
+    setError(null);
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      /* */
+    }
+    fetch(RESET_URL, { method: "POST" }).catch(() => {});
+  }
+
+  return {
+    // Navigation
+    trainingStep, setTrainingStep,
+    // Phase 1
+    targetVariable, setTargetVariable,
+    featureSpec, setFeatureSpec,
+    isDiscovering,
+    handleDiscover,
+    // Phase 2
+    extractionBusy,
+    trainingDataX,
+    datasetYColumns,
+    handleExtractTraining,
+    handleExtractTrainingLocal,
+    // Phase 3
+    trainingBusy,
+    trainResult,
+    handleTrain,
+    // Phase 4
+    testExtractionBusy,
+    testingDataX,
+    handleExtractTesting,
+    handleExtractTestingLocal,
+    // Phase 5
+    predictBusy,
+    predictions,
+    predictionMetrics,
+    handlePredict,
+    // Common
+    modelProvider, setModelProvider,
+    progress,
+    progressLabel,
+    error,
+    clearError: () => setError(null),
+    handleCancelActive,
+    resetPipeline,
+    persist,
+  };
+}

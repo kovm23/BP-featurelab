@@ -32,19 +32,9 @@ import {
 import type {
   FileType,
   BackendOk,
-  StatusPayload,
-  ExtractDetails,
-  TrainResult,
-  PredictionItem,
-  PredictionMetrics,
 } from "@/lib/api";
 import {
   AVAILABLE_MODELS,
-  DISCOVER_URL,
-  EXTRACT_URL,
-  EXTRACT_LOCAL_URL,
-  TRAIN_URL,
-  PREDICT_URL,
   ANALYZE_URL,
   RESET_URL,
   TYPE_STYLES,
@@ -65,86 +55,19 @@ import {
   CopyButton,
 
 } from "@/lib/helpers";
-import { pollProgress } from "@/hooks/usePollProgress";
 import { Guide } from "@/components/Guide";
 import { TrainingView } from "@/components/TrainingView";
+import { useTrainingPipeline } from "@/hooks/useTrainingPipeline";
 
 // =====================================================
 // HLAVNÍ KOMPONENTA
 // =====================================================
 export default function MediaFeatureLabPro() {
-  // --- Restore persisted pipeline state ---
-  const savedPipeline = useMemo(() => {
-    try {
-      const raw = localStorage.getItem("mflPipeline");
-      return raw ? JSON.parse(raw) : null;
-    } catch {
-      return null;
-    }
-  }, []);
-
-  const [appMode, setAppMode] = useState<"predict" | "train">(
-    savedPipeline?.appMode ?? "train"
-  );
-
+  const [appMode, setAppMode] = useState<"predict" | "train">("train");
   const [resetKey, setResetKey] = useState(0);
 
-  // --- Training pipeline state ---
-  const [trainingStep, setTrainingStep] = useState<1 | 2 | 3 | 4 | 5>(
-    savedPipeline?.trainingStep ?? 1
-  );
-  const [targetVariable, setTargetVariable] = useState(
-    savedPipeline?.targetVariable ?? "movie memorability score"
-  );
-  const [featureSpec, setFeatureSpec] = useState<Record<string, string> | null>(
-    savedPipeline?.featureSpec ?? null
-  );
-  const [isDiscovering, setIsDiscovering] = useState(false);
-  const [activeCtrl, setActiveCtrl] = useState<AbortController | null>(null);
-
-  function handleCancelActive() {
-    if (activeCtrl) {
-      activeCtrl.abort();
-      setActiveCtrl(null);
-    }
-    setExtractionBusy(false);
-    setTrainingBusy(false);
-    setTestExtractionBusy(false);
-    setPredictBusy(false);
-    setIsDiscovering(false);
-    setProgress(0);
-    setProgressLabel("");
-  }
-
-  // Phase 2: extraction
-  const [extractionBusy, setExtractionBusy] = useState(false);
-  const [trainingDataX, setTrainingDataX] = useState<Record<string, unknown>[] | null>(
-    savedPipeline?.trainingDataX ?? null
-  );
-  const [datasetYColumns, setDatasetYColumns] = useState<string[] | null>(
-    savedPipeline?.datasetYColumns ?? null
-  );
-
-  // Phase 3: training
-  const [trainingBusy, setTrainingBusy] = useState(false);
-  const [trainResult, setTrainResult] = useState<TrainResult | null>(
-    savedPipeline?.trainResult ?? null
-  );
-
-  // Phase 4: test extraction
-  const [testExtractionBusy, setTestExtractionBusy] = useState(false);
-  const [testingDataX, setTestingDataX] = useState<Record<string, unknown>[] | null>(
-    savedPipeline?.testingDataX ?? null
-  );
-
-  // Phase 5: predictions
-  const [predictBusy, setPredictBusy] = useState(false);
-  const [predictions, setPredictions] = useState<PredictionItem[] | null>(
-    savedPipeline?.predictions ?? null
-  );
-  const [predictionMetrics, setPredictionMetrics] = useState<PredictionMetrics | null>(
-    savedPipeline?.predictionMetrics ?? null
-  );
+  // All training pipeline state lives in a custom hook
+  const pipeline = useTrainingPipeline();
 
   const [files, setFiles] = useState<File[]>([]);
   const [fileType, setFileType] = useState<FileType | null>(null);
@@ -180,46 +103,9 @@ export default function MediaFeatureLabPro() {
     return false;
   });
 
-  const [modelProvider, setModelProvider] = useState<string>(() => {
-    const saved = localStorage.getItem("mflModelProvider");
-    if (saved && AVAILABLE_MODELS.some((m) => m.id === saved)) return saved;
-    return AVAILABLE_MODELS[1].id;
-  });
-
-  useEffect(() => {
-    localStorage.setItem("mflModelProvider", modelProvider);
-  }, [modelProvider]);
-
   useEffect(() => {
     localStorage.setItem("mflTheme", deluxe ? "dark" : "light");
   }, [deluxe]);
-
-  // --- Persist pipeline state ---
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        "mflPipeline",
-        JSON.stringify({
-          appMode,
-          trainingStep,
-          targetVariable,
-          featureSpec,
-          trainingDataX,
-          datasetYColumns,
-          trainResult,
-          testingDataX,
-          predictions,
-          predictionMetrics,
-        })
-      );
-    } catch {
-      /* localStorage unavailable or quota exceeded */
-    }
-  }, [
-    appMode, trainingStep, targetVariable, featureSpec,
-    trainingDataX, datasetYColumns, trainResult,
-    testingDataX, predictions, predictionMetrics,
-  ]);
 
   const [showGuide, setShowGuide] = useState(() => {
     try {
@@ -316,320 +202,7 @@ export default function MediaFeatureLabPro() {
     };
   }, [uploadCtrl]);
 
-  // =========================================================
-  // HANDLER: Fáze 1 – Feature Discovery
-  // =========================================================
-  async function handleDiscover(sampleFiles: File[], labelsFile?: File | null) {
-    setIsDiscovering(true);
-    setFeatureSpec(null);
-    setError(null);
-
-    const formData = new FormData();
-    for (const f of sampleFiles) {
-      formData.append("files", f, f.name);
-    }
-    formData.append("target_variable", targetVariable);
-    formData.append("model", modelProvider);
-    if (labelsFile) {
-      formData.append("labels_file", labelsFile);
-    }
-
-    try {
-      const res = await fetch(DISCOVER_URL, { method: "POST", body: formData });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || "Feature Discovery selhala");
-      }
-      const data = await res.json();
-      if (data.job_id) {
-        const ctrl = new AbortController();
-        setActiveCtrl(ctrl);
-        await pollProgress(
-          data.job_id,
-          (s) => {
-            setProgress(Math.max(0, Math.min(100, s.progress ?? 0)));
-            setProgressLabel(s.stage || "");
-            if (s.done && !s.error) {
-              const features = (s as unknown as Record<string, unknown>).suggested_features as Record<string, string>;
-              if (features) setFeatureSpec(features);
-            }
-            if (s.done && s.error) setError("Fáze 1 selhala: " + s.error);
-          },
-          ctrl.signal,
-        );
-      } else if (data.suggested_features) {
-        setFeatureSpec(data.suggested_features);
-      }
-    } catch (err: unknown) {
-      setError("Fáze 1 selhala: " + (err instanceof Error ? err.message : String(err)));
-    } finally {
-      setIsDiscovering(false);
-      setActiveCtrl(null);
-    }
-  }
-
-  // =========================================================
-  // HANDLER: Fáze 2 – Feature Extraction (training data)
-  // =========================================================
-  async function handleExtractTraining(zipFile: File, labelsFile?: File | null) {
-    setExtractionBusy(true);
-    setTrainingDataX(null);
-    setProgress(0);
-    setProgressLabel("Odesílám dataset...");
-    setError(null);
-
-    const formData = new FormData();
-    formData.append("file", zipFile);
-    formData.append("model", modelProvider);
-    formData.append("feature_spec", JSON.stringify(featureSpec));
-    formData.append("dataset_type", "training");
-    if (labelsFile) {
-      formData.append("labels_file", labelsFile);
-    }
-
-    try {
-      const res = await fetch(EXTRACT_URL, { method: "POST", body: formData });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || "Extrakce selhala");
-      }
-      const data = await res.json();
-
-      if (data.job_id) {
-        const ctrl = new AbortController();
-        setActiveCtrl(ctrl);
-        await pollProgress(
-          data.job_id,
-          (s: StatusPayload) => {
-            setProgress(Math.max(0, Math.min(100, s.progress ?? 0)));
-            setProgressLabel(s.stage || "");
-
-            if (s.done && s.details?.status === "success") {
-              setTrainingDataX(s.details.dataset_X);
-              setDatasetYColumns(s.details.dataset_Y_columns || null);
-            }
-            if (s.done && s.error) {
-              setError("Fáze 2 selhala: " + s.error);
-            }
-          },
-          ctrl.signal,
-        );
-      }
-    } catch (e: unknown) {
-      setError("Fáze 2 selhala: " + (e instanceof Error ? e.message : String(e)));
-    } finally {
-      setExtractionBusy(false);
-    }
-  }
-
-  // =========================================================
-  // HANDLER: Fáze 3 – ML Training (RuleKit)
-  // =========================================================
-  async function handleTrain(targetColumn: string) {
-    setTrainingBusy(true);
-    setTrainResult(null);
-    setError(null);
-
-    try {
-      const res = await fetch(TRAIN_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ target_column: targetColumn }),
-      });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || "Trénink selhal");
-      }
-      const data: TrainResult = await res.json();
-      setTrainResult(data);
-    } catch (e: unknown) {
-      setError("Fáze 3 selhala: " + (e instanceof Error ? e.message : String(e)));
-    } finally {
-      setTrainingBusy(false);
-    }
-  }
-
-  // =========================================================
-  // HANDLER: Fáze 4 – Test Data Feature Extraction
-  // =========================================================
-  async function handleExtractTesting(zipFile: File) {
-    setTestExtractionBusy(true);
-    setTestingDataX(null);
-    setProgress(0);
-    setProgressLabel("Odesílám testovací dataset...");
-    setError(null);
-
-    const formData = new FormData();
-    formData.append("file", zipFile);
-    formData.append("model", modelProvider);
-    formData.append("feature_spec", JSON.stringify(featureSpec));
-    formData.append("dataset_type", "testing");
-
-    try {
-      const res = await fetch(EXTRACT_URL, { method: "POST", body: formData });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || "Extrakce selhala");
-      }
-      const data = await res.json();
-
-      if (data.job_id) {
-        const ctrl = new AbortController();
-        setActiveCtrl(ctrl);
-        await pollProgress(
-          data.job_id,
-          (s: StatusPayload) => {
-            setProgress(Math.max(0, Math.min(100, s.progress ?? 0)));
-            setProgressLabel(s.stage || "");
-
-            if (s.done && s.details?.status === "success") {
-              setTestingDataX(s.details.dataset_X);
-            }
-            if (s.done && s.error) {
-              setError("Fáze 4 selhala: " + s.error);
-            }
-          },
-          ctrl.signal,
-        );
-      }
-    } catch (e: unknown) {
-      setError("Fáze 4 selhala: " + (e instanceof Error ? e.message : String(e)));
-    } finally {
-      setTestExtractionBusy(false);
-    }
-  }
-
-  // =========================================================
-  // HANDLER: Fáze 2 – Feature Extraction ze serveru (local path)
-  // =========================================================
-  async function handleExtractTrainingLocal(zipPath: string, labelsPath?: string) {
-    setExtractionBusy(true);
-    setTrainingDataX(null);
-    setProgress(0);
-    setProgressLabel("Spouštím extrakci ze serveru...");
-    setError(null);
-
-    try {
-      const res = await fetch(EXTRACT_LOCAL_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          zip_path: zipPath,
-          labels_path: labelsPath || undefined,
-          model: modelProvider,
-          feature_spec: featureSpec,
-          dataset_type: "training",
-        }),
-      });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || "Extrakce selhala");
-      }
-      const data = await res.json();
-
-      if (data.job_id) {
-        const ctrl = new AbortController();
-        setActiveCtrl(ctrl);
-        await pollProgress(
-          data.job_id,
-          (s: StatusPayload) => {
-            setProgress(Math.max(0, Math.min(100, s.progress ?? 0)));
-            setProgressLabel(s.stage || "");
-            if (s.done && s.details?.status === "success") {
-              setTrainingDataX(s.details.dataset_X);
-              setDatasetYColumns(s.details.dataset_Y_columns || null);
-            }
-            if (s.done && s.error) setError("Fáze 2 selhala: " + s.error);
-          },
-          ctrl.signal,
-        );
-      }
-    } catch (e: unknown) {
-      setError("Fáze 2 selhala: " + (e instanceof Error ? e.message : String(e)));
-    } finally {
-      setExtractionBusy(false);
-    }
-  }
-
-  // =========================================================
-  // HANDLER: Fáze 4 – Test Extraction ze serveru (local path)
-  // =========================================================
-  async function handleExtractTestingLocal(zipPath: string) {
-    setTestExtractionBusy(true);
-    setTestingDataX(null);
-    setProgress(0);
-    setProgressLabel("Spouštím extrakci ze serveru...");
-    setError(null);
-
-    try {
-      const res = await fetch(EXTRACT_LOCAL_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          zip_path: zipPath,
-          model: modelProvider,
-          feature_spec: featureSpec,
-          dataset_type: "testing",
-        }),
-      });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || "Extrakce selhala");
-      }
-      const data = await res.json();
-
-      if (data.job_id) {
-        const ctrl = new AbortController();
-        setActiveCtrl(ctrl);
-        await pollProgress(
-          data.job_id,
-          (s: StatusPayload) => {
-            setProgress(Math.max(0, Math.min(100, s.progress ?? 0)));
-            setProgressLabel(s.stage || "");
-            if (s.done && s.details?.status === "success") setTestingDataX(s.details.dataset_X);
-            if (s.done && s.error) setError("Fáze 4 selhala: " + s.error);
-          },
-          ctrl.signal,
-        );
-      }
-    } catch (e: unknown) {
-      setError("Fáze 4 selhala: " + (e instanceof Error ? e.message : String(e)));
-    } finally {
-      setTestExtractionBusy(false);
-    }
-  }
-
-  // =========================================================
-  // HANDLER: Fáze 5 – Predikce
-  // =========================================================
-  async function handlePredict(labelsFile?: File | null) {
-    setPredictBusy(true);
-    setPredictions(null);
-    setPredictionMetrics(null);
-    setError(null);
-
-    try {
-      let res: Response;
-      if (labelsFile) {
-        const formData = new FormData();
-        formData.append("labels_file", labelsFile);
-        res = await fetch(PREDICT_URL, { method: "POST", body: formData });
-      } else {
-        res = await fetch(PREDICT_URL, { method: "POST" });
-      }
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || "Predikce selhala");
-      }
-      const data = await res.json();
-      setPredictions(data.predictions);
-      setPredictionMetrics(data.metrics || null);
-    } catch (e: unknown) {
-      setError("Fáze 5 selhala: " + (e instanceof Error ? e.message : String(e)));
-    } finally {
-      setPredictBusy(false);
-    }
-  }
+  // Training pipeline handlers come from custom hook (see above)
 
   // =========================================================
   // HANDLER: Upload / Predict
@@ -657,7 +230,7 @@ export default function MediaFeatureLabPro() {
       const form = new FormData();
       for (const f of files) form.append("files", f, f.name);
       if (description.trim()) form.append("description", description.trim());
-      form.append("model", modelProvider);
+      form.append("model", pipeline.modelProvider);
 
       const res = await fetch(ANALYZE_URL, {
         method: "POST",
@@ -709,31 +282,15 @@ export default function MediaFeatureLabPro() {
     setProgressLabel("");
     setHasRealProgress(false);
     setStep(1);
-    // Reset training state
-    setTrainingStep(1);
-    setTargetVariable("movie memorability score");
-    setFeatureSpec(null);
-    setIsDiscovering(false);
-    setExtractionBusy(false);
-    setTrainingDataX(null);
-    setDatasetYColumns(null);
-    setTrainingBusy(false);
-    setTrainResult(null);
-    setTestExtractionBusy(false);
-    setTestingDataX(null);
-    setPredictBusy(false);
-    setPredictions(null);
-    setPredictionMetrics(null);
+    // Reset training pipeline (clears state + calls backend /reset)
+    pipeline.resetPipeline();
     try {
       localStorage.removeItem("mflFilesMeta");
       localStorage.removeItem("mflFileType");
-      localStorage.removeItem("mflPipeline");
       localStorage.removeItem("mflGuideSeen");
     } catch {
       /* localStorage unavailable */
     }
-    // Clear backend checkpoints and pipeline state
-    fetch(RESET_URL, { method: "POST" }).catch(() => {});
     // Force remount of TrainingView to clear local component state
     setResetKey((k) => k + 1);
   }
@@ -885,43 +442,43 @@ export default function MediaFeatureLabPro() {
           <TrainingView
             key={resetKey}
             deluxe={deluxe}
-            onCancel={handleCancelActive}
+            onCancel={pipeline.handleCancelActive}
             /* Phase 1 */
-            onDiscoverStart={handleDiscover}
-            isDiscovering={isDiscovering}
-            targetVariable={targetVariable}
-            setTargetVariable={setTargetVariable}
-            featureSpec={featureSpec}
-            setFeatureSpec={setFeatureSpec}
+            onDiscoverStart={pipeline.handleDiscover}
+            isDiscovering={pipeline.isDiscovering}
+            targetVariable={pipeline.targetVariable}
+            setTargetVariable={pipeline.setTargetVariable}
+            featureSpec={pipeline.featureSpec}
+            setFeatureSpec={pipeline.setFeatureSpec}
             /* Phase 2 */
-            onExtractTraining={handleExtractTraining}
-            onExtractTrainingLocal={handleExtractTrainingLocal}
-            isExtracting={extractionBusy}
-            trainingDataX={trainingDataX}
-            datasetYColumns={datasetYColumns}
+            onExtractTraining={pipeline.handleExtractTraining}
+            onExtractTrainingLocal={pipeline.handleExtractTrainingLocal}
+            isExtracting={pipeline.extractionBusy}
+            trainingDataX={pipeline.trainingDataX}
+            datasetYColumns={pipeline.datasetYColumns}
             /* Phase 3 */
-            onTrain={handleTrain}
-            isTraining={trainingBusy}
-            trainResult={trainResult}
+            onTrain={pipeline.handleTrain}
+            isTraining={pipeline.trainingBusy}
+            trainResult={pipeline.trainResult}
             /* Phase 4 */
-            onExtractTesting={handleExtractTesting}
-            onExtractTestingLocal={handleExtractTestingLocal}
-            isExtractingTest={testExtractionBusy}
-            testingDataX={testingDataX}
+            onExtractTesting={pipeline.handleExtractTesting}
+            onExtractTestingLocal={pipeline.handleExtractTestingLocal}
+            isExtractingTest={pipeline.testExtractionBusy}
+            testingDataX={pipeline.testingDataX}
             /* Phase 5 */
-            onPredict={handlePredict}
-            isPredicting={predictBusy}
-            predictions={predictions}
-            predictionMetrics={predictionMetrics}
+            onPredict={pipeline.handlePredict}
+            isPredicting={pipeline.predictBusy}
+            predictions={pipeline.predictions}
+            predictionMetrics={pipeline.predictionMetrics}
             /* Common */
-            modelProvider={modelProvider}
-            setModelProvider={setModelProvider}
-            step={trainingStep}
-            onGoToStep={(s) => setTrainingStep(s as 1 | 2 | 3 | 4 | 5)}
-            progress={progress}
-            progressLabel={progressLabel}
-            error={error}
-            clearError={() => setError(null)}
+            modelProvider={pipeline.modelProvider}
+            setModelProvider={pipeline.setModelProvider}
+            step={pipeline.trainingStep}
+            onGoToStep={(s) => pipeline.setTrainingStep(s as 1 | 2 | 3 | 4 | 5)}
+            progress={pipeline.progress}
+            progressLabel={pipeline.progressLabel}
+            error={pipeline.error}
+            clearError={pipeline.clearError}
           />
         ) : (
           <div className="grid grid-cols-1 gap-6">
@@ -1229,8 +786,8 @@ export default function MediaFeatureLabPro() {
                     <div className="relative group">
                       <select
                         id="model_provider"
-                        value={modelProvider}
-                        onChange={(e) => setModelProvider(e.target.value)}
+                        value={pipeline.modelProvider}
+                        onChange={(e) => pipeline.setModelProvider(e.target.value)}
                         className={`appearance-none text-xs font-bold pl-2.5 pr-7 py-1.5 rounded-md outline-none transition-all cursor-pointer ${
                           deluxe
                             ? "bg-transparent text-white hover:bg-white/10"
