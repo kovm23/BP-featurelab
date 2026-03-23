@@ -641,7 +641,7 @@ export function TrainingView({
           >
             <UploadCloud className={`h-8 w-8 mx-auto mb-3 ${cls(deluxe, "text-slate-400", "text-slate-500")}`} />
             <p className={`text-sm font-medium mb-1 ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>
-              Nahrajte ukázková média (více souborů = lepší návrh featur)
+              Nahrajte ukázková média (doporučeno 3–5 vzorků = lepší návrh featur)
             </p>
             <input
               type="file"

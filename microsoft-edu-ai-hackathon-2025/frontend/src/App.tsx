@@ -338,11 +338,30 @@ export default function MediaFeatureLabPro() {
         throw new Error(errData.error || "Feature Discovery selhala");
       }
       const data = await res.json();
-      setFeatureSpec(data.suggested_features);
+      if (data.job_id) {
+        const ctrl = new AbortController();
+        setActiveCtrl(ctrl);
+        await pollProgress(
+          data.job_id,
+          (s) => {
+            setProgress(Math.max(0, Math.min(100, s.progress ?? 0)));
+            setProgressLabel(s.stage || "");
+            if (s.done && !s.error) {
+              const features = (s as unknown as Record<string, unknown>).suggested_features as Record<string, string>;
+              if (features) setFeatureSpec(features);
+            }
+            if (s.done && s.error) setError("Fáze 1 selhala: " + s.error);
+          },
+          ctrl.signal,
+        );
+      } else if (data.suggested_features) {
+        setFeatureSpec(data.suggested_features);
+      }
     } catch (err: unknown) {
       setError("Fáze 1 selhala: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setIsDiscovering(false);
+      setActiveCtrl(null);
     }
   }
 

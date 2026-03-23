@@ -1,8 +1,11 @@
 """Phase 1: Feature discovery from sample media files."""
+import json
 import logging
+import re
 
 import pandas as pd
 
+from services.openai_service import local_client
 from services.processing import process_single_media
 
 logger = logging.getLogger(__name__)
@@ -48,30 +51,63 @@ def discover_features(
                 f"well with these target values.\n"
             )
 
-    prompt = (
-        f"You are a machine learning feature engineer.\n"
-        f"The goal is to build a model to predict: '{target_variable}'.\n"
-        f"Analyze the provided media sample(s) and suggest 3 to 8 features "
-        f"that are highly relevant for predicting the target.\n\n"
-        f"For each feature, provide:\n"
-        f"- A descriptive name (lowercase_with_underscores)\n"
-        f"- Expected value range, units, or categories\n\n"
-        f"{labels_context}"
-        f"Output STRICTLY a JSON object where keys are feature names "
-        f"and values are descriptions with ranges/units.\n"
-        f"Example: {{\"movie_length\": \"duration in seconds (0-7200)\", "
-        f"\"extreme_language\": \"score 0-10\"}}"
+    # Step 1: analyse each sample independently to gather observations
+    observations = []
+    for path in media_paths[:5]:  # up to 5 samples
+        obs_prompt = (
+            "You are a media analysis AI.\n"
+            "Carefully observe this media clip and describe what you perceive — "
+            "visual content, motion, audio characteristics, mood, pacing, people, "
+            "objects, environment, and any other notable properties.\n"
+            "Be objective and specific. Output a concise bullet-point list of observations."
+        )
+        result = process_single_media(path, prompt=obs_prompt, model_name=model_name)
+        raw = result.get("analysis") or result.get("description") or str(result)
+        if raw:
+            observations.append(str(raw))
+
+    observations_text = "\n\n---\n\n".join(
+        f"Sample {i+1}:\n{obs}" for i, obs in enumerate(observations)
     )
 
+    # Step 2: ask LLM to derive a universal feature spec from the observations
+    synthesis_prompt = (
+        f"You are a machine learning feature engineer.\n"
+        f"Your goal is to predict: '{target_variable}'.\n\n"
+        f"Below are observations from {len(observations)} media sample(s):\n\n"
+        f"{observations_text}\n\n"
+        f"{labels_context}"
+        f"Based on these observations, define EXACTLY 5 to 8 measurable features that:\n"
+        f"- Can be extracted from ANY media clip of this type (not just these samples)\n"
+        f"- Are likely to correlate with '{target_variable}'\n"
+        f"- Cover DIVERSE perceptual dimensions (visual, audio, temporal, semantic) — do NOT repeat the same dimension multiple times\n"
+        f"- Have clear, unambiguous measurement criteria\n"
+        f"- Are independent from each other (avoid redundant or highly correlated features)\n\n"
+        f"Output STRICTLY a JSON object with 5–8 keys. Keys are feature names "
+        f"(lowercase_with_underscores). Values describe the measurement scale or "
+        f"categories. DO NOT output more than 8 features.\n"
+        f"Example: {{\"action_intensity\": \"score 0-10, how dynamic/fast-paced the clip is\", "
+        f"\"speech_presence\": \"binary 0 or 1, whether speech is audible\"}}"
+    )
+
+    response = local_client.chat.completions.create(
+        model=model_name,
+        messages=[{"role": "user", "content": synthesis_prompt}],
+        temperature=0.3,
+    )
+    raw_content = response.choices[0].message.content or ""
+    match = re.search(r"\{.*\}", raw_content, re.DOTALL)
     all_features = {}
-    for path in media_paths[:3]:  # max 3 samples
-        result = process_single_media(path, prompt=prompt, model_name=model_name)
-        analysis = result.get("analysis")
-        if isinstance(analysis, dict):
-            features = analysis.get("attributes", analysis)
+    if match:
+        try:
+            all_features = json.loads(match.group())
             for key in _META_KEYS:
-                features.pop(key, None)
-            all_features.update(features)
+                all_features.pop(key, None)
+            # Cap at 8 features
+            if len(all_features) > 8:
+                all_features = dict(list(all_features.items())[:8])
+        except json.JSONDecodeError:
+            logger.warning("Could not parse feature spec JSON from synthesis step")
 
     if all_features:
         pipeline.feature_spec = all_features
