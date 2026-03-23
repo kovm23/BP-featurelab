@@ -46,6 +46,7 @@ import {
   TRAIN_URL,
   PREDICT_URL,
   ANALYZE_URL,
+  RESET_URL,
   TYPE_STYLES,
 } from "@/lib/api";
 import {
@@ -729,6 +730,8 @@ export default function MediaFeatureLabPro() {
     } catch {
       /* localStorage unavailable */
     }
+    // Clear backend checkpoints and pipeline state
+    fetch(RESET_URL, { method: "POST" }).catch(() => {});
   }
 
   const outputs: Record<string, unknown> = useMemo(
