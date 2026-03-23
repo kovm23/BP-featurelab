@@ -87,6 +87,8 @@ export default function MediaFeatureLabPro() {
     savedPipeline?.appMode ?? "train"
   );
 
+  const [resetKey, setResetKey] = useState(0);
+
   // --- Training pipeline state ---
   const [trainingStep, setTrainingStep] = useState<1 | 2 | 3 | 4 | 5>(
     savedPipeline?.trainingStep ?? 1
@@ -732,6 +734,8 @@ export default function MediaFeatureLabPro() {
     }
     // Clear backend checkpoints and pipeline state
     fetch(RESET_URL, { method: "POST" }).catch(() => {});
+    // Force remount of TrainingView to clear local component state
+    setResetKey((k) => k + 1);
   }
 
   const outputs: Record<string, unknown> = useMemo(
@@ -879,6 +883,7 @@ export default function MediaFeatureLabPro() {
         {/* BODY */}
         {appMode === "train" ? (
           <TrainingView
+            key={resetKey}
             deluxe={deluxe}
             onCancel={handleCancelActive}
             /* Phase 1 */
