@@ -14,7 +14,7 @@ export default defineConfig({
     allowedHosts: true,
     host: true,
     port: 5173,
-    hmr: { clientPort: 443, protocol: 'wss' },
+    hmr: false,
     proxy: {
       '/upload': { target: 'http://127.0.0.1:5000', changeOrigin: true },
       '/discover': { target: 'http://127.0.0.1:5000', changeOrigin: true },
