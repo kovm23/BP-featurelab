@@ -96,11 +96,13 @@ def discover_features(
         temperature=0.3,
     )
     raw_content = response.choices[0].message.content or ""
-    match = re.search(r"\{.*\}", raw_content, re.DOTALL)
+    # Use json decoder to find the first valid JSON object
     all_features = {}
-    if match:
+    start = raw_content.find("{")
+    if start != -1:
         try:
-            all_features = json.loads(match.group())
+            decoder = json.JSONDecoder()
+            all_features, _ = decoder.raw_decode(raw_content, start)
             for key in _META_KEYS:
                 all_features.pop(key, None)
             # Cap at 8 features

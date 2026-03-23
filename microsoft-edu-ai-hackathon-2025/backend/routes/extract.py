@@ -6,17 +6,48 @@ import shutil
 import threading
 import uuid
 
-import pandas as pd
 from flask import Blueprint, jsonify, request
 from werkzeug.utils import secure_filename
 
-from config import DATASET_FOLDER, ALLOWED_EXTENSIONS
+from config import DATASET_FOLDER, UPLOAD_FOLDER, ALLOWED_EXTENSIONS
 from utils.file_utils import allowed_file, extract_zip_contents
+from utils.csv_utils import load_labels_from_request, load_labels_from_path
 import jobs as job_registry
 
 logger = logging.getLogger(__name__)
 
 extract_bp = Blueprint("extract", __name__)
+
+# Directories where /extract-local may read files from.
+_SAFE_PREFIXES = [
+    os.path.realpath(UPLOAD_FOLDER),
+    os.path.realpath(DATASET_FOLDER),
+    os.path.realpath("/tmp"),
+    os.path.realpath(os.path.expanduser("~")),
+]
+
+
+def _start_extraction(pipeline, media_files, feature_spec, model_name,
+                       dataset_type, csv_path, labels_df, extract_path,
+                       cleanup_paths=None):
+    """Common helper: create a job and run extraction in a background thread."""
+    job_id = str(uuid.uuid4())
+    job_registry.set(job_id, {"progress": 0, "stage": "Starting extraction...", "done": False})
+
+    def _run():
+        try:
+            pipeline.extract_features_async(
+                media_files, feature_spec, job_id, model_name,
+                dataset_type, csv_path, labels_df
+            )
+        finally:
+            shutil.rmtree(extract_path, ignore_errors=True)
+            for p in (cleanup_paths or []):
+                if os.path.exists(p):
+                    os.remove(p)
+
+    threading.Thread(target=_run).start()
+    return job_id
 
 
 @extract_bp.route("/extract", methods=["POST"])
@@ -32,35 +63,21 @@ def api_extract():
         return jsonify({"error": "Allowed format: .zip"}), 400
 
     model_name = request.form.get("model", "qwen2.5vl:7b")
-    feature_spec = json.loads(request.form.get("feature_spec", "{}"))
+    try:
+        feature_spec = json.loads(request.form.get("feature_spec", "{}"))
+    except (json.JSONDecodeError, TypeError):
+        return jsonify({"error": "Invalid feature_spec JSON."}), 400
     dataset_type = request.form.get("dataset_type", "training")
 
     if not feature_spec:
         return jsonify({"error": "Missing feature_spec."}), 400
 
-    labels_df = None
-    if "labels_file" in request.files:
-        lf = request.files["labels_file"]
-        if lf.filename:
-            labels_path = os.path.join(
-                DATASET_FOLDER, f"labels_{secure_filename(lf.filename)}"
-            )
-            lf.save(labels_path)
-            try:
-                labels_df = pd.read_csv(labels_path)
-            except Exception as e:
-                logger.warning("Cannot load labels CSV: %s", e)
-            finally:
-                if os.path.exists(labels_path):
-                    os.remove(labels_path)
+    labels_df = load_labels_from_request(request, DATASET_FOLDER)
 
     zip_path = os.path.join(DATASET_FOLDER, secure_filename(file.filename))
     file.save(zip_path)
 
-    job_id = str(uuid.uuid4())
-    job_registry.set(job_id, {"progress": 0, "stage": "Starting extraction...", "done": False})
-
-    extract_path = os.path.join(DATASET_FOLDER, f"extract_{job_id}")
+    extract_path = os.path.join(DATASET_FOLDER, f"extract_{uuid.uuid4()}")
     os.makedirs(extract_path, exist_ok=True)
 
     try:
@@ -73,18 +90,11 @@ def api_extract():
         shutil.rmtree(extract_path, ignore_errors=True)
         return jsonify({"error": "ZIP contains no media files."}), 400
 
-    def _run():
-        try:
-            pipeline.extract_features_async(
-                media_files, feature_spec, job_id, model_name,
-                dataset_type, csv_path, labels_df
-            )
-        finally:
-            shutil.rmtree(extract_path, ignore_errors=True)
-            if os.path.exists(zip_path):
-                os.remove(zip_path)
-
-    threading.Thread(target=_run).start()
+    job_id = _start_extraction(
+        pipeline, media_files, feature_spec, model_name,
+        dataset_type, csv_path, labels_df, extract_path,
+        cleanup_paths=[zip_path],
+    )
     return jsonify({"job_id": job_id, "media_count": len(media_files)})
 
 
@@ -101,24 +111,23 @@ def api_extract_local():
     model_name = data.get("model", "qwen2.5vl:7b")
     feature_spec = data.get("feature_spec", {})
     dataset_type = data.get("dataset_type", "training")
-    labels_df = None
 
-    if not zip_path or not os.path.exists(zip_path):
+    if not zip_path:
+        return jsonify({"error": "Missing zip_path."}), 400
+
+    # Prevent path traversal
+    real_path = os.path.realpath(zip_path)
+    if not any(real_path.startswith(prefix) for prefix in _SAFE_PREFIXES):
+        return jsonify({"error": "Path not allowed."}), 403
+
+    if not os.path.exists(zip_path):
         return jsonify({"error": f"File not found: {zip_path}"}), 400
     if not feature_spec:
         return jsonify({"error": "Missing feature_spec."}), 400
 
-    labels_path = data.get("labels_path")
-    if labels_path and os.path.exists(labels_path):
-        try:
-            labels_df = pd.read_csv(labels_path)
-        except Exception as e:
-            logger.warning("Cannot load labels CSV: %s", e)
+    labels_df = load_labels_from_path(data.get("labels_path", ""))
 
-    job_id = str(uuid.uuid4())
-    job_registry.set(job_id, {"progress": 0, "stage": "Starting extraction...", "done": False})
-
-    extract_path = os.path.join(DATASET_FOLDER, f"extract_{job_id}")
+    extract_path = os.path.join(DATASET_FOLDER, f"extract_{uuid.uuid4()}")
     os.makedirs(extract_path, exist_ok=True)
 
     try:
@@ -131,14 +140,8 @@ def api_extract_local():
         shutil.rmtree(extract_path, ignore_errors=True)
         return jsonify({"error": "ZIP contains no media files."}), 400
 
-    def _run():
-        try:
-            pipeline.extract_features_async(
-                media_files, feature_spec, job_id, model_name,
-                dataset_type, csv_path, labels_df
-            )
-        finally:
-            shutil.rmtree(extract_path, ignore_errors=True)
-
-    threading.Thread(target=_run).start()
+    job_id = _start_extraction(
+        pipeline, media_files, feature_spec, model_name,
+        dataset_type, csv_path, labels_df, extract_path,
+    )
     return jsonify({"job_id": job_id, "media_count": len(media_files)})

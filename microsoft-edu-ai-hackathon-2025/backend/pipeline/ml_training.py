@@ -10,6 +10,40 @@ from sklearn.metrics import mean_squared_error
 logger = logging.getLogger(__name__)
 
 
+def _preprocess_features(df: pd.DataFrame, training_columns: list[str] | None = None) -> pd.DataFrame:
+    """Normalise and one-hot-encode feature columns.
+
+    When *training_columns* is provided (prediction mode), the result is
+    aligned to exactly those columns (missing cols filled with 0).
+    """
+    X = df.copy()
+    for col in X.columns:
+        X[col] = X[col].apply(
+            lambda v: ", ".join(str(i) for i in v) if isinstance(v, list) else v
+        )
+    for col in X.select_dtypes(include="object").columns:
+        X[col] = (
+            X[col]
+            .astype(str)
+            .str.lower()
+            .str.strip()
+            .str.replace(r'\s+', '_', regex=True)
+        )
+        X[col] = X[col].replace(
+            {'nan': None, 'not_applicable': None, 'n/a': None, 'none': None}
+        )
+    X = pd.get_dummies(X)
+    X = X.loc[:, ~X.columns.duplicated()]
+
+    if training_columns is not None:
+        for col in training_columns:
+            if col not in X.columns:
+                X[col] = 0
+        X = X[training_columns]
+
+    return X
+
+
 def train_model(pipeline, target_column: str) -> dict:
     """Train a RuleKit regression model from stored training_X + training_Y_df.
 
@@ -46,24 +80,7 @@ def train_model(pipeline, target_column: str) -> dict:
     if not feature_cols:
         raise Exception("None of the features were found in the data.")
 
-    X = df_merged[feature_cols].copy()
-    for col in X.columns:
-        X[col] = X[col].apply(
-            lambda v: ", ".join(str(i) for i in v) if isinstance(v, list) else v
-        )
-    for col in X.select_dtypes(include="object").columns:
-        X[col] = (
-            X[col]
-            .astype(str)
-            .str.lower()
-            .str.strip()
-            .str.replace(r'\s+', '_', regex=True)
-        )
-        X[col] = X[col].replace(
-            {'nan': None, 'not_applicable': None, 'n/a': None, 'none': None}
-        )
-    X = pd.get_dummies(X)
-    X = X.loc[:, ~X.columns.duplicated()]
+    X = _preprocess_features(df_merged[feature_cols])
 
     if target_column in df_merged.columns:
         y = df_merged[target_column]
@@ -110,29 +127,10 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None) -> dict:
         raise Exception("Missing testing dataset_X. Complete Phase 4 first.")
 
     feature_cols = [c for c in pipeline.feature_spec if c in pipeline.testing_X.columns]
-    X_test = pipeline.testing_X[feature_cols].copy()
-    for col in X_test.columns:
-        X_test[col] = X_test[col].apply(
-            lambda v: ", ".join(str(i) for i in v) if isinstance(v, list) else v
-        )
-    for col in X_test.select_dtypes(include="object").columns:
-        X_test[col] = (
-            X_test[col]
-            .astype(str)
-            .str.lower()
-            .str.strip()
-            .str.replace(r'\s+', '_', regex=True)
-        )
-        X_test[col] = X_test[col].replace(
-            {'nan': None, 'not_applicable': None, 'n/a': None, 'none': None}
-        )
-    X_test = pd.get_dummies(X_test)
-    X_test = X_test.loc[:, ~X_test.columns.duplicated()]
-
-    for col in pipeline._training_columns:
-        if col not in X_test.columns:
-            X_test[col] = 0
-    X_test = X_test[pipeline._training_columns]
+    X_test = _preprocess_features(
+        pipeline.testing_X[feature_cols],
+        training_columns=pipeline._training_columns,
+    )
 
     predictions = pipeline.model.predict(X_test)
 

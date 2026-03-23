@@ -5,13 +5,13 @@ import shutil
 import threading
 import uuid
 
-import pandas as pd
 from flask import Blueprint, jsonify, request
 from werkzeug.utils import secure_filename
 
 from config import UPLOAD_FOLDER
 from jobs import set_job, update_job
 from utils.file_utils import allowed_file, extract_zip_contents
+from utils.csv_utils import load_labels_from_request
 
 logger = logging.getLogger(__name__)
 
@@ -23,28 +23,13 @@ def api_discover():
     """Phase 1: Feature discovery from sample media (async, returns job_id)."""
     from app import pipeline
 
-    uploaded = request.files.getlist("files")
-    if not uploaded:
-        uploaded = request.files.getlist("file")
+    uploaded = request.files.getlist("files") or request.files.getlist("file")
     if not uploaded:
         return jsonify({"error": "No file uploaded"}), 400
 
     target_var = request.form.get("target_variable", "target value")
     model_name = request.form.get("model", "qwen2.5vl:7b")
-
-    labels_df = None
-    if "labels_file" in request.files:
-        lf = request.files["labels_file"]
-        if lf.filename:
-            labels_path = os.path.join(UPLOAD_FOLDER, f"labels_{secure_filename(lf.filename)}")
-            lf.save(labels_path)
-            try:
-                labels_df = pd.read_csv(labels_path)
-            except Exception as e:
-                logger.warning("Cannot load labels CSV: %s", e)
-            finally:
-                if os.path.exists(labels_path):
-                    os.remove(labels_path)
+    labels_df = load_labels_from_request(request, UPLOAD_FOLDER)
 
     media_paths = []
     extract_path = None
@@ -67,10 +52,8 @@ def api_discover():
             media_files, csv_in_zip = extract_zip_contents(path, extract_path)
             media_paths.extend(media_files)
             if labels_df is None and csv_in_zip:
-                try:
-                    labels_df = pd.read_csv(csv_in_zip)
-                except Exception:
-                    pass
+                from utils.csv_utils import load_labels_from_path
+                labels_df = load_labels_from_path(csv_in_zip)
         else:
             media_paths.append(path)
 

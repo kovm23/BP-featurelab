@@ -25,13 +25,19 @@ def api_reset():
         except OSError as e:
             logger.warning("Failed to remove %s: %s", f, e)
 
-    # Reset pipeline in-memory state
-    pipeline.feature_spec = None
+    # Reset pipeline in-memory state (must match model.py __init__)
+    pipeline.feature_spec = {}
+    pipeline.target_variable = ""
     pipeline.training_X = None
     pipeline.training_Y = None
+    pipeline.training_Y_df = None
+    pipeline.training_Y_column = ""
+    pipeline.model = None
+    pipeline.rules = []
+    pipeline.mse = None
+    pipeline.is_trained = False
     pipeline.testing_X = None
-    pipeline.testing_Y = None
-    pipeline.rules_model = None
+    pipeline._training_columns = []
     pipeline.save_state()
 
     logger.info("Reset: removed checkpoints %s", removed)
