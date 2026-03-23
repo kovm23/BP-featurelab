@@ -505,9 +505,17 @@ export function TrainingView({
       {/* ---- STEPPER ---- */}
       <div className="flex items-center justify-center gap-1 mb-6 flex-wrap">
         {PHASE_LABELS.map((p, i) => {
-          const isCompleted = step > p.num;
+          // Determine which steps have data and are reachable
+          const stepHasData =
+            p.num === 1 ? true :
+            p.num === 2 ? !!featureSpec :
+            p.num === 3 ? !!trainingDataX :
+            p.num === 4 ? !!trainResult :
+            p.num === 5 ? !!testingDataX :
+            false;
+          const isCompleted = step > p.num || (stepHasData && step !== p.num);
           const isCurrent = step === p.num;
-          const canClick = isCompleted && onGoToStep && !anyBusy;
+          const canClick = stepHasData && !isCurrent && onGoToStep && !anyBusy;
 
           return (
             <React.Fragment key={p.num}>
