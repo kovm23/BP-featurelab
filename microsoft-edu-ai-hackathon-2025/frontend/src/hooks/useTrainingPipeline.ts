@@ -2,8 +2,9 @@
  * Custom hook that encapsulates all training pipeline state and handlers.
  * Extracted from App.tsx to reduce component complexity.
  */
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import type {
+  PipelineState,
   StatusPayload,
   TrainResult,
   PredictionItem,
@@ -16,6 +17,7 @@ import {
   TRAIN_URL,
   PREDICT_URL,
   RESET_URL,
+  STATE_URL,
 } from "@/lib/api";
 import { pollProgress } from "@/hooks/usePollProgress";
 
@@ -106,6 +108,51 @@ export function useTrainingPipeline() {
   const [modelProvider, setModelProvider] = useState<string>(
     saved?.modelProvider ?? "qwen2.5vl:7b",
   );
+
+  // --- Restore from backend on mount ---
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+
+    fetch(STATE_URL)
+      .then((r) => r.json())
+      .then((state: PipelineState) => {
+        // Only restore if backend has meaningful state
+        if (!state.completed_phases || state.completed_phases.length === 0) return;
+
+        if (state.feature_spec && Object.keys(state.feature_spec).length > 0) {
+          setFeatureSpec(state.feature_spec);
+        }
+        if (state.target_variable) {
+          setTargetVariable(state.target_variable);
+        }
+        if (state.training_data_X && state.training_data_X.length > 0) {
+          setTrainingDataX(state.training_data_X);
+        }
+        if (state.dataset_Y_columns) {
+          setDatasetYColumns(state.dataset_Y_columns);
+        }
+        if (state.train_result) {
+          setTrainResult(state.train_result);
+        }
+        if (state.testing_data_X && state.testing_data_X.length > 0) {
+          setTestingDataX(state.testing_data_X);
+        }
+        // Advance step only if localStorage didn't already set a later step
+        // Backend suggested_step is the source of truth when > current step
+        setTrainingStep((prev) => {
+          const suggested = Math.min(
+            state.suggested_step as 1 | 2 | 3 | 4 | 5,
+            5,
+          ) as 1 | 2 | 3 | 4 | 5;
+          return suggested > prev ? suggested : prev;
+        });
+      })
+      .catch(() => {
+        /* backend unreachable — continue with localStorage state */
+      });
+  }, []);
 
   // --- Persistence (lightweight — only metadata, no large datasets) ---
   function persist() {

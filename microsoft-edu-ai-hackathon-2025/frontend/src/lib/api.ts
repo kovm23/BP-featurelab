@@ -10,6 +10,7 @@ export const PREDICT_URL = `${API_BASE}/predict`;
 export const ANALYZE_URL = `${API_BASE}/analyze`;
 export const EXTRACT_LOCAL_URL = `${API_BASE}/extract-local`;
 export const RESET_URL = `${API_BASE}/reset`;
+export const STATE_URL = `${API_BASE}/state`;
 export const STATUS_URL = (jobId: string) =>
   `${API_BASE}/status/${encodeURIComponent(jobId)}`;
 
@@ -71,11 +72,36 @@ export interface ExtractDetails {
 export interface TrainResult {
   status: string;
   mse?: number;
+  rulekit_mse?: number;
+  xgb_mse?: number;
+  cv_mse?: number;
+  cv_std?: number;
+  cv_mae?: number;
+  cv_folds?: number;
   rules_count?: number;
   rules?: string[];
   feature_spec?: Record<string, string>;
+  feature_importance?: {
+    xgboost?: Record<string, number>;
+    rulekit?: Record<string, number>;
+  };
+  warnings?: string[];
   training_data_X?: Record<string, unknown>[];
   error?: string;
+}
+
+export interface PipelineState {
+  feature_spec: Record<string, string>;
+  target_variable: string;
+  is_trained: boolean;
+  completed_phases: number[];
+  suggested_step: number;
+  training_rows: number;
+  testing_rows: number;
+  training_data_X: Record<string, unknown>[] | null;
+  testing_data_X: Record<string, unknown>[] | null;
+  dataset_Y_columns: string[] | null;
+  train_result: TrainResult | null;
 }
 
 export interface PredictionItem {

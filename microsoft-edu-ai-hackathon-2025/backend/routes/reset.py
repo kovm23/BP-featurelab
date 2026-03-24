@@ -40,6 +40,10 @@ def api_reset():
     pipeline.mse = None
     pipeline.rulekit_mse = None
     pipeline.xgb_mse = None
+    pipeline.cv_mse = None
+    pipeline.cv_std = None
+    pipeline.cv_mae = None
+    pipeline.feature_importance = {}
     pipeline.is_trained = False
     pipeline.testing_X = None
     pipeline._training_columns = []

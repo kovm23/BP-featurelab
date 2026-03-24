@@ -238,6 +238,10 @@ def train_model(pipeline, target_column: str) -> dict:
     pipeline.mse = ensemble_mse
     pipeline.rulekit_mse = rulekit_mse
     pipeline.xgb_mse = xgb_mse
+    pipeline.cv_mse = cv_results.get("cv_mse")
+    pipeline.cv_std = cv_results.get("cv_std")
+    pipeline.cv_mae = cv_results.get("cv_mae")
+    pipeline.feature_importance = {"xgboost": xgb_importance, "rulekit": rulekit_importance}
     pipeline.is_trained = True
     pipeline.target_variable = target_column
     pipeline._training_columns = list(X.columns)

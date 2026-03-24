@@ -46,6 +46,10 @@ class MachineLearningPipeline:
         self.mse: float | None = None
         self.rulekit_mse: float | None = None
         self.xgb_mse: float | None = None
+        self.cv_mse: float | None = None
+        self.cv_std: float | None = None
+        self.cv_mae: float | None = None
+        self.feature_importance: dict = {}
         self.is_trained: bool = False
         # Phase 4 outputs
         self.testing_X: pd.DataFrame | None = None
@@ -70,6 +74,10 @@ class MachineLearningPipeline:
                 "mse": self.mse,
                 "rulekit_mse": self.rulekit_mse,
                 "xgb_mse": self.xgb_mse,
+                "cv_mse": self.cv_mse,
+                "cv_std": self.cv_std,
+                "cv_mae": self.cv_mae,
+                "feature_importance": self.feature_importance,
                 "is_trained": self.is_trained,
                 "_training_columns": self._training_columns,
                 "_scaler_mean": self._scaler_mean,
@@ -130,6 +138,10 @@ class MachineLearningPipeline:
             self.mse = state.get("mse")
             self.rulekit_mse = state.get("rulekit_mse")
             self.xgb_mse = state.get("xgb_mse")
+            self.cv_mse = state.get("cv_mse")
+            self.cv_std = state.get("cv_std")
+            self.cv_mae = state.get("cv_mae")
+            self.feature_importance = state.get("feature_importance", {})
             self.is_trained = state.get("is_trained", False)
             self._training_columns = state.get("_training_columns", [])
             self._scaler_mean = state.get("_scaler_mean", [])
