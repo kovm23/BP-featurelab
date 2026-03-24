@@ -67,6 +67,7 @@ def api_discover():
         try:
             update_job(job_id, stage="Analysing samples...", progress=10)
             features = pipeline.discover_features(media_paths, target_var, model_name, labels_df)
+            pipeline.save_state()
             set_job(job_id, {
                 "progress": 100,
                 "stage": "Discovery complete!",

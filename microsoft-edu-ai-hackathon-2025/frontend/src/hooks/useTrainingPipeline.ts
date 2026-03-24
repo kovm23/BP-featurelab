@@ -18,6 +18,8 @@ import {
   PREDICT_URL,
   RESET_URL,
   STATE_URL,
+  STATUS_URL,
+  HEALTH_URL,
 } from "@/lib/api";
 import { pollProgress } from "@/hooks/usePollProgress";
 
@@ -48,6 +50,39 @@ function savePersisted(data: PersistedPipeline) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch {
     /* quota exceeded or localStorage unavailable */
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Active job persistence (resume polling after page reload)          */
+/* ------------------------------------------------------------------ */
+type ActiveJobPhase = "discover" | "extract_training" | "extract_testing";
+
+interface ActiveJob {
+  job_id: string;
+  phase: ActiveJobPhase;
+}
+
+const ACTIVE_JOB_KEY = "mflActiveJob";
+
+function saveActiveJob(job: ActiveJob) {
+  try {
+    localStorage.setItem(ACTIVE_JOB_KEY, JSON.stringify(job));
+  } catch { /* */ }
+}
+
+function clearActiveJob() {
+  try {
+    localStorage.removeItem(ACTIVE_JOB_KEY);
+  } catch { /* */ }
+}
+
+function loadActiveJob(): ActiveJob | null {
+  try {
+    const raw = localStorage.getItem(ACTIVE_JOB_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
   }
 }
 
@@ -109,6 +144,9 @@ export function useTrainingPipeline() {
     saved?.modelProvider ?? "qwen2.5vl:7b",
   );
 
+  // --- Ollama availability ---
+  const [ollamaOk, setOllamaOk] = useState<boolean | null>(null);
+
   // --- Restore from backend on mount ---
   const restoredRef = useRef(false);
   useEffect(() => {
@@ -154,6 +192,102 @@ export function useTrainingPipeline() {
       });
   }, []);
 
+  // --- Resume active job after page reload ---
+  const jobRestoredRef = useRef(false);
+  useEffect(() => {
+    if (jobRestoredRef.current) return;
+    jobRestoredRef.current = true;
+
+    const saved = loadActiveJob();
+    if (!saved) return;
+
+    // Check if job is still running
+    fetch(STATUS_URL(saved.job_id), { cache: "no-store" })
+      .then((r) => r.json())
+      .then((s: StatusPayload) => {
+        if (s.done) {
+          // Job finished while we were away — clean up; state restore handled by /state effect
+          clearActiveJob();
+          return;
+        }
+        // Job still running — restore busy state and resume polling
+        const ctrl = new AbortController();
+        setActiveCtrl(ctrl);
+        setProgress(Math.max(0, Math.min(100, s.progress ?? 0)));
+        setProgressLabel(s.stage || "Obnovuji...");
+
+        if (saved.phase === "discover") {
+          setIsDiscovering(true);
+          pollProgress(
+            saved.job_id,
+            (tick) => {
+              setProgress(Math.max(0, Math.min(100, tick.progress ?? 0)));
+              setProgressLabel(tick.stage || "");
+              if (tick.done && !tick.error) {
+                clearActiveJob();
+                const features = (tick as unknown as Record<string, unknown>)
+                  .suggested_features as Record<string, string>;
+                if (features) {
+                  setFeatureSpec(features);
+                  savePersisted({ trainingStep: 2, targetVariable, featureSpec: features, modelProvider });
+                }
+              }
+              if (tick.done && tick.error) {
+                clearActiveJob();
+                setError("Fáze 1 selhala: " + tick.error);
+              }
+            },
+            ctrl.signal,
+          ).finally(() => { setIsDiscovering(false); setActiveCtrl(null); });
+        } else {
+          const isTraining = saved.phase === "extract_training";
+          const setBusy = isTraining ? setExtractionBusy : setTestExtractionBusy;
+          const setData = isTraining ? setTrainingDataX : setTestingDataX;
+          setBusy(true);
+          pollProgress(
+            saved.job_id,
+            (tick: StatusPayload) => {
+              setProgress(Math.max(0, Math.min(100, tick.progress ?? 0)));
+              setProgressLabel(tick.stage || "");
+              if (tick.done && tick.details?.status === "success") {
+                clearActiveJob();
+                setData(tick.details.dataset_X);
+                if (isTraining) setDatasetYColumns(tick.details.dataset_Y_columns || null);
+              }
+              if (tick.done && tick.error) {
+                clearActiveJob();
+                setError(`Extrakce selhala: ${tick.error}`);
+              }
+            },
+            ctrl.signal,
+          ).finally(() => { setBusy(false); setActiveCtrl(null); });
+        }
+      })
+      .catch(() => {
+        clearActiveJob(); // status fetch failed — assume gone
+      });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // --- Ollama health check on mount (with one retry after 5s) ---
+  useEffect(() => {
+    let cancelled = false;
+    const checkHealth = (retryOnFail: boolean) => {
+      fetch(HEALTH_URL, { cache: "no-store" })
+        .then((r) => r.json())
+        .then((data: { ok: boolean; ollama: boolean }) => {
+          if (!cancelled) setOllamaOk(data.ollama);
+        })
+        .catch(() => {
+          // Network error = backend not yet up; keep null (unknown) and retry once
+          if (!cancelled && retryOnFail) {
+            setTimeout(() => checkHealth(false), 5000);
+          }
+        });
+    };
+    checkHealth(true);
+    return () => { cancelled = true; };
+  }, []);
+
   // --- Persistence (lightweight — only metadata, no large datasets) ---
   function persist() {
     savePersisted({
@@ -172,6 +306,7 @@ export function useTrainingPipeline() {
       activeCtrl.abort();
       setActiveCtrl(null);
     }
+    clearActiveJob();
     setExtractionBusy(false);
     setTrainingBusy(false);
     setTestExtractionBusy(false);
@@ -203,6 +338,7 @@ export function useTrainingPipeline() {
       }
       const data = await res.json();
       if (data.job_id) {
+        saveActiveJob({ job_id: data.job_id, phase: "discover" });
         const ctrl = new AbortController();
         setActiveCtrl(ctrl);
         await pollProgress(
@@ -211,11 +347,24 @@ export function useTrainingPipeline() {
             setProgress(Math.max(0, Math.min(100, s.progress ?? 0)));
             setProgressLabel(s.stage || "");
             if (s.done && !s.error) {
+              clearActiveJob();
               const features = (s as unknown as Record<string, unknown>)
                 .suggested_features as Record<string, string>;
-              if (features) setFeatureSpec(features);
+              if (features) {
+                setFeatureSpec(features);
+                // Persist after discovery so the next page load knows step 1 is done
+                savePersisted({
+                  trainingStep: 2,
+                  targetVariable,
+                  featureSpec: features,
+                  modelProvider,
+                });
+              }
             }
-            if (s.done && s.error) setError("Fáze 1 selhala: " + s.error);
+            if (s.done && s.error) {
+              clearActiveJob();
+              setError("Fáze 1 selhala: " + s.error);
+            }
           },
           ctrl.signal,
         );
@@ -243,6 +392,9 @@ export function useTrainingPipeline() {
     setProgress(0);
     setProgressLabel("Spouštím extrakci...");
     setError(null);
+    // Clear stale downstream results so user doesn't see old data after re-extraction
+    if (isTraining) setTrainResult(null);
+    else { setPredictions(null); setPredictionMetrics(null); }
 
     try {
       const res = await fetch(config.url, {
@@ -257,6 +409,10 @@ export function useTrainingPipeline() {
       const data = await res.json();
 
       if (data.job_id) {
+        saveActiveJob({
+          job_id: data.job_id,
+          phase: isTraining ? "extract_training" : "extract_testing",
+        });
         const ctrl = new AbortController();
         setActiveCtrl(ctrl);
         await pollProgress(
@@ -265,10 +421,14 @@ export function useTrainingPipeline() {
             setProgress(Math.max(0, Math.min(100, s.progress ?? 0)));
             setProgressLabel(s.stage || "");
             if (s.done && s.details?.status === "success") {
+              clearActiveJob();
               setData(s.details.dataset_X);
               if (isTraining) setDatasetYColumns(s.details.dataset_Y_columns || null);
             }
-            if (s.done && s.error) setError(`${config.phaseLabel} selhala: ${s.error}`);
+            if (s.done && s.error) {
+              clearActiveJob();
+              setError(`${config.phaseLabel} selhala: ${s.error}`);
+            }
           },
           ctrl.signal,
         );
@@ -431,6 +591,7 @@ export function useTrainingPipeline() {
     } catch {
       /* */
     }
+    clearActiveJob();
     fetch(RESET_URL, { method: "POST" }).catch(() => {});
   }
 
@@ -471,5 +632,12 @@ export function useTrainingPipeline() {
     handleCancelActive,
     resetPipeline,
     persist,
+    ollamaOk,
+    recheckOllama: () => {
+      fetch(HEALTH_URL, { cache: "no-store" })
+        .then((r) => r.json())
+        .then((data: { ok: boolean; ollama: boolean }) => setOllamaOk(data.ollama))
+        .catch(() => { /* keep current state */ });
+    },
   };
 }

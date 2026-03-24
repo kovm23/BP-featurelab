@@ -479,6 +479,8 @@ export default function MediaFeatureLabPro() {
             progressLabel={pipeline.progressLabel}
             error={pipeline.error}
             clearError={pipeline.clearError}
+            ollamaOk={pipeline.ollamaOk}
+            recheckOllama={pipeline.recheckOllama}
           />
         ) : (
           <div className="grid grid-cols-1 gap-6">

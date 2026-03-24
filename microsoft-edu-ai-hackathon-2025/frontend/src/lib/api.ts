@@ -11,6 +11,7 @@ export const ANALYZE_URL = `${API_BASE}/analyze`;
 export const EXTRACT_LOCAL_URL = `${API_BASE}/extract-local`;
 export const RESET_URL = `${API_BASE}/reset`;
 export const STATE_URL = `${API_BASE}/state`;
+export const HEALTH_URL = `${API_BASE}/health`;
 export const STATUS_URL = (jobId: string) =>
   `${API_BASE}/status/${encodeURIComponent(jobId)}`;
 

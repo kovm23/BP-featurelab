@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import {
   UploadCloud,
@@ -67,6 +67,8 @@ export interface TrainingViewProps {
   progressLabel: string;
   error: string | null;
   clearError: () => void;
+  ollamaOk?: boolean | null;
+  recheckOllama?: () => void;
 }
 
 /* ------------------------------------------------------------------ */
@@ -406,6 +408,83 @@ function DatasetTable({
   );
 }
 
+/* ------------------------------------------------------------------ */
+/*  Hook: elapsed time counter (for phases without progress bar)      */
+/* ------------------------------------------------------------------ */
+
+function useElapsedTimer(active: boolean) {
+  const [secs, setSecs] = useState(0);
+  useEffect(() => {
+    if (!active) { setSecs(0); return; }
+    setSecs(0);
+    const id = setInterval(() => setSecs((s) => s + 1), 1000);
+    return () => clearInterval(id);
+  }, [active]);
+  return secs;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Hook: stall detection — true when progress is stuck > threshold   */
+/* ------------------------------------------------------------------ */
+
+function useProgressStall(progress: number, active: boolean, thresholdMs = 90_000) {
+  const [stalled, setStalled] = useState(false);
+  const lastRef = useRef({ val: -1, time: 0 });
+
+  useEffect(() => {
+    if (!active) { setStalled(false); return; }
+    if (progress !== lastRef.current.val) {
+      lastRef.current = { val: progress, time: Date.now() };
+      setStalled(false);
+      return;
+    }
+    const id = setInterval(() => {
+      if (Date.now() - lastRef.current.time > thresholdMs) setStalled(true);
+    }, 5000);
+    return () => clearInterval(id);
+  }, [progress, active, thresholdMs]);
+
+  return stalled;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Helper: enrich backend error with actionable hint                  */
+/* ------------------------------------------------------------------ */
+
+function enrichError(raw: string): { message: string; hint?: string } {
+  if (raw.includes("No data remained after joining")) {
+    return {
+      message: raw,
+      hint: 'Zkontroluj, že názvy souborů v CSV (první sloupec bez přípony) odpovídají názvům médií v ZIPu. Např. soubor "video.mp4" → řádek CSV musí mít hodnotu "video".',
+    };
+  }
+  if (raw.includes("Column '") && raw.includes("not found")) {
+    return {
+      message: raw,
+      hint: "Dostupné sloupce jsou vypsány v chybě výše — zkopíruj přesný název.",
+    };
+  }
+  if (raw.includes("ZIP contains no media files")) {
+    return {
+      message: raw,
+      hint: "ZIP musí obsahovat videa (.mp4, .avi, .mov, .mkv) nebo obrázky (.jpg, .png, .webp, .gif).",
+    };
+  }
+  if (raw.includes("Phase 2") && raw.includes("must be completed")) {
+    return { message: raw, hint: "Vrať se na Fázi 2 a dokonči extrakci trénovacích dat." };
+  }
+  if (raw.includes("Model is not trained")) {
+    return { message: raw, hint: "Nejprve dokonči Fázi 3 (Trénink)." };
+  }
+  if (raw.includes("Missing dataset_Y")) {
+    return {
+      message: raw,
+      hint: "CSV s labels musí být součástí ZIPu nebo ho nahraj samostatně přes checkbox níže.",
+    };
+  }
+  return { message: raw };
+}
+
 /* ================================================================== */
 /*  HLAVNÍ KOMPONENTA                                                  */
 /* ================================================================== */
@@ -443,6 +522,8 @@ export function TrainingView({
   progressLabel,
   error,
   clearError,
+  ollamaOk,
+  recheckOllama,
 }: TrainingViewProps) {
   const [discoveryFiles, setDiscoveryFiles] = useState<File[]>([]);
   const [trainZipFile, setTrainZipFile] = useState<File | null>(null);
@@ -483,6 +564,14 @@ export function TrainingView({
 
   const anyBusy = isDiscovering || isExtracting || isTraining || isExtractingTest || isPredicting;
 
+  // Elapsed timers for phases without a progress bar
+  const trainSecs = useElapsedTimer(isTraining);
+  const predictSecs = useElapsedTimer(isPredicting);
+
+  // Stall detection for long extractions
+  const extractStalled = useProgressStall(progress, isExtracting);
+  const testExtractStalled = useProgressStall(progress, isExtractingTest);
+
   return (
     <div
       className={`p-6 rounded-2xl shadow-sm border ${cls(
@@ -492,15 +581,21 @@ export function TrainingView({
       )}`}
     >
       {/* ---- ERROR BANNER ---- */}
-      {error && (
+      {error && (() => {
+        const { message, hint } = enrichError(error);
+        return (
         <div className={`mb-4 flex items-start gap-2 p-3 rounded-lg border ${cls(deluxe, "bg-red-50 border-red-200 text-red-800", "bg-red-900/30 border-red-800/50 text-red-300")}`}>
           <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-          <p className="text-sm flex-1">{error}</p>
+          <div className="flex-1">
+            <p className="text-sm">{message}</p>
+            {hint && <p className="text-xs mt-1 italic opacity-80">{hint}</p>}
+          </div>
           <button onClick={clearError} className="p-0.5 rounded hover:bg-red-100">
             <X className="h-3.5 w-3.5" />
           </button>
         </div>
-      )}
+        );
+      })()}
 
       {/* ---- STEPPER ---- */}
       <div className="flex items-center justify-center gap-1 mb-6 flex-wrap">
@@ -718,6 +813,18 @@ export function TrainingView({
             )}
           </div>
 
+          {ollamaOk === false && (
+            <div className={`flex items-start gap-2 p-3 rounded-lg border ${cls(deluxe, "bg-amber-50 border-amber-300 text-amber-800", "bg-amber-900/30 border-amber-700 text-amber-300")}`}>
+              <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm">Ollama není dostupný (localhost:11434). Spusťte: <code className="font-mono bg-black/10 px-1 rounded">ollama serve</code></p>
+              </div>
+              {recheckOllama && (
+                <button onClick={recheckOllama} className="text-xs underline opacity-70 hover:opacity-100 whitespace-nowrap">Zkontrolovat znovu</button>
+              )}
+            </div>
+          )}
+
           <div className="flex justify-center mt-6">
             <Button
               onClick={() => discoveryFiles.length > 0 && onDiscoverStart(discoveryFiles, useDiscoveryLabels ? discoveryLabels : null)}
@@ -863,6 +970,18 @@ export function TrainingView({
             </div>
           )}
 
+          {ollamaOk === false && (
+            <div className={`flex items-start gap-2 p-3 rounded-lg border ${cls(deluxe, "bg-amber-50 border-amber-300 text-amber-800", "bg-amber-900/30 border-amber-700 text-amber-300")}`}>
+              <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm">Ollama není dostupný (localhost:11434). Spusťte: <code className="font-mono bg-black/10 px-1 rounded">ollama serve</code></p>
+              </div>
+              {recheckOllama && (
+                <button onClick={recheckOllama} className="text-xs underline opacity-70 hover:opacity-100 whitespace-nowrap">Zkontrolovat znovu</button>
+              )}
+            </div>
+          )}
+
           <div className="flex justify-center mt-6">
             <Button
               onClick={() => {
@@ -890,6 +1009,11 @@ export function TrainingView({
           {isExtracting && (
             <div className="space-y-2">
               <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel} />
+              {extractStalled && (
+                <p className={`text-xs ${cls(deluxe, "text-slate-500", "text-slate-400")}`}>
+                  ℹ Zpracování probíhá — větší soubory nebo pomalý model mohou trvat i 10+ minut.
+                </p>
+              )}
               <div className="flex gap-2">
                 {onCancel && (
                   <Button variant="outline" size="sm" onClick={onCancel} className="text-xs">
@@ -981,7 +1105,7 @@ export function TrainingView({
             >
               {isTraining ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Trénuji model...
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Trénuji model... ({trainSecs}s)
                 </>
               ) : (
                 <>
@@ -998,10 +1122,53 @@ export function TrainingView({
                 <CheckCircle2 className="h-4 w-4" />
                 <p className="text-sm font-bold">Trénink dokončen!</p>
               </div>
-              <div className={`text-xs ${cls(deluxe, "text-green-700", "text-green-400/80")}`}>
-                <p>MSE (chyba modelu): <strong>{trainResult.mse}</strong></p>
+              <div className={`text-xs space-y-0.5 ${cls(deluxe, "text-green-700", "text-green-400/80")}`}>
+                <p>Ensemble MSE: <strong>{trainResult.mse != null ? Number(trainResult.mse).toFixed(4) : "—"}</strong></p>
+                {trainResult.rulekit_mse != null && (
+                  <p>RuleKit MSE: <strong>{Number(trainResult.rulekit_mse).toFixed(4)}</strong></p>
+                )}
+                {trainResult.xgb_mse != null && (
+                  <p>XGBoost MSE: <strong>{Number(trainResult.xgb_mse).toFixed(4)}</strong></p>
+                )}
+                {trainResult.cv_mse != null && (
+                  <p>
+                    Cross-val MSE ({trainResult.cv_folds ?? 5}-fold):{" "}
+                    <strong>{Number(trainResult.cv_mse).toFixed(4)}</strong>
+                    {trainResult.cv_std != null && (
+                      <span className="opacity-70"> ± {Number(trainResult.cv_std).toFixed(4)}</span>
+                    )}
+                    {" "}
+                    <span className={trainResult.cv_mse < (trainResult.mse ?? 0) * 2 ? "text-green-500" : "text-amber-500"}>
+                      {trainResult.cv_mse < (trainResult.mse ?? 0) * 2 ? "✓ model zobecňuje" : "⚠ možné přetrénování"}
+                    </span>
+                  </p>
+                )}
+                {trainResult.warnings?.map((w, i) => (
+                  <p key={i} className="text-amber-600">⚠ {w}</p>
+                ))}
                 <p>Vygenerováno pravidel: <strong>{trainResult.rules_count}</strong></p>
               </div>
+
+              {/* Feature importance (top 5, collapsible) */}
+              {trainResult.feature_importance?.xgboost && Object.keys(trainResult.feature_importance.xgboost).length > 0 && (
+                <details className={`text-xs rounded border p-2 ${cls(deluxe, "border-slate-200", "border-slate-700")}`}>
+                  <summary className={`cursor-pointer font-medium ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>
+                    Důležitost features (XGBoost — top 5)
+                  </summary>
+                  <ul className="mt-1.5 space-y-1">
+                    {Object.entries(trainResult.feature_importance.xgboost)
+                      .sort(([, a], [, b]) => b - a)
+                      .slice(0, 5)
+                      .map(([feat, score]) => (
+                        <li key={feat} className={`flex items-center gap-2 ${cls(deluxe, "text-slate-600", "text-slate-400")}`}>
+                          <span className="font-mono flex-1">{feat}</span>
+                          <div className={`h-1.5 rounded-full bg-blue-400`} style={{ width: `${Math.round(score * 100)}px`, minWidth: "4px", maxWidth: "120px" }} />
+                          <span className="w-10 text-right">{(score * 100).toFixed(1)}%</span>
+                        </li>
+                      ))}
+                  </ul>
+                </details>
+              )}
 
               {trainResult.rules && trainResult.rules.length > 0 && (
                 <div className={`p-3 rounded border text-left ${cls(deluxe, "bg-slate-100 border-slate-300", "bg-slate-800 border-slate-700")}`}>
@@ -1104,6 +1271,18 @@ export function TrainingView({
             </div>
           )}
 
+          {ollamaOk === false && (
+            <div className={`flex items-start gap-2 p-3 rounded-lg border ${cls(deluxe, "bg-amber-50 border-amber-300 text-amber-800", "bg-amber-900/30 border-amber-700 text-amber-300")}`}>
+              <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm">Ollama není dostupný (localhost:11434). Spusťte: <code className="font-mono bg-black/10 px-1 rounded">ollama serve</code></p>
+              </div>
+              {recheckOllama && (
+                <button onClick={recheckOllama} className="text-xs underline opacity-70 hover:opacity-100 whitespace-nowrap">Zkontrolovat znovu</button>
+              )}
+            </div>
+          )}
+
           <div className="flex justify-center mt-6">
             <Button
               onClick={() => {
@@ -1131,6 +1310,11 @@ export function TrainingView({
           {isExtractingTest && (
             <div className="space-y-2">
               <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel} />
+              {testExtractStalled && (
+                <p className={`text-xs ${cls(deluxe, "text-slate-500", "text-slate-400")}`}>
+                  ℹ Zpracování probíhá — větší soubory nebo pomalý model mohou trvat i 10+ minut.
+                </p>
+              )}
               <div className="flex gap-2">
                 {onCancel && (
                   <Button variant="outline" size="sm" onClick={onCancel} className="text-xs">
@@ -1216,7 +1400,7 @@ export function TrainingView({
               >
                 {isPredicting ? (
                   <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Predikuji...
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Predikuji... ({predictSecs}s)
                   </>
                 ) : (
                   <>

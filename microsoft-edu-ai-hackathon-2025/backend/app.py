@@ -11,6 +11,7 @@ from routes import (
     analyze_bp,
     discover_bp,
     extract_bp,
+    health_bp,
     predict_bp,
     reset_bp,
     state_bp,
@@ -37,6 +38,7 @@ app.register_blueprint(analyze_bp)
 app.register_blueprint(status_bp)
 app.register_blueprint(reset_bp)
 app.register_blueprint(state_bp)
+app.register_blueprint(health_bp)
 
 pipeline = MachineLearningPipeline()
 pipeline.load_state()  # Restore state after server restart

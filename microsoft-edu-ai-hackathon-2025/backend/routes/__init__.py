@@ -6,6 +6,7 @@ from .analyze import analyze_bp
 from .status import status_bp
 from .reset import reset_bp
 from .state import state_bp
+from .health import health_bp
 
 __all__ = [
     "discover_bp",
@@ -16,4 +17,5 @@ __all__ = [
     "status_bp",
     "reset_bp",
     "state_bp",
+    "health_bp",
 ]
