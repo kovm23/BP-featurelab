@@ -43,10 +43,12 @@ def _start_extraction(pipeline, media_files, feature_spec, model_name,
         finally:
             shutil.rmtree(extract_path, ignore_errors=True)
             for p in (cleanup_paths or []):
-                if os.path.exists(p):
+                try:
                     os.remove(p)
+                except OSError:
+                    pass
 
-    threading.Thread(target=_run).start()
+    threading.Thread(target=_run, daemon=False).start()
     return job_id
 
 
@@ -125,7 +127,12 @@ def api_extract_local():
     if not feature_spec:
         return jsonify({"error": "Missing feature_spec."}), 400
 
-    labels_df = load_labels_from_path(data.get("labels_path", ""))
+    raw_labels_path = data.get("labels_path", "")
+    if raw_labels_path:
+        real_labels = os.path.realpath(raw_labels_path)
+        if not any(real_labels.startswith(prefix) for prefix in _SAFE_PREFIXES):
+            return jsonify({"error": "labels_path not allowed."}), 403
+    labels_df = load_labels_from_path(raw_labels_path)
 
     extract_path = os.path.join(DATASET_FOLDER, f"extract_{uuid.uuid4()}")
     os.makedirs(extract_path, exist_ok=True)

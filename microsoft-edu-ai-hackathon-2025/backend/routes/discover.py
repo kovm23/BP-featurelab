@@ -80,6 +80,11 @@ def api_discover():
         finally:
             if extract_path:
                 shutil.rmtree(extract_path, ignore_errors=True)
+            for p in saved_paths:
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
 
-    threading.Thread(target=_run, daemon=True).start()
+    threading.Thread(target=_run, daemon=False).start()
     return jsonify({"job_id": job_id})

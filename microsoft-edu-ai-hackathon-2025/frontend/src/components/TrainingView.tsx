@@ -541,6 +541,21 @@ export function TrainingView({
   const [useExtractionLabels, setUseExtractionLabels] = useState(false);
   const [testingLabels, setTestingLabels] = useState<File | null>(null);
   const [useTestingLabels, setUseTestingLabels] = useState(false);
+  // Phase 5: re-run predikce + feature sloupce toggle
+  const [showPredictForm, setShowPredictForm] = useState(true);
+  const [showFeatureCols, setShowFeatureCols] = useState(false);
+
+  // Auto-select first target column when columns arrive
+  useEffect(() => {
+    if (datasetYColumns && datasetYColumns.length > 0 && !targetColumn) {
+      setTargetColumn(datasetYColumns[0]);
+    }
+  }, [datasetYColumns]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Hide predict form when predictions arrive; show it again on re-run
+  useEffect(() => {
+    if (predictions) setShowPredictForm(false);
+  }, [predictions]);
 
   const phaseTitle: Record<number, string> = {
     1: "Fáze 1: Feature Discovery",
@@ -600,17 +615,24 @@ export function TrainingView({
       {/* ---- STEPPER ---- */}
       <div className="flex items-center justify-center gap-1 mb-6 flex-wrap">
         {PHASE_LABELS.map((p, i) => {
-          // Determine which steps have data and are reachable
-          const stepHasData =
+          // Can user navigate to this step? (precondition met)
+          const stepReachable =
             p.num === 1 ? true :
             p.num === 2 ? !!featureSpec :
             p.num === 3 ? !!trainingDataX :
             p.num === 4 ? !!trainResult :
             p.num === 5 ? !!testingDataX :
             false;
-          const isCompleted = step > p.num || (stepHasData && step !== p.num);
+          // Has this step been completed? (its output exists)
+          const isCompleted =
+            p.num === 1 ? !!featureSpec :
+            p.num === 2 ? !!trainingDataX :
+            p.num === 3 ? !!trainResult :
+            p.num === 4 ? !!testingDataX :
+            p.num === 5 ? !!predictions :
+            false;
           const isCurrent = step === p.num;
-          const canClick = stepHasData && !isCurrent && onGoToStep && !anyBusy;
+          const canClick = stepReachable && !isCurrent && onGoToStep && !anyBusy;
 
           return (
             <React.Fragment key={p.num}>
@@ -795,7 +817,7 @@ export function TrainingView({
                 className="rounded"
               />
               <span className={`text-sm font-medium ${cls(deluxe, "text-amber-800", "text-amber-300")}`}>
-                Use labels for this phase (dataset_Y)
+                Přidat labels soubor (dataset_Y)
               </span>
             </label>
             {useDiscoveryLabels && (
@@ -842,6 +864,20 @@ export function TrainingView({
               )}
             </Button>
           </div>
+
+          {/* Progress bar + cancel during discovery */}
+          {isDiscovering && (
+            <div className="space-y-2">
+              <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel || "AI analyzuje vzorky..."} />
+              {onCancel && (
+                <div className="flex justify-center">
+                  <Button variant="outline" size="sm" onClick={onCancel} className="text-xs">
+                    ✕ Zastavit
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Feature spec výsledek + pokračovat */}
           {featureSpec && !isDiscovering && (
@@ -948,7 +984,7 @@ export function TrainingView({
                   className="rounded"
                 />
                 <span className={`text-sm font-medium ${cls(deluxe, "text-amber-800", "text-amber-300")}`}>
-                  Use labels for this phase (dataset_Y)
+                  Nahrát labels zvlášť (dataset_Y)
                 </span>
               </label>
               <p className={`text-xs mt-1 ${cls(deluxe, "text-amber-600", "text-amber-400/70")}`}>
@@ -1356,7 +1392,7 @@ export function TrainingView({
           )}
 
           {/* Optional testing_Y labels */}
-          {!predictions && (
+          {showPredictForm && (
             <div className={`p-3 rounded-lg border ${cls(deluxe, "bg-amber-50/50 border-amber-200", "bg-amber-900/20 border-amber-800/50")}`}>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
@@ -1391,8 +1427,8 @@ export function TrainingView({
             </div>
           )}
 
-          {/* Predict button (if predictions not yet available) */}
-          {!predictions && (
+          {/* Predict button */}
+          {showPredictForm && (
             <div className="flex justify-center mt-6">
               <Button
                 onClick={() => onPredict(useTestingLabels ? testingLabels : null)}
@@ -1473,6 +1509,14 @@ export function TrainingView({
               )}
 
               {/* Predictions table */}
+              {featureSpec && Object.keys(featureSpec).length > 0 && (
+                <button
+                  onClick={() => setShowFeatureCols((v) => !v)}
+                  className={`text-xs underline opacity-60 hover:opacity-100 ${cls(deluxe, "text-slate-500", "text-slate-400")}`}
+                >
+                  {showFeatureCols ? "Skrýt feature sloupce" : `Zobrazit feature sloupce (${Object.keys(featureSpec).length})`}
+                </button>
+              )}
               <div className={`rounded-lg border overflow-hidden ${cls(deluxe, "border-slate-200", "border-slate-700")}`}>
                 <div className="overflow-x-auto max-h-80">
                   <table className="w-full text-xs">
@@ -1484,7 +1528,7 @@ export function TrainingView({
                           <th className="px-2 py-1 text-left font-mono">actual_score</th>
                         )}
                         <th className="px-2 py-1 text-left font-mono">rule_applied</th>
-                        {featureSpec && Object.keys(featureSpec).map((f) => (
+                        {showFeatureCols && featureSpec && Object.keys(featureSpec).map((f) => (
                           <th key={f} className="px-2 py-1 text-left font-mono">{f}</th>
                         ))}
                       </tr>
@@ -1500,7 +1544,7 @@ export function TrainingView({
                             </td>
                           )}
                           <td className="px-2 py-1 whitespace-nowrap font-mono text-[10px]">{pred.rule_applied}</td>
-                          {featureSpec && Object.keys(featureSpec).map((f) => (
+                          {showFeatureCols && featureSpec && Object.keys(featureSpec).map((f) => (
                             <td key={f} className="px-2 py-1 whitespace-nowrap">
                               {String(pred.extracted_features[f] ?? "")}
                             </td>
@@ -1516,16 +1560,23 @@ export function TrainingView({
               <div className="flex justify-center gap-2 flex-wrap">
                 <button
                   onClick={() => {
+                    // Escape cell to prevent CSV injection (Excel/Sheets formula execution)
+                    const esc = (v: unknown) => {
+                      const s = String(v ?? "");
+                      if (/^[=+@\-]/.test(s)) return `"'${s.replace(/"/g, '""')}"`;
+                      if (s.includes(",") || s.includes('"') || s.includes("\n")) return `"${s.replace(/"/g, '""')}"`;
+                      return s;
+                    };
                     const hasActual = predictions.some((p) => p.actual_score !== undefined);
                     const headers = ["media_name", "predicted_score", ...(hasActual ? ["actual_score"] : []), "rule_applied", ...(featureSpec ? Object.keys(featureSpec) : [])];
                     const csv = [
                       headers.join(","),
                       ...predictions.map((p) => [
-                        p.media_name,
-                        p.predicted_score,
-                        ...(hasActual ? [p.actual_score !== undefined ? p.actual_score : ""] : []),
-                        `"${p.rule_applied}"`,
-                        ...(featureSpec ? Object.keys(featureSpec).map((f) => String(p.extracted_features[f] ?? "")) : []),
+                        esc(p.media_name),
+                        esc(p.predicted_score),
+                        ...(hasActual ? [esc(p.actual_score !== undefined ? p.actual_score : "")] : []),
+                        esc(p.rule_applied),
+                        ...(featureSpec ? Object.keys(featureSpec).map((f) => esc(p.extracted_features[f])) : []),
                       ].join(","))
                     ].join("\n");
                     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
@@ -1555,6 +1606,18 @@ export function TrainingView({
                   <Download className="w-3 h-3" /> Stáhnout experiment (ZIP)
                 </button>
               </div>
+
+              {/* Re-run prediction */}
+              {!isPredicting && (
+                <div className="flex justify-center">
+                  <button
+                    onClick={() => setShowPredictForm(true)}
+                    className={`text-xs underline opacity-60 hover:opacity-100 ${cls(deluxe, "text-slate-500", "text-slate-400")}`}
+                  >
+                    Spustit predikci znovu (nebo přidat labels)
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

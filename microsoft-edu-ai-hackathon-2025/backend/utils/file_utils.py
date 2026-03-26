@@ -16,9 +16,18 @@ def allowed_file(filename: str, allowed_exts: set | None = None) -> bool:
     return ext in (allowed_exts or ALL_ALLOWED)
 
 
+_MAX_UNZIPPED_BYTES = 5 * 1024 ** 3  # 5 GB
+
+
 def extract_zip_contents(zip_path: str, extract_path: str):
     """Extract a ZIP archive and return (media_files, csv_file_path_or_None)."""
     with zipfile.ZipFile(zip_path, "r") as zf:
+        total_size = sum(m.file_size for m in zf.infolist())
+        if total_size > _MAX_UNZIPPED_BYTES:
+            raise ValueError(
+                f"ZIP by po rozbalení překročil {_MAX_UNZIPPED_BYTES // 1024**3} GB "
+                f"(odhadovaná velikost: {total_size // 1024**3} GB)"
+            )
         zf.extractall(extract_path)
 
     csv_file = None

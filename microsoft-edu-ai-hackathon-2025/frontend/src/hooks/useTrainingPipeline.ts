@@ -147,15 +147,23 @@ export function useTrainingPipeline() {
   // --- Ollama availability ---
   const [ollamaOk, setOllamaOk] = useState<boolean | null>(null);
 
+  // Refs for values captured in async polling callbacks (prevents stale closures)
+  const modelProviderRef = useRef(modelProvider);
+  const targetVariableRef = useRef(targetVariable);
+  useEffect(() => { modelProviderRef.current = modelProvider; }, [modelProvider]);
+  useEffect(() => { targetVariableRef.current = targetVariable; }, [targetVariable]);
+
   // --- Restore from backend on mount ---
   const restoredRef = useRef(false);
   useEffect(() => {
     if (restoredRef.current) return;
     restoredRef.current = true;
 
+    let cancelled = false;
     fetch(STATE_URL)
       .then((r) => r.json())
       .then((state: PipelineState) => {
+        if (cancelled) return;
         // Only restore if backend has meaningful state
         if (!state.completed_phases || state.completed_phases.length === 0) return;
 
@@ -190,6 +198,7 @@ export function useTrainingPipeline() {
       .catch(() => {
         /* backend unreachable — continue with localStorage state */
       });
+    return () => { cancelled = true; };
   }, []);
 
   // --- Resume active job after page reload ---
@@ -229,7 +238,7 @@ export function useTrainingPipeline() {
                   .suggested_features as Record<string, string>;
                 if (features) {
                   setFeatureSpec(features);
-                  savePersisted({ trainingStep: 2, targetVariable, featureSpec: features, modelProvider });
+                  savePersisted({ trainingStep: 2, targetVariable: targetVariableRef.current, featureSpec: features, modelProvider: modelProviderRef.current });
                 }
               }
               if (tick.done && tick.error) {
@@ -355,9 +364,9 @@ export function useTrainingPipeline() {
                 // Persist after discovery so the next page load knows step 1 is done
                 savePersisted({
                   trainingStep: 2,
-                  targetVariable,
+                  targetVariable: targetVariableRef.current,
                   featureSpec: features,
-                  modelProvider,
+                  modelProvider: modelProviderRef.current,
                 });
               }
             }

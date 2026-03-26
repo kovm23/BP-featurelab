@@ -9,9 +9,10 @@ ALLOWED_EXTENSIONS = {
 MEDIA_EXTS = ALLOWED_EXTENSIONS["video"] | ALLOWED_EXTENSIONS["image"]
 ALL_ALLOWED = MEDIA_EXTS | ALLOWED_EXTENSIONS["zip"]
 
-UPLOAD_FOLDER = "uploads"
-DATASET_FOLDER = "dataset"
-CHECKPOINT_FOLDER = "checkpoints"
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_FOLDER = os.path.join(_BASE_DIR, "uploads")
+DATASET_FOLDER = os.path.join(_BASE_DIR, "dataset")
+CHECKPOINT_FOLDER = os.path.join(_BASE_DIR, "checkpoints")
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(DATASET_FOLDER, exist_ok=True)

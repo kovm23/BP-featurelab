@@ -1,5 +1,6 @@
 import os
 import openai
+import httpx
 import numpy as np
 from PIL import Image
 import base64
@@ -14,6 +15,7 @@ load_dotenv()
 local_client = openai.OpenAI(
     base_url="http://localhost:11434/v1",
     api_key="ollama",
+    timeout=httpx.Timeout(120.0, connect=5.0),
 )
 
 DEFAULT_MODEL = "qwen2.5vl:7b"

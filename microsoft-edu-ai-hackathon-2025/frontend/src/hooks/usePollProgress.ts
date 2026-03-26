@@ -1,11 +1,15 @@
 import { STATUS_URL } from "@/lib/api";
 import type { StatusPayload } from "@/lib/api";
 
+const _POLL_MIN_MS = 600;
+const _POLL_MAX_MS = 5000;
+
 export async function pollProgress(
   jobId: string,
   onTick: (s: StatusPayload) => void,
   signal: AbortSignal
 ) {
+  let delay = _POLL_MIN_MS;
   while (!signal.aborted) {
     try {
       const r = await fetch(STATUS_URL(jobId), {
@@ -16,9 +20,12 @@ export async function pollProgress(
       const s: StatusPayload = await r.json();
       onTick(s);
       if (s.done || s.progress >= 100) break;
+      // Reset backoff on success
+      delay = _POLL_MIN_MS;
     } catch {
-      /* silent backoff */
+      // Increase delay on transient error (network/server not ready)
+      delay = Math.min(delay * 2, _POLL_MAX_MS);
     }
-    await new Promise((res) => setTimeout(res, 600));
+    await new Promise((res) => setTimeout(res, delay));
   }
 }
