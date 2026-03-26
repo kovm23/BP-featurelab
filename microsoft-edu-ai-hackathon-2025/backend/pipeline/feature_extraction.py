@@ -287,6 +287,7 @@ def extract_features_async(
                 "dataset_X": json.loads(df_X.to_json(orient="records")),
                 "feature_spec": feature_spec,
                 "rows_count": len(df_X),
+                "clamped_count": total_clamped,
             },
         }
         if df_Y is not None:

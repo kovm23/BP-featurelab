@@ -27,7 +27,6 @@ import { pollProgress } from "@/hooks/usePollProgress";
 /*  Persisted state shape (localStorage)                               */
 /* ------------------------------------------------------------------ */
 interface PersistedPipeline {
-  appMode?: "predict" | "train";
   trainingStep?: 1 | 2 | 3 | 4 | 5;
   targetVariable?: string;
   featureSpec?: Record<string, string> | null;
@@ -234,11 +233,9 @@ export function useTrainingPipeline() {
               setProgressLabel(tick.stage || "");
               if (tick.done && !tick.error) {
                 clearActiveJob();
-                const features = (tick as unknown as Record<string, unknown>)
-                  .suggested_features as Record<string, string>;
-                if (features) {
-                  setFeatureSpec(features);
-                  savePersisted({ trainingStep: 2, targetVariable: targetVariableRef.current, featureSpec: features, modelProvider: modelProviderRef.current });
+                if (tick.suggested_features) {
+                  setFeatureSpec(tick.suggested_features);
+                  savePersisted({ trainingStep: 2, targetVariable: targetVariableRef.current, featureSpec: tick.suggested_features, modelProvider: modelProviderRef.current });
                 }
               }
               if (tick.done && tick.error) {
@@ -357,15 +354,12 @@ export function useTrainingPipeline() {
             setProgressLabel(s.stage || "");
             if (s.done && !s.error) {
               clearActiveJob();
-              const features = (s as unknown as Record<string, unknown>)
-                .suggested_features as Record<string, string>;
-              if (features) {
-                setFeatureSpec(features);
-                // Persist after discovery so the next page load knows step 1 is done
+              if (s.suggested_features) {
+                setFeatureSpec(s.suggested_features);
                 savePersisted({
                   trainingStep: 2,
                   targetVariable: targetVariableRef.current,
-                  featureSpec: features,
+                  featureSpec: s.suggested_features,
                   modelProvider: modelProviderRef.current,
                 });
               }

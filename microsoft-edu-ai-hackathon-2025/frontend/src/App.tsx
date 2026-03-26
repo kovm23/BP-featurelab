@@ -269,6 +269,7 @@ export default function MediaFeatureLabPro() {
   }
 
   function handleReset() {
+    if (!window.confirm("Opravdu chcete resetovat celý pipeline? Všechna data budou ztracena.")) return;
     if (uploadCtrl) uploadCtrl.abort();
     setUploadCtrl(null);
     setBusy(false);

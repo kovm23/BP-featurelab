@@ -62,6 +62,55 @@ def _preprocess_features(df: pd.DataFrame, training_columns: list[str] | None = 
     return X
 
 
+def _find_covering_rule(row: pd.Series, rules: list[str]) -> str:
+    """Find the first RuleKit rule whose IF-conditions are satisfied by row values.
+
+    Rules have the format: IF feature >= val AND feature <= val THEN ...
+    Returns the full rule string or a fallback label.
+    """
+    for rule_str in rules:
+        # Extract the condition part (before THEN)
+        match = re.match(r"IF\s+(.+?)\s+THEN", rule_str, re.IGNORECASE)
+        if not match:
+            continue
+        conditions_str = match.group(1)
+        # Split on AND
+        conditions = re.split(r"\s+AND\s+", conditions_str, flags=re.IGNORECASE)
+        all_met = True
+        for cond in conditions:
+            cond = cond.strip()
+            # Parse "feature op value"
+            m = re.match(r"(.+?)\s*(>=|<=|>|<|=)\s*(.+)", cond)
+            if not m:
+                all_met = False
+                break
+            feat, op, val_str = m.group(1).strip(), m.group(2), m.group(3).strip()
+            if feat not in row.index:
+                all_met = False
+                break
+            try:
+                row_val = float(row[feat])
+                threshold = float(val_str)
+            except (ValueError, TypeError):
+                all_met = False
+                break
+            if op == ">=" and not (row_val >= threshold):
+                all_met = False
+            elif op == "<=" and not (row_val <= threshold):
+                all_met = False
+            elif op == ">" and not (row_val > threshold):
+                all_met = False
+            elif op == "<" and not (row_val < threshold):
+                all_met = False
+            elif op == "=" and not (abs(row_val - threshold) < 1e-9):
+                all_met = False
+            if not all_met:
+                break
+        if all_met:
+            return rule_str
+    return "Ensemble (no single rule match)"
+
+
 def _count_rule_features(rules: list[str], feature_names: list[str]) -> dict:
     """Count how often each feature appears in RuleKit rules."""
     counts = {}
@@ -354,7 +403,7 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None) -> dict:
     for i, row in pipeline.testing_X.iterrows():
         pred_score = float(predictions[i])
         media_name = str(row.get("media_name", f"object_{i}"))
-        rule = pipeline.rules[0] if pipeline.rules else "Default rule"
+        rule = _find_covering_rule(row, pipeline.rules) if pipeline.rules else "Default rule"
 
         item = {
             "media_name": media_name,

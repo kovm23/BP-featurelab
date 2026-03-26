@@ -587,6 +587,14 @@ export function TrainingView({
   const extractStalled = useProgressStall(progress, isExtracting);
   const testExtractStalled = useProgressStall(progress, isExtractingTest);
 
+  // Auto-scroll error banner into view
+  const errorRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (error && errorRef.current) {
+      errorRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [error]);
+
   return (
     <div
       className={`p-6 rounded-2xl shadow-sm border ${cls(
@@ -599,7 +607,7 @@ export function TrainingView({
       {error && (() => {
         const { message, hint } = enrichError(error);
         return (
-        <div className={`mb-4 flex items-start gap-2 p-3 rounded-lg border ${cls(deluxe, "bg-red-50 border-red-200 text-red-800", "bg-red-900/30 border-red-800/50 text-red-300")}`}>
+        <div ref={errorRef} className={`mb-4 flex items-start gap-2 p-3 rounded-lg border ${cls(deluxe, "bg-red-50 border-red-200 text-red-800", "bg-red-900/30 border-red-800/50 text-red-300")}`}>
           <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
           <div className="flex-1">
             <p className="text-sm">{message}</p>
@@ -851,7 +859,10 @@ export function TrainingView({
             <Button
               onClick={() => discoveryFiles.length > 0 && onDiscoverStart(discoveryFiles, useDiscoveryLabels ? discoveryLabels : null)}
               disabled={discoveryFiles.length === 0 || !targetVariable || isDiscovering}
-              title={discoveryFiles.length === 0 ? "Nejdříve nahrajte vzorková média" : !targetVariable ? "Zadejte cílovou proměnnou" : undefined}
+              title={[
+                discoveryFiles.length === 0 && "Nahrajte vzorková média",
+                !targetVariable && "Zadejte cílovou proměnnou",
+              ].filter(Boolean).join("; ") || undefined}
             >
               {isDiscovering ? (
                 <>
@@ -1609,13 +1620,10 @@ export function TrainingView({
 
               {/* Re-run prediction */}
               {!isPredicting && (
-                <div className="flex justify-center">
-                  <button
-                    onClick={() => setShowPredictForm(true)}
-                    className={`text-xs underline opacity-60 hover:opacity-100 ${cls(deluxe, "text-slate-500", "text-slate-400")}`}
-                  >
-                    Spustit predikci znovu (nebo přidat labels)
-                  </button>
+                <div className="flex justify-center mt-2">
+                  <Button variant="outline" size="sm" onClick={() => setShowPredictForm(true)}>
+                    <PlayCircle className="mr-2 h-3 w-3" /> Spustit predikci znovu
+                  </Button>
                 </div>
               )}
             </div>

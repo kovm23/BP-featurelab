@@ -68,6 +68,7 @@ export interface ExtractDetails {
   feature_spec: Record<string, string>;
   rows_count: number;
   dataset_Y_columns?: string[];
+  clamped_count?: number;
 }
 
 export interface TrainResult {
@@ -127,6 +128,7 @@ export type StatusPayload = {
   done?: boolean;
   error?: string;
   details?: ExtractDetails;
+  suggested_features?: Record<string, string>;
 };
 
 // =====================================================

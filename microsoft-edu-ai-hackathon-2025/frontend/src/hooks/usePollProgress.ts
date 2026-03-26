@@ -20,6 +20,8 @@ export async function pollProgress(
       const s: StatusPayload = await r.json();
       onTick(s);
       if (s.done || s.progress >= 100) break;
+      // Job disappeared from registry (TTL cleanup or server restart)
+      if (s.error && s.done === undefined) break;
       // Reset backoff on success
       delay = _POLL_MIN_MS;
     } catch {
