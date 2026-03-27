@@ -20,6 +20,7 @@ import {
   STATE_URL,
   STATUS_URL,
   HEALTH_URL,
+  sessionHeaders,
 } from "@/lib/api";
 import { pollProgress } from "@/hooks/usePollProgress";
 
@@ -159,7 +160,7 @@ export function useTrainingPipeline() {
     restoredRef.current = true;
 
     let cancelled = false;
-    fetch(STATE_URL)
+    fetch(STATE_URL, { headers: sessionHeaders() })
       .then((r) => r.json())
       .then((state: PipelineState) => {
         if (cancelled) return;
@@ -210,7 +211,7 @@ export function useTrainingPipeline() {
     if (!saved) return;
 
     // Check if job is still running
-    fetch(STATUS_URL(saved.job_id), { cache: "no-store" })
+    fetch(STATUS_URL(saved.job_id), { cache: "no-store", headers: sessionHeaders() })
       .then((r) => r.json())
       .then((s: StatusPayload) => {
         if (s.done) {
@@ -337,7 +338,7 @@ export function useTrainingPipeline() {
     if (labelsFile) formData.append("labels_file", labelsFile);
 
     try {
-      const res = await fetch(DISCOVER_URL, { method: "POST", body: formData });
+      const res = await fetch(DISCOVER_URL, { method: "POST", body: formData, headers: sessionHeaders() });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
         throw new Error(errData.error || "Feature Discovery selhala");
@@ -403,7 +404,7 @@ export function useTrainingPipeline() {
       const res = await fetch(config.url, {
         method: "POST",
         body: config.body,
-        headers: config.headers,
+        headers: { ...sessionHeaders(), ...(config.headers || {}) },
       });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -520,7 +521,7 @@ export function useTrainingPipeline() {
     try {
       const res = await fetch(TRAIN_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { ...sessionHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({ target_column: targetColumn }),
       });
       if (!res.ok) {
@@ -550,9 +551,9 @@ export function useTrainingPipeline() {
       if (labelsFile) {
         const formData = new FormData();
         formData.append("labels_file", labelsFile);
-        res = await fetch(PREDICT_URL, { method: "POST", body: formData });
+        res = await fetch(PREDICT_URL, { method: "POST", body: formData, headers: sessionHeaders() });
       } else {
-        res = await fetch(PREDICT_URL, { method: "POST" });
+        res = await fetch(PREDICT_URL, { method: "POST", headers: sessionHeaders() });
       }
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
@@ -595,7 +596,7 @@ export function useTrainingPipeline() {
       /* */
     }
     clearActiveJob();
-    fetch(RESET_URL, { method: "POST" }).catch(() => {});
+    fetch(RESET_URL, { method: "POST", headers: sessionHeaders() }).catch(() => {});
   }
 
   return {

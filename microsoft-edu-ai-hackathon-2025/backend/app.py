@@ -1,12 +1,13 @@
 """Flask application factory."""
 import logging
 import os
+import secrets
 
 from dotenv import load_dotenv
-from flask import Flask
+from flask import Flask, request
 from flask_cors import CORS
 
-from pipeline import MachineLearningPipeline
+import session_registry
 from routes import (
     analyze_bp,
     discover_bp,
@@ -24,9 +25,15 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+app.secret_key = os.getenv("SECRET_KEY") or secrets.token_hex(32)
 
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
-CORS(app, resources={r"/*": {"origins": ALLOWED_ORIGINS}})
+CORS(
+    app,
+    resources={r"/*": {"origins": ALLOWED_ORIGINS}},
+    supports_credentials=True,
+    allow_headers=["Content-Type", "X-Session-ID"],
+)
 
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024 * 1024  # 2 GB
 
@@ -40,8 +47,17 @@ app.register_blueprint(reset_bp)
 app.register_blueprint(state_bp)
 app.register_blueprint(health_bp)
 
-pipeline = MachineLearningPipeline()
-pipeline.load_state()  # Restore state after server restart
+
+def get_pipeline():
+    """Return the MachineLearningPipeline for the current request's session.
+
+    Session is identified by the *X-Session-ID* request header (a UUID
+    generated and persisted in the browser's localStorage). Falls back to
+    "default" so existing single-user deployments keep working without changes.
+    """
+    session_id = request.headers.get("X-Session-ID", "default")
+    return session_registry.get_pipeline(session_id)
+
 
 if __name__ == "__main__":
     debug = os.getenv("FLASK_DEBUG", "false").lower() in ("1", "true", "yes")
@@ -51,3 +67,5 @@ if __name__ == "__main__":
         debug=debug,
         use_reloader=debug,
     )
+
+

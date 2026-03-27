@@ -13,24 +13,24 @@ from pipeline.ml_training import train_model, predict_batch
 
 logger = logging.getLogger(__name__)
 
-_STATE_JSON = os.path.join(CHECKPOINT_FOLDER, "pipeline_state.json")
-_MODEL_PKL = os.path.join(CHECKPOINT_FOLDER, "model.pkl")
-_XGB_MODEL_PKL = os.path.join(CHECKPOINT_FOLDER, "xgb_model.pkl")
-_TRAINING_X_CSV = os.path.join(CHECKPOINT_FOLDER, "training_X.csv")
-_TRAINING_Y_CSV = os.path.join(CHECKPOINT_FOLDER, "training_Y.csv")
-_TRAINING_Y_DF_CSV = os.path.join(CHECKPOINT_FOLDER, "training_Y_df.csv")
-_TESTING_X_CSV = os.path.join(CHECKPOINT_FOLDER, "testing_X.csv")
-
-# Legacy pickle file (for migration)
-_LEGACY_STATE_FILE = os.path.join(CHECKPOINT_FOLDER, "pipeline_state.pkl")
-
 
 class MachineLearningPipeline:
     """Holds all state for the five-phase ML pipeline."""
 
-    PIPELINE_STATE_FILE = _STATE_JSON
+    def __init__(self, checkpoint_folder: str | None = None):
+        self._checkpoint_folder = checkpoint_folder or CHECKPOINT_FOLDER
+        os.makedirs(self._checkpoint_folder, exist_ok=True)
 
-    def __init__(self):
+        self._state_json = os.path.join(self._checkpoint_folder, "pipeline_state.json")
+        self._model_pkl = os.path.join(self._checkpoint_folder, "model.pkl")
+        self._xgb_model_pkl = os.path.join(self._checkpoint_folder, "xgb_model.pkl")
+        self._training_x_csv = os.path.join(self._checkpoint_folder, "training_X.csv")
+        self._training_y_csv = os.path.join(self._checkpoint_folder, "training_Y.csv")
+        self._training_y_df_csv = os.path.join(self._checkpoint_folder, "training_Y_df.csv")
+        self._testing_x_csv = os.path.join(self._checkpoint_folder, "testing_X.csv")
+        self._legacy_state_file = os.path.join(self._checkpoint_folder, "pipeline_state.pkl")
+        # Alias kept for compatibility with any external references
+        self.PIPELINE_STATE_FILE = self._state_json
         self.feature_spec: dict = {}
         self.target_variable: str = ""
         # Phase 2 outputs
@@ -83,28 +83,28 @@ class MachineLearningPipeline:
                 "_scaler_mean": self._scaler_mean,
                 "_scaler_scale": self._scaler_scale,
             }
-            with open(_STATE_JSON, "w", encoding="utf-8") as f:
+            with open(self._state_json, "w", encoding="utf-8") as f:
                 json.dump(state, f, ensure_ascii=False, indent=2)
 
             # Save DataFrames as CSV
-            self._save_df(self.training_X, _TRAINING_X_CSV)
-            self._save_series(self.training_Y, _TRAINING_Y_CSV)
-            self._save_df(self.training_Y_df, _TRAINING_Y_DF_CSV)
-            self._save_df(self.testing_X, _TESTING_X_CSV)
+            self._save_df(self.training_X, self._training_x_csv)
+            self._save_series(self.training_Y, self._training_y_csv)
+            self._save_df(self.training_Y_df, self._training_y_df_csv)
+            self._save_df(self.testing_X, self._testing_x_csv)
 
             # RuleKit model (Java object — must be pickle)
             if self.model is not None:
-                with open(_MODEL_PKL, "wb") as f:
+                with open(self._model_pkl, "wb") as f:
                     pickle.dump(self.model, f)
-            elif os.path.exists(_MODEL_PKL):
-                os.remove(_MODEL_PKL)
+            elif os.path.exists(self._model_pkl):
+                os.remove(self._model_pkl)
 
             # XGBoost model
             if self.xgb_model is not None:
-                with open(_XGB_MODEL_PKL, "wb") as f:
+                with open(self._xgb_model_pkl, "wb") as f:
                     pickle.dump(self.xgb_model, f)
-            elif os.path.exists(_XGB_MODEL_PKL):
-                os.remove(_XGB_MODEL_PKL)
+            elif os.path.exists(self._xgb_model_pkl):
+                os.remove(self._xgb_model_pkl)
 
             logger.info("Pipeline state saved to disk.")
         except Exception as e:
@@ -112,16 +112,14 @@ class MachineLearningPipeline:
 
     def load_state(self) -> bool:
         """Load pipeline state from disk if it exists. Returns True on success."""
-        # Try new JSON format first
-        if os.path.exists(_STATE_JSON):
+        if os.path.exists(self._state_json):
             return self._load_json_state()
-        # Fallback: migrate legacy pickle
-        if os.path.exists(_LEGACY_STATE_FILE):
+        if os.path.exists(self._legacy_state_file):
             ok = self._load_legacy_pickle()
             if ok:
-                self.save_state()  # Re-save in new format
+                self.save_state()
                 try:
-                    os.remove(_LEGACY_STATE_FILE)
+                    os.remove(self._legacy_state_file)
                 except OSError:
                     pass
             return ok
@@ -129,7 +127,7 @@ class MachineLearningPipeline:
 
     def _load_json_state(self) -> bool:
         try:
-            with open(_STATE_JSON, "r", encoding="utf-8") as f:
+            with open(self._state_json, "r", encoding="utf-8") as f:
                 state = json.load(f)
             self.feature_spec = state.get("feature_spec", {})
             self.target_variable = state.get("target_variable", "")
@@ -147,17 +145,17 @@ class MachineLearningPipeline:
             self._scaler_mean = state.get("_scaler_mean", [])
             self._scaler_scale = state.get("_scaler_scale", [])
 
-            self.training_X = self._load_df(_TRAINING_X_CSV)
-            self.training_Y = self._load_series(_TRAINING_Y_CSV)
-            self.training_Y_df = self._load_df(_TRAINING_Y_DF_CSV)
-            self.testing_X = self._load_df(_TESTING_X_CSV)
+            self.training_X = self._load_df(self._training_x_csv)
+            self.training_Y = self._load_series(self._training_y_csv)
+            self.training_Y_df = self._load_df(self._training_y_df_csv)
+            self.testing_X = self._load_df(self._testing_x_csv)
 
-            if os.path.exists(_MODEL_PKL):
-                with open(_MODEL_PKL, "rb") as f:
+            if os.path.exists(self._model_pkl):
+                with open(self._model_pkl, "rb") as f:
                     self.model = pickle.load(f)
 
-            if os.path.exists(_XGB_MODEL_PKL):
-                with open(_XGB_MODEL_PKL, "rb") as f:
+            if os.path.exists(self._xgb_model_pkl):
+                with open(self._xgb_model_pkl, "rb") as f:
                     self.xgb_model = pickle.load(f)
 
             logger.info("Pipeline state loaded from disk.")
@@ -168,7 +166,7 @@ class MachineLearningPipeline:
 
     def _load_legacy_pickle(self) -> bool:
         try:
-            with open(_LEGACY_STATE_FILE, "rb") as f:
+            with open(self._legacy_state_file, "rb") as f:
                 state = pickle.load(f)
             self.feature_spec = state.get("feature_spec", {})
             self.target_variable = state.get("target_variable", "")

@@ -5,7 +5,7 @@ import re
 
 import pandas as pd
 
-from services.openai_service import local_client
+from services.openai_service import local_client, _ollama_lock
 from services.processing import process_single_media
 
 logger = logging.getLogger(__name__)
@@ -90,11 +90,12 @@ def discover_features(
         f"\"speech_presence\": \"binary 0 or 1, whether speech is audible\"}}"
     )
 
-    response = local_client.chat.completions.create(
-        model=model_name,
-        messages=[{"role": "user", "content": synthesis_prompt}],
-        temperature=0.3,
-    )
+    with _ollama_lock:
+        response = local_client.chat.completions.create(
+            model=model_name,
+            messages=[{"role": "user", "content": synthesis_prompt}],
+            temperature=0.3,
+        )
     raw_content = response.choices[0].message.content or ""
     # Use json decoder to find the first valid JSON object
     all_features = {}

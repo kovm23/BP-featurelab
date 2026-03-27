@@ -13,7 +13,6 @@ from collections import Counter
 import numpy as np
 import pandas as pd
 
-from config import CHECKPOINT_FOLDER
 from pipeline.feature_validation import validate_row
 from services.processing import process_single_media
 import jobs as job_registry
@@ -140,7 +139,7 @@ def extract_features_async(
         prompt = _build_extraction_prompt(feature_spec, labels_context)
 
         # Checkpoint for resume
-        checkpoint_file = os.path.join(CHECKPOINT_FOLDER, f"extract_{dataset_type}.json")
+        checkpoint_file = os.path.join(pipeline._checkpoint_folder, f"extract_{dataset_type}.json")
         features_data = []
         done_names: set[str] = set()
         if os.path.exists(checkpoint_file):

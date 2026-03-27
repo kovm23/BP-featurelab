@@ -1,4 +1,4 @@
-import { STATUS_URL } from "@/lib/api";
+import { STATUS_URL, sessionHeaders } from "@/lib/api";
 import type { StatusPayload } from "@/lib/api";
 
 const _POLL_MIN_MS = 600;
@@ -15,6 +15,7 @@ export async function pollProgress(
       const r = await fetch(STATUS_URL(jobId), {
         signal,
         cache: "no-store",
+        headers: sessionHeaders(),
       });
       if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
       const s: StatusPayload = await r.json();

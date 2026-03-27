@@ -12,7 +12,8 @@ state_bp = Blueprint("state", __name__)
 @state_bp.route("/state", methods=["GET"])
 def api_state():
     """Return current pipeline state so the frontend can restore after refresh."""
-    from app import pipeline
+    from app import get_pipeline
+    pipeline = get_pipeline()
 
     # Determine which phases are complete
     completed_phases: list[int] = []

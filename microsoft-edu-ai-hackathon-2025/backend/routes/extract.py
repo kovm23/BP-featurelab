@@ -55,7 +55,8 @@ def _start_extraction(pipeline, media_files, feature_spec, model_name,
 @extract_bp.route("/extract", methods=["POST"])
 def api_extract():
     """Phase 2 & 4: Async feature extraction from a ZIP dataset (upload)."""
-    from app import pipeline
+    from app import get_pipeline
+    pipeline = get_pipeline()
 
     if "file" not in request.files:
         return jsonify({"error": "No ZIP file uploaded"}), 400
@@ -103,7 +104,8 @@ def api_extract():
 @extract_bp.route("/extract-local", methods=["POST"])
 def api_extract_local():
     """Phase 2 & 4: Async feature extraction from a ZIP already on the server."""
-    from app import pipeline
+    from app import get_pipeline
+    pipeline = get_pipeline()
 
     data = request.get_json()
     if not data:

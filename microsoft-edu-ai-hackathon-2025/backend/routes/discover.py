@@ -21,7 +21,8 @@ discover_bp = Blueprint("discover", __name__)
 @discover_bp.route("/discover", methods=["POST"])
 def api_discover():
     """Phase 1: Feature discovery from sample media (async, returns job_id)."""
-    from app import pipeline
+    from app import get_pipeline
+    pipeline = get_pipeline()
 
     uploaded = request.files.getlist("files") or request.files.getlist("file")
     if not uploaded:

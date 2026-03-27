@@ -14,7 +14,8 @@ predict_bp = Blueprint("predict", __name__)
 @predict_bp.route("/predict", methods=["POST"])
 def api_predict():
     """Phase 5: Batch prediction for all objects in the testing dataset."""
-    from app import pipeline
+    from app import get_pipeline
+    pipeline = get_pipeline()
 
     testing_Y_df = load_labels_from_request(request, UPLOAD_FOLDER)
 

@@ -7,7 +7,8 @@ train_bp = Blueprint("train", __name__)
 @train_bp.route("/train", methods=["POST"])
 def api_train():
     """Phase 3: Train RuleKit model from stored dataset_X + dataset_Y."""
-    from app import pipeline
+    from app import get_pipeline
+    pipeline = get_pipeline()
 
     if request.is_json:
         target_col = (request.json or {}).get("target_column", "")

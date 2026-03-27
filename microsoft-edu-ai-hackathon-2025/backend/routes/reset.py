@@ -5,8 +5,6 @@ import os
 
 from flask import Blueprint, jsonify
 
-from config import CHECKPOINT_FOLDER
-
 logger = logging.getLogger(__name__)
 
 reset_bp = Blueprint("reset", __name__)
@@ -15,11 +13,12 @@ reset_bp = Blueprint("reset", __name__)
 @reset_bp.route("/reset", methods=["POST"])
 def api_reset():
     """Delete all checkpoint files and reset pipeline state."""
-    from app import pipeline
+    from app import get_pipeline
+    pipeline = get_pipeline()
 
     removed = []
     for pattern in ("*.json", "*.pkl", "*.csv"):
-        for f in glob.glob(os.path.join(CHECKPOINT_FOLDER, pattern)):
+        for f in glob.glob(os.path.join(pipeline._checkpoint_folder, pattern)):
             try:
                 os.remove(f)
                 removed.append(os.path.basename(f))
@@ -53,3 +52,4 @@ def api_reset():
 
     logger.info("Reset: removed checkpoints %s", removed)
     return jsonify({"ok": True, "removed_checkpoints": removed})
+

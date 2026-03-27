@@ -8,6 +8,7 @@ import io
 from dotenv import load_dotenv
 import json
 import time
+import threading
 
 load_dotenv()
 
@@ -17,6 +18,10 @@ local_client = openai.OpenAI(
     api_key="ollama",
     timeout=httpx.Timeout(120.0, connect=5.0),
 )
+
+# Ollama neumí zpracovat více požadavků najednou — při souběžném volání
+# vrací EOF při načítání modelu. Semaphore serializuje volání.
+_ollama_lock = threading.Semaphore(1)
 
 DEFAULT_MODEL = "qwen2.5vl:7b"
 
@@ -59,15 +64,16 @@ def extract_image_features_with_llm(image_base64_list, prompt=None, deployment_n
 
         for attempt in range(max_retries):
             try:
-                response = local_client.chat.completions.create(
-                    model=model_name,
-                    messages=[
-                        {"role": "system", "content": "You are a feature extraction assistant. You MUST output valid JSON only. No text, no markdown, just JSON."},
-                        {"role": "user", "content": user_content}
-                    ],
-                    max_tokens=2048,
-                    temperature=0.1,
-                )
+                with _ollama_lock:
+                    response = local_client.chat.completions.create(
+                        model=model_name,
+                        messages=[
+                            {"role": "system", "content": "You are a feature extraction assistant. You MUST output valid JSON only. No text, no markdown, just JSON."},
+                            {"role": "user", "content": user_content}
+                        ],
+                        max_tokens=2048,
+                        temperature=0.1,
+                    )
                 content = response.choices[0].message.content
                 clean_content = _clean_json_response(content)
 
@@ -108,15 +114,16 @@ def extract_text_features_with_llm(text_list, prompt=None, deployment_name=None,
 
         for attempt in range(max_retries):
             try:
-                response = local_client.chat.completions.create(
-                    model=model_name,
-                    messages=[
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": text}
-                    ],
-                    max_tokens=2048,
-                    temperature=0.1,
-                )
+                with _ollama_lock:
+                    response = local_client.chat.completions.create(
+                        model=model_name,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": text}
+                        ],
+                        max_tokens=2048,
+                        temperature=0.1,
+                    )
                 content = response.choices[0].message.content
                 clean_content = _clean_json_response(content)
 

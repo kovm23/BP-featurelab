@@ -16,6 +16,26 @@ export const STATUS_URL = (jobId: string) =>
   `${API_BASE}/status/${encodeURIComponent(jobId)}`;
 
 // =====================================================
+// SESSION — perzistentní X-Session-ID header
+// =====================================================
+
+const _SESSION_KEY = "ml_session_id";
+
+function getSessionId(): string {
+  let id = localStorage.getItem(_SESSION_KEY);
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem(_SESSION_KEY, id);
+  }
+  return id;
+}
+
+/** Returns the X-Session-ID header object to spread into fetch options. */
+export function sessionHeaders(): Record<string, string> {
+  return { "X-Session-ID": getSessionId() };
+}
+
+// =====================================================
 // KONFIGURACE MODELŮ
 // =====================================================
 export const AVAILABLE_MODELS = [
