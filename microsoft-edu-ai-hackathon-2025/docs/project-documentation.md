@@ -18,8 +18,8 @@ Media Feature Lab je webová aplikace pro automatickou klasifikaci/regresi multi
 │         React + Vite + TailwindCSS               │
 │    (SPA s 5-krokovým wizard průvodcem)            │
 ├─────────────────────────────────────────────────┤
-│              Vite Dev Proxy                       │
-│  /discover, /extract, /train, /predict → :5000   │
+│      Vite Dev Proxy / Cloudflare Worker Proxy     │
+│ /discover,/extract,/train,/predict,… → backend    │
 ├─────────────────────────────────────────────────┤
 │                   Backend                         │
 │          Flask + Gunicorn (1 worker)              │
@@ -181,6 +181,16 @@ Output STRICTLY a JSON object with 5–8 keys.
 }
 ```
 
+#### Progress reporting (aktuální implementace)
+
+Discovery nyní reportuje jemnější progress přes `progress_cb`:
+
+- 3-5%: příprava vstupů
+- 5-60%: analýza jednotlivých vzorků (`Analyzuji vzorek i/N: file`)
+- 65%: LLM syntéza feature spec
+- 90%: parsování JSON odpovědi
+- 100%: dokončeno
+
 ---
 
 ### 2.4 Fáze 2/4: Feature Extraction
@@ -295,6 +305,8 @@ Průběžný checkpoint: `checkpoints/extract_{dataset_type}.json`. Pokud extrak
 
 **Soubor:** `backend/pipeline/ml_training.py`
 
+**Route:** `backend/routes/train.py` (`POST /train`) běží asynchronně a vrací `job_id`.
+
 #### Preprocessing
 
 `_preprocess_features(df, training_columns=None)`:
@@ -355,7 +367,20 @@ Dvě perspektivy:
 
 Vrací se v API response pro vizualizaci ve frontend.
 
-#### API Response (POST /train)
+#### Async progress fáze (aktuální implementace)
+
+`train_model(..., progress_cb=...)` publikuje průběh po hlavních krocích:
+
+- 10%: příprava tréninku
+- 15%: normalizace features (`StandardScaler`)
+- 25%: trénink RuleKit
+- 60%: trénink XGBoost
+- 75%: ensemble predikce
+- 80%: K-fold cross-validation
+- 98%: ukládání modelu/checkpointu
+- 100%: dokončeno
+
+#### Výstup tréninku (v `status.details` po dokončení jobu)
 
 ```json
 {
@@ -384,6 +409,8 @@ Vrací se v API response pro vizualizaci ve frontend.
 
 **Soubor:** `backend/pipeline/ml_training.py` → `predict_batch()`
 
+**Route:** `backend/routes/predict.py` (`POST /predict`) běží asynchronně a vrací `job_id`.
+
 1. Preprocessing testovacích features (alignment na training columns)
 2. RuleKit predikce (neskálovaná data)
 3. XGBoost predikce (škálovaná data přes uložený scaler)
@@ -391,6 +418,18 @@ Vrací se v API response pro vizualizaci ve frontend.
 5. Pokud jsou k dispozici actual labels: MSE, MAE, Pearson correlation
 
 Fallback: pokud `xgb_model` neexistuje (legacy modely), použije se jen RuleKit.
+
+#### Async progress fáze (aktuální implementace)
+
+`predict_batch(..., progress_cb=...)` publikuje průběh po hlavních krocích:
+
+- 5-10%: příprava + preprocessing testovacích features
+- 25%: RuleKit predikce
+- 40%: XGBoost predikce
+- 55%: ensemble kombinace
+- 60-88%: sestavení výsledků po položkách (`Sestavuji výsledky i/N`)
+- 92%: výpočet evaluačních metrik
+- 100%: dokončeno
 
 ---
 
@@ -410,7 +449,7 @@ def update_job(job_id, **kwargs): ...
 ```
 
 **Workflow:**
-1. Klient pošle POST request (discover/extract)
+1. Klient pošle POST request (discover/extract/train/predict)
 2. Server vytvoří `job_id = uuid4()`, vrátí `{"job_id": "..."}`
 3. Spustí zpracování v background threadu
 4. Klient polluje `GET /status/{job_id}` pro progress updates
@@ -495,6 +534,11 @@ Zapouzdřuje veškerý stav a logiku 5-fázového pipeline:
 - **7 handler funkcí** (discover, extract training/testing, train, predict, cancel, reset)
 - **Generic `_runExtract(config)`** — eliminuje duplikaci 4 téměř identických extraction handlerů
 - **localStorage persistence** — ukládá jen metadata (trainingStep, targetVariable, featureSpec, modelProvider), nikoliv velká data
+- **Phase 3 + 5 polling** — trénink i predikce používají `job_id` + `pollProgress(...)` (už nejsou synchronní)
+
+#### Předvýběr cílového sloupce
+
+Ve Fázi 3 se po načtení `datasetYColumns` předvybírá **poslední** sloupec z CSV (typicky score/label), nikoliv první ID sloupec.
 
 ### 3.3 Polling mechanismus
 
@@ -506,6 +550,8 @@ pollProgress(jobId, onStatus, abortSignal)
 
 Polluje `GET /status/{jobId}` každých N ms, volá callback s aktuálním stavem. Podporuje abort (zrušení uživatelem).
 
+Při síťové chybě používá exponenciální backoff (od cca 600 ms do 5 s) a po úspěšném pollu delay resetuje.
+
 ### 3.4 API komunikace a session identifikace
 
 Vite dev server proxyuje API requesty na backend:
@@ -516,6 +562,15 @@ Vite dev server proxyuje API requesty na backend:
 ```
 
 Podpora Cloudflare tunnelu: HMR disabled (`hmr: false`), timeout 100s v tunnel.
+
+#### Cloudflare Worker proxy (produkční nasazení)
+
+Pro doménu `*.workers.dev` je použit Worker (`frontend/worker.js`), který:
+
+- proxyuje API cesty (`/discover`, `/extract`, `/train`, `/predict`, `/status`, `/state`, `/health`, `/queue-info`, ...)
+- servíruje statická frontend aktiva přes `ASSETS`
+- řeší CORS preflight (`OPTIONS`) a nastavuje CORS hlavičky na proxy odpovědích
+- bufferuje request/response body (`arrayBuffer`) kvůli stabilnímu přenosu JSON payloadů (`job_id`) přes Worker runtime
 
 #### X-Session-ID
 
@@ -696,8 +751,11 @@ Pro srovnávací experiment v bakalářské práci doporučuji následující de
 | Proměnná | Default | Popis |
 |---|---|---|
 | `VITE_API_BASE` | `""` | Frontend API base URL (prázdné = proxy) |
+| `BACKEND_URL` | - | Backend URL pro Cloudflare Worker proxy (`frontend/wrangler.toml` → `[vars]`) |
 | `FLASK_DEBUG` | `0` | Debug mode (0 = production) |
 | `EXTRACTION_PASSES` | `2` | Počet LLM callů per médium při extrakci |
+
+Poznámka: při použití `trycloudflare.com` je `BACKEND_URL` dočasná adresa, která se mění po restartu tunelu.
 
 ### 6.2 PM2 procesy
 
@@ -784,14 +842,24 @@ Spustí trénování modelu.
 {"target_column": "memorability_score"}
 ```
 
-**Response:** Viz sekce 2.6 — obsahuje MSE metriky, pravidla, feature importance, CV výsledky.
+**Response (okamžitě):**
+```json
+{"job_id": "uuid"}
+```
+
+Finální výsledek je dostupný přes `GET /status/{job_id}` v `details` (viz sekce 2.6).
 
 ### POST /predict
 Spustí batch predikci.
 
 **Request:** `multipart/form-data` (optional `labels_file`) nebo prázdný POST.
 
-**Response:**
+**Response (okamžitě):**
+```json
+{"job_id": "uuid"}
+```
+
+Finální výsledek je dostupný přes `GET /status/{job_id}` v `details`:
 ```json
 {
   "predictions": [
