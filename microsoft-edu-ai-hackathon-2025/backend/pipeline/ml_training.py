@@ -18,7 +18,6 @@ import pandas as pd
 from rulekit.regression import RuleRegressor
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 from sklearn.model_selection import KFold
-from sklearn.preprocessing import StandardScaler
 from xgboost import XGBRegressor
 
 logger = logging.getLogger(__name__)
@@ -139,15 +138,6 @@ def _run_cross_validation(X: pd.DataFrame, y: pd.Series, n_splits: int = 5) -> d
         X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
         y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
 
-        # Scale
-        scaler = StandardScaler()
-        X_train_scaled = pd.DataFrame(
-            scaler.fit_transform(X_train), columns=X_train.columns, index=X_train.index
-        )
-        X_val_scaled = pd.DataFrame(
-            scaler.transform(X_val), columns=X_val.columns, index=X_val.index
-        )
-
         # RuleKit
         rk = RuleRegressor()
         try:
@@ -161,8 +151,8 @@ def _run_cross_validation(X: pd.DataFrame, y: pd.Series, n_splits: int = 5) -> d
             n_estimators=100, max_depth=4, learning_rate=0.1,
             random_state=42, verbosity=0,
         )
-        xgb.fit(X_train_scaled, y_train)
-        xgb_pred = xgb.predict(X_val_scaled)
+        xgb.fit(X_train, y_train)
+        xgb_pred = xgb.predict(X_val)
 
         # Ensemble
         ensemble_pred = RULEKIT_WEIGHT * rk_pred + XGB_WEIGHT * xgb_pred
@@ -236,10 +226,8 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
             except Exception:
                 pass
 
-    # --- StandardScaler ---
-    _cb(15, "Normalizace příznaků (StandardScaler)...")
-    scaler = StandardScaler()
-    X_scaled = pd.DataFrame(scaler.fit_transform(X), columns=X.columns, index=X.index)
+    # --- Feature matrix ready (no scaling by request) ---
+    _cb(15, "Příznaky připraveny (bez škálování)...")
 
     # --- RuleKit ---
     _cb(25, "Trénuji RuleKit (indukce pravidel)...")
@@ -262,8 +250,8 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
         n_estimators=100, max_depth=4, learning_rate=0.1,
         random_state=42, verbosity=0,
     )
-    xgb_model.fit(X_scaled, y)
-    xgb_pred = xgb_model.predict(X_scaled)
+    xgb_model.fit(X, y)
+    xgb_pred = xgb_model.predict(X)
     xgb_mse = round(float(mean_squared_error(y, xgb_pred)), 6)
 
     # --- Ensemble ---
@@ -295,7 +283,7 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
     # --- Store in pipeline ---
     pipeline.model = rulekit_model
     pipeline.xgb_model = xgb_model
-    pipeline.scaler = scaler
+    pipeline.scaler = None
     pipeline.rules = rules
     pipeline.mse = ensemble_mse
     pipeline.rulekit_mse = rulekit_mse
@@ -307,8 +295,8 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
     pipeline.is_trained = True
     pipeline.target_variable = target_column
     pipeline._training_columns = list(X.columns)
-    pipeline._scaler_mean = scaler.mean_.tolist()
-    pipeline._scaler_scale = scaler.scale_.tolist()
+    pipeline._scaler_mean = []
+    pipeline._scaler_scale = []
 
     pipeline.save_state()
     _cb(98, "Ukládám model...")
@@ -325,6 +313,7 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
 
     return {
         "status": "success",
+        "target_mode": getattr(pipeline, "target_mode", "regression"),
         "mse": ensemble_mse,
         "rulekit_mse": rulekit_mse,
         "xgb_mse": xgb_mse,
@@ -372,24 +361,8 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
     _cb(25, "RuleKit predikce...")
     rulekit_pred = pipeline.model.predict(X_test)
 
-    # XGBoost prediction (with scaling)
-    if hasattr(pipeline, 'scaler') and pipeline.scaler is not None:
-        X_test_scaled = pd.DataFrame(
-            pipeline.scaler.transform(X_test),
-            columns=X_test.columns, index=X_test.index,
-        )
-    elif hasattr(pipeline, '_scaler_mean') and pipeline._scaler_mean:
-        # Reconstruct scaler from saved params
-        scaler = StandardScaler()
-        scaler.mean_ = np.array(pipeline._scaler_mean)
-        scaler.scale_ = np.array(pipeline._scaler_scale)
-        scaler.n_features_in_ = len(pipeline._scaler_mean)
-        X_test_scaled = pd.DataFrame(
-            scaler.transform(X_test),
-            columns=X_test.columns, index=X_test.index,
-        )
-    else:
-        X_test_scaled = X_test
+    # XGBoost prediction (no scaling)
+    X_test_scaled = X_test
 
     if hasattr(pipeline, 'xgb_model') and pipeline.xgb_model is not None:
         _cb(40, "XGBoost predikce...")

@@ -33,6 +33,7 @@ class MachineLearningPipeline:
         self.PIPELINE_STATE_FILE = self._state_json
         self.feature_spec: dict = {}
         self.target_variable: str = ""
+        self.target_mode: str = "regression"
         # Phase 2 outputs
         self.training_X: pd.DataFrame | None = None
         self.training_Y: pd.Series | None = None
@@ -41,7 +42,7 @@ class MachineLearningPipeline:
         # Phase 3 outputs
         self.model = None          # RuleKit model
         self.xgb_model = None      # XGBoost model
-        self.scaler = None         # StandardScaler (in-memory only)
+        self.scaler = None         # Kept for backward compatibility
         self.rules: list[str] = []
         self.mse: float | None = None
         self.rulekit_mse: float | None = None
@@ -69,6 +70,7 @@ class MachineLearningPipeline:
             state = {
                 "feature_spec": self.feature_spec,
                 "target_variable": self.target_variable,
+                "target_mode": self.target_mode,
                 "training_Y_column": self.training_Y_column,
                 "rules": self.rules,
                 "mse": self.mse,
@@ -131,6 +133,7 @@ class MachineLearningPipeline:
                 state = json.load(f)
             self.feature_spec = state.get("feature_spec", {})
             self.target_variable = state.get("target_variable", "")
+            self.target_mode = state.get("target_mode", "regression")
             self.training_Y_column = state.get("training_Y_column", "")
             self.rules = state.get("rules", [])
             self.mse = state.get("mse")
@@ -170,6 +173,7 @@ class MachineLearningPipeline:
                 state = pickle.load(f)
             self.feature_spec = state.get("feature_spec", {})
             self.target_variable = state.get("target_variable", "")
+            self.target_mode = state.get("target_mode", "regression")
             self.training_X = state.get("training_X")
             self.training_Y_df = state.get("training_Y_df")
             self.training_Y = state.get("training_Y")

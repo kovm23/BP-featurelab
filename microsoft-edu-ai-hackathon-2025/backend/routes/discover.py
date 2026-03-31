@@ -29,6 +29,10 @@ def api_discover():
         return jsonify({"error": "No file uploaded"}), 400
 
     target_var = request.form.get("target_variable", "target value")
+    target_mode = (request.form.get("target_mode", "regression") or "regression").strip().lower()
+    if target_mode not in ("regression", "classification"):
+        target_mode = "regression"
+    pipeline.target_mode = target_mode
     model_name = request.form.get("model", "qwen2.5vl:7b")
     labels_df = load_labels_from_request(request, UPLOAD_FOLDER)
 

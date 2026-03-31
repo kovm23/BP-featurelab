@@ -35,6 +35,8 @@ export interface TrainingViewProps {
   isDiscovering: boolean;
   targetVariable: string;
   setTargetVariable: (v: string) => void;
+  targetMode: "regression" | "classification";
+  setTargetMode: (v: "regression" | "classification") => void;
   featureSpec: Record<string, string> | null;
   setFeatureSpec: (spec: Record<string, string>) => void;
   /* Phase 2 */
@@ -513,6 +515,8 @@ export function TrainingView({
   isDiscovering,
   targetVariable,
   setTargetVariable,
+  targetMode,
+  setTargetMode,
   featureSpec,
   setFeatureSpec,
   onExtractTraining,
@@ -788,6 +792,42 @@ export function TrainingView({
             />
           </div>
 
+          <div>
+            <label
+              className={`block text-sm font-medium mb-1 ${cls(
+                deluxe,
+                "text-slate-700",
+                "text-slate-300"
+              )}`}
+            >
+              Typ cílové proměnné
+            </label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setTargetMode("regression")}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
+                  targetMode === "regression"
+                    ? "bg-blue-500 text-white border-blue-500"
+                    : cls(deluxe, "bg-white text-slate-700 border-slate-300", "bg-slate-900 text-slate-300 border-slate-700")
+                }`}
+              >
+                Spojitá (Regression)
+              </button>
+              <button
+                type="button"
+                onClick={() => setTargetMode("classification")}
+                className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
+                  targetMode === "classification"
+                    ? "bg-blue-500 text-white border-blue-500"
+                    : cls(deluxe, "bg-white text-slate-700 border-slate-300", "bg-slate-900 text-slate-300 border-slate-700")
+                }`}
+              >
+                Kategorická (Classification)
+              </button>
+            </div>
+          </div>
+
           <div
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
@@ -936,6 +976,14 @@ export function TrainingView({
                 editable
                 onUpdate={setFeatureSpec}
               />
+              <div className="flex justify-center mt-2">
+                <button
+                  onClick={() => downloadFeatureSpec(featureSpec)}
+                  className="px-3 py-1.5 bg-slate-600 text-white rounded text-xs hover:bg-slate-700 flex items-center gap-1"
+                >
+                  <Download className="w-3 h-3" /> Stáhnout Feature Spec (JSON)
+                </button>
+              </div>
               <div className="flex justify-center mt-4">
                 <Button onClick={() => onGoToStep?.(2)}>
                   <ChevronRight className="mr-2 h-4 w-4" /> Pokračovat na Fázi 2
@@ -1111,6 +1159,14 @@ export function TrainingView({
           {trainingDataX && (
             <>
               <DatasetTable deluxe={deluxe} data={trainingDataX} title="Training Dataset X" />
+              <div className="flex justify-center mt-2">
+                <button
+                  onClick={() => downloadTrainingDataCSV(trainingDataX)}
+                  className="px-3 py-1.5 bg-slate-600 text-white rounded text-xs hover:bg-slate-700 flex items-center gap-1"
+                >
+                  <Download className="w-3 h-3" /> Stáhnout Training Dataset X (CSV)
+                </button>
+              </div>
               <div className="flex justify-center mt-4">
                 <Button onClick={() => onGoToStep?.(3)}>
                   <ChevronRight className="mr-2 h-4 w-4" /> Pokračovat na Fázi 3
@@ -1426,6 +1482,14 @@ export function TrainingView({
           {testingDataX && (
             <>
               <DatasetTable deluxe={deluxe} data={testingDataX} title="Testing Dataset X" />
+              <div className="flex justify-center mt-2">
+                <button
+                  onClick={() => downloadTrainingDataCSV(testingDataX, `testing_dataset_X_${new Date().toISOString().slice(0, 10)}.csv`)}
+                  className="px-3 py-1.5 bg-slate-600 text-white rounded text-xs hover:bg-slate-700 flex items-center gap-1"
+                >
+                  <Download className="w-3 h-3" /> Stáhnout Testing Dataset X (CSV)
+                </button>
+              </div>
               <div className="flex justify-center mt-4">
                 <Button onClick={() => onGoToStep?.(5)}>
                   <ChevronRight className="mr-2 h-4 w-4" /> Pokračovat na Fázi 5

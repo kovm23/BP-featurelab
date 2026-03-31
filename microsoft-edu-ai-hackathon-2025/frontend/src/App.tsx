@@ -449,6 +449,8 @@ export default function MediaFeatureLabPro() {
             isDiscovering={pipeline.isDiscovering}
             targetVariable={pipeline.targetVariable}
             setTargetVariable={pipeline.setTargetVariable}
+            targetMode={pipeline.targetMode}
+            setTargetMode={pipeline.setTargetMode}
             featureSpec={pipeline.featureSpec}
             setFeatureSpec={pipeline.setFeatureSpec}
             /* Phase 2 */

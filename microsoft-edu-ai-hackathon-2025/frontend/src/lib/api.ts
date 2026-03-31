@@ -94,6 +94,7 @@ export interface ExtractDetails {
 
 export interface TrainResult {
   status: string;
+  target_mode?: TargetMode;
   mse?: number;
   rulekit_mse?: number;
   xgb_mse?: number;
@@ -116,6 +117,7 @@ export interface TrainResult {
 export interface PipelineState {
   feature_spec: Record<string, string>;
   target_variable: string;
+  target_mode?: TargetMode;
   is_trained: boolean;
   completed_phases: number[];
   suggested_step: number;
@@ -142,6 +144,8 @@ export interface PredictionMetrics {
   matched_count: number;
   total_count: number;
 }
+
+export type TargetMode = "regression" | "classification";
 
 export interface PredictDetails {
   status: string;

@@ -61,6 +61,7 @@ def api_state():
     if pipeline.is_trained:
         train_result = {
             "status": "success",
+            "target_mode": pipeline.target_mode,
             "mse": pipeline.mse,
             "rulekit_mse": pipeline.rulekit_mse,
             "xgb_mse": pipeline.xgb_mse,
@@ -77,6 +78,7 @@ def api_state():
     return jsonify({
         "feature_spec": pipeline.feature_spec,
         "target_variable": pipeline.target_variable,
+        "target_mode": pipeline.target_mode,
         "is_trained": pipeline.is_trained,
         "completed_phases": completed_phases,
         "suggested_step": suggested_step,

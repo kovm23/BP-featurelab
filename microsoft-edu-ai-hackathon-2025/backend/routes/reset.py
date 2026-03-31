@@ -28,6 +28,7 @@ def api_reset():
     # Reset pipeline in-memory state (must match model.py __init__)
     pipeline.feature_spec = {}
     pipeline.target_variable = ""
+    pipeline.target_mode = "regression"
     pipeline.training_X = None
     pipeline.training_Y = None
     pipeline.training_Y_df = None

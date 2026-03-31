@@ -35,6 +35,7 @@ def discover_features(
                 pass
 
     pipeline.target_variable = target_variable
+    target_mode = getattr(pipeline, "target_mode", "regression")
 
     labels_context = ""
     if labels_df is not None:
@@ -87,9 +88,18 @@ def discover_features(
 
     # Step 2: ask LLM to derive a universal feature spec from the observations
     _cb(65, f"LLM navrhuje feature spec z {len(observations)} vzorků...")
+    mode_hint = (
+        "Target type: regression (continuous numeric value). "
+        "Prefer features that can be quantified on continuous scales."
+        if target_mode == "regression"
+        else "Target type: classification (categorical label). "
+        "Prefer discriminative features that separate classes clearly."
+    )
+
     synthesis_prompt = (
         f"You are a machine learning feature engineer.\n"
         f"Your goal is to predict: '{target_variable}'.\n\n"
+        f"{mode_hint}\n\n"
         f"Below are observations from {len(observations)} media sample(s):\n\n"
         f"{observations_text}\n\n"
         f"{labels_context}"

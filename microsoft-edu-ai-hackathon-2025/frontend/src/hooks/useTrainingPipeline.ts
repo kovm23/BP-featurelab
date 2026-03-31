@@ -6,6 +6,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import type {
   PipelineState,
   StatusPayload,
+  TargetMode,
   TrainResult,
   PredictionItem,
   PredictionMetrics,
@@ -31,6 +32,7 @@ import { pollProgress } from "@/hooks/usePollProgress";
 interface PersistedPipeline {
   trainingStep?: 1 | 2 | 3 | 4 | 5;
   targetVariable?: string;
+  targetMode?: TargetMode;
   featureSpec?: Record<string, string> | null;
   modelProvider?: string;
 }
@@ -113,6 +115,9 @@ export function useTrainingPipeline() {
   const [targetVariable, setTargetVariable] = useState(
     saved?.targetVariable ?? "movie memorability score",
   );
+  const [targetMode, setTargetMode] = useState<TargetMode>(
+    saved?.targetMode ?? "regression",
+  );
   const [featureSpec, setFeatureSpec] = useState<Record<string, string> | null>(
     saved?.featureSpec ?? null,
   );
@@ -155,8 +160,10 @@ export function useTrainingPipeline() {
   // Refs for values captured in async polling callbacks (prevents stale closures)
   const modelProviderRef = useRef(modelProvider);
   const targetVariableRef = useRef(targetVariable);
+  const targetModeRef = useRef(targetMode);
   useEffect(() => { modelProviderRef.current = modelProvider; }, [modelProvider]);
   useEffect(() => { targetVariableRef.current = targetVariable; }, [targetVariable]);
+  useEffect(() => { targetModeRef.current = targetMode; }, [targetMode]);
 
   // --- Restore from backend on mount ---
   const restoredRef = useRef(false);
@@ -177,6 +184,9 @@ export function useTrainingPipeline() {
         }
         if (state.target_variable) {
           setTargetVariable(state.target_variable);
+        }
+        if (state.target_mode) {
+          setTargetMode(state.target_mode);
         }
         if (state.training_data_X && state.training_data_X.length > 0) {
           setTrainingDataX(state.training_data_X);
@@ -241,7 +251,13 @@ export function useTrainingPipeline() {
                 clearActiveJob();
                 if (tick.suggested_features) {
                   setFeatureSpec(tick.suggested_features);
-                  savePersisted({ trainingStep: 2, targetVariable: targetVariableRef.current, featureSpec: tick.suggested_features, modelProvider: modelProviderRef.current });
+                  savePersisted({
+                    trainingStep: 2,
+                    targetVariable: targetVariableRef.current,
+                    targetMode: targetModeRef.current,
+                    featureSpec: tick.suggested_features,
+                    modelProvider: modelProviderRef.current,
+                  });
                 }
               }
               if (tick.done && tick.error) {
@@ -323,6 +339,7 @@ export function useTrainingPipeline() {
     savePersisted({
       trainingStep,
       targetVariable,
+      targetMode,
       featureSpec,
       modelProvider,
     });
@@ -357,6 +374,7 @@ export function useTrainingPipeline() {
     const formData = new FormData();
     for (const f of sampleFiles) formData.append("files", f, f.name);
     formData.append("target_variable", targetVariable);
+    formData.append("target_mode", targetMode);
     formData.append("model", modelProvider);
     if (labelsFile) formData.append("labels_file", labelsFile);
 
@@ -383,6 +401,7 @@ export function useTrainingPipeline() {
                 savePersisted({
                   trainingStep: 2,
                   targetVariable: targetVariableRef.current,
+                  targetMode: targetModeRef.current,
                   featureSpec: s.suggested_features,
                   modelProvider: modelProviderRef.current,
                 });
@@ -550,7 +569,7 @@ export function useTrainingPipeline() {
       const res = await fetch(TRAIN_URL, {
         method: "POST",
         headers: { ...sessionHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ target_column: targetColumn }),
+        body: JSON.stringify({ target_column: targetColumn, target_mode: targetMode }),
         signal: ctrl.signal,
       });
       if (!res.ok) {
@@ -642,6 +661,7 @@ export function useTrainingPipeline() {
   function resetPipeline() {
     setTrainingStep(1);
     setTargetVariable("movie memorability score");
+    setTargetMode("regression");
     setFeatureSpec(null);
     setIsDiscovering(false);
     setExtractionBusy(false);
@@ -671,6 +691,7 @@ export function useTrainingPipeline() {
     trainingStep, setTrainingStep,
     // Phase 1
     targetVariable, setTargetVariable,
+    targetMode, setTargetMode,
     featureSpec, setFeatureSpec,
     isDiscovering,
     handleDiscover,

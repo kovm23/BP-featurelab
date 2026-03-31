@@ -20,8 +20,15 @@ def api_train():
 
     if request.is_json:
         target_col = (request.json or {}).get("target_column", "")
+        target_mode = (request.json or {}).get("target_mode", pipeline.target_mode or "regression")
     else:
         target_col = request.form.get("target_column", "")
+        target_mode = request.form.get("target_mode", pipeline.target_mode or "regression")
+
+    target_mode = (target_mode or "regression").strip().lower()
+    if target_mode not in ("regression", "classification"):
+        target_mode = "regression"
+    pipeline.target_mode = target_mode
 
     if not target_col:
         return jsonify({"error": "Missing target_column (name of the target column in the CSV)."}), 400
