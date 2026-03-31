@@ -223,9 +223,16 @@ class MachineLearningPipeline:
     # Phase delegates
     # ------------------------------------------------------------------
 
-    def discover_features(self, media_paths, target_variable, model_name, labels_df=None):
+    def discover_features(self, media_paths, target_variable, model_name, labels_df=None, progress_cb=None):
         """Phase 1: Feature discovery."""
-        return discover_features(self, media_paths, target_variable, model_name, labels_df)
+        return discover_features(
+            self,
+            media_paths,
+            target_variable,
+            model_name,
+            labels_df,
+            progress_cb=progress_cb,
+        )
 
     def extract_features_async(
         self, media_files, feature_spec, job_id, model_name, dataset_type,
