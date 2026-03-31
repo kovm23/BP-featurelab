@@ -37,22 +37,30 @@ export default {
       const backendBase = env.BACKEND_URL.replace(/\/$/, '');
       const targetUrl = backendBase + url.pathname + url.search;
 
-      // Stream the body (needed for large file uploads).
-      // NOTE: Cloudflare Workers free tier caps request bodies at 100 MB.
-      // For larger uploads set BACKEND_URL in the frontend build instead
-      // (VITE_API_BASE) so the browser uploads directly to the backend.
-      const proxyReq = new Request(targetUrl, {
-        method: request.method,
-        headers: request.headers,
-        body: request.method !== 'GET' && request.method !== 'HEAD'
-          ? request.body
-          : undefined,
-        redirect: 'follow',
-        duplex: 'half',
-      });
+      // Read the body into a buffer so it survives the new Request() constructor.
+      // Streaming bodies (request.body) can be silently dropped in some CF runtime versions.
+      let body = undefined;
+      if (request.method !== 'GET' && request.method !== 'HEAD') {
+        body = await request.arrayBuffer();
+      }
+
+      // Copy headers, removing 'host' so the backend sees its own host.
+      const headers = new Headers(request.headers);
+      headers.delete('host');
 
       try {
-        return await fetch(proxyReq);
+        const proxyRes = await fetch(targetUrl, {
+          method: request.method,
+          headers,
+          body,
+          redirect: 'follow',
+        });
+        // Clone the response so we can return it (responses are single-use).
+        return new Response(proxyRes.body, {
+          status: proxyRes.status,
+          statusText: proxyRes.statusText,
+          headers: proxyRes.headers,
+        });
       } catch (err) {
         return new Response(`Backend unreachable: ${err.message}`, { status: 502 });
       }
