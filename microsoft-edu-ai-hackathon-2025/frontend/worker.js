@@ -30,6 +30,21 @@ export default {
     );
 
     if (isApi) {
+      // Handle CORS preflight
+      if (request.method === 'OPTIONS') {
+        const origin = request.headers.get('Origin') || '*';
+        return new Response(null, {
+          status: 204,
+          headers: {
+            'Access-Control-Allow-Origin': origin,
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, X-Session-ID',
+            'Access-Control-Allow-Credentials': 'true',
+            'Access-Control-Max-Age': '86400',
+          },
+        });
+      }
+
       if (!env.BACKEND_URL) {
         return new Response('BACKEND_URL secret not configured', { status: 502 });
       }
@@ -55,11 +70,18 @@ export default {
           body,
           redirect: 'follow',
         });
-        // Clone the response so we can return it (responses are single-use).
+
+        const resHeaders = new Headers(proxyRes.headers);
+        const origin = request.headers.get('Origin') || '*';
+        resHeaders.set('Access-Control-Allow-Origin', origin);
+        resHeaders.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+        resHeaders.set('Access-Control-Allow-Headers', 'Content-Type, X-Session-ID');
+        resHeaders.set('Access-Control-Allow-Credentials', 'true');
+
         return new Response(proxyRes.body, {
           status: proxyRes.status,
           statusText: proxyRes.statusText,
-          headers: proxyRes.headers,
+          headers: resHeaders,
         });
       } catch (err) {
         return new Response(`Backend unreachable: ${err.message}`, { status: 502 });
