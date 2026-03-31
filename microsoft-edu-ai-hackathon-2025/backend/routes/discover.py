@@ -66,8 +66,13 @@ def api_discover():
 
     def _run():
         try:
-            update_job(job_id, stage="Analysing samples...", progress=10)
-            features = pipeline.discover_features(media_paths, target_var, model_name, labels_df)
+            def _pcb(pct: int, msg: str) -> None:
+                update_job(job_id, progress=pct, stage=msg)
+
+            _pcb(3, "Připravuji soubory...")
+            features = pipeline.discover_features(
+                media_paths, target_var, model_name, labels_df, progress_cb=_pcb
+            )
             pipeline.save_state()
             set_job(job_id, {
                 "progress": 100,

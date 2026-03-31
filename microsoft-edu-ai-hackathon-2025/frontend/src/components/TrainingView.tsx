@@ -176,27 +176,43 @@ function ProgressBar({
   progress: number;
   label: string;
 }) {
+  const inProgress = progress > 0 && progress < 100;
+  const isDone = progress >= 100;
+  const fillColor = isDone
+    ? "bg-emerald-500"
+    : "bg-blue-500";
+
   return (
-    <div className="mt-6 space-y-2">
-      <div className="flex justify-between text-xs font-medium">
-        <span className={cls(deluxe, "text-slate-500", "text-slate-400")}>
+    <div className="mt-6 space-y-1.5">
+      <div className="flex justify-between items-center text-xs font-medium gap-2">
+        <span
+          className={`truncate ${cls(deluxe, "text-slate-600", "text-slate-300")}`}
+          title={label}
+        >
           {label}
         </span>
-        <span className={cls(deluxe, "text-slate-700", "text-slate-300")}>
+        <span className={`shrink-0 tabular-nums ${cls(deluxe, "text-slate-500", "text-slate-400")}`}>
           {progress}%
         </span>
       </div>
       <div
-        className={`h-2 rounded-full overflow-hidden ${cls(
+        className={`h-3 rounded-full overflow-hidden ${cls(
           deluxe,
           "bg-slate-100",
-          "bg-slate-800"
+          "bg-slate-800/60"
         )}`}
       >
         <div
-          className="h-full bg-blue-500 transition-all duration-300"
-          style={{ width: `${progress}%` }}
-        />
+          className={`h-full rounded-full transition-all duration-700 relative overflow-hidden ${fillColor}`}
+          style={{ width: `${Math.max(inProgress ? 3 : 0, progress)}%` }}
+        >
+          {inProgress && (
+            <div
+              className="absolute inset-y-0 w-1/3 bg-gradient-to-r from-transparent via-white/30 to-transparent"
+              style={{ animation: "progress-sweep 1.8s ease-in-out infinite" }}
+            />
+          )}
+        </div>
       </div>
     </div>
   );

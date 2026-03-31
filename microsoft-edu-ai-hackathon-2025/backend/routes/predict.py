@@ -27,8 +27,11 @@ def api_predict():
 
     def _run():
         try:
-            update_job(job_id, stage="Příprava dat...", progress=20)
-            result = pipeline.predict_batch(testing_Y_df)
+            def _pcb(pct: int, msg: str) -> None:
+                update_job(job_id, progress=pct, stage=msg)
+
+            _pcb(5, "Připravuji predikci...")
+            result = pipeline.predict_batch(testing_Y_df, progress_cb=_pcb)
             set_job(job_id, {
                 "progress": 100,
                 "stage": "Predikce dokončena!",

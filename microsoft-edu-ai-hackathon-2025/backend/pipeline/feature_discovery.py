@@ -1,6 +1,7 @@
 """Phase 1: Feature discovery from sample media files."""
 import json
 import logging
+import os
 import re
 
 import pandas as pd
@@ -19,12 +20,20 @@ def discover_features(
     target_variable: str,
     model_name: str,
     labels_df: pd.DataFrame | None = None,
+    progress_cb=None,
 ) -> dict:
     """Analyse sample media and suggest a feature definition spec.
 
     Updates pipeline.target_variable and pipeline.feature_spec in-place.
     Returns the suggested feature dict.
     """
+    def _cb(pct: int, msg: str) -> None:
+        if progress_cb:
+            try:
+                progress_cb(pct, msg)
+            except Exception:
+                pass
+
     pipeline.target_variable = target_variable
 
     labels_context = ""
@@ -53,7 +62,13 @@ def discover_features(
 
     # Step 1: analyse each sample independently to gather observations
     observations = []
-    for path in media_paths[:5]:  # up to 5 samples
+    sample_paths = media_paths[:5]
+    n_samples = len(sample_paths)
+    _cb(5, f"Připravuji analýzu {n_samples} vzorků...")
+    for idx, path in enumerate(sample_paths):
+        file_name = os.path.basename(path)
+        pct = 5 + int((idx / n_samples) * 55)
+        _cb(pct, f"Analyzuji vzorek {idx + 1}/{n_samples}: {file_name}...")
         obs_prompt = (
             "You are a media analysis AI.\n"
             "Carefully observe this media clip and describe what you perceive — "
@@ -71,6 +86,7 @@ def discover_features(
     )
 
     # Step 2: ask LLM to derive a universal feature spec from the observations
+    _cb(65, f"LLM navrhuje feature spec z {len(observations)} vzorků...")
     synthesis_prompt = (
         f"You are a machine learning feature engineer.\n"
         f"Your goal is to predict: '{target_variable}'.\n\n"
@@ -98,6 +114,7 @@ def discover_features(
         )
     raw_content = response.choices[0].message.content or ""
     # Use json decoder to find the first valid JSON object
+    _cb(90, "Parsování feature specifikace...")
     all_features = {}
     start = raw_content.find("{")
     if start != -1:

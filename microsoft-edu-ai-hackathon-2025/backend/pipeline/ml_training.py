@@ -344,16 +344,24 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
     }
 
 
-def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None) -> dict:
+def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_cb=None) -> dict:
     """Predict for all objects in testing_X using the ensemble model.
 
     Optionally compares with testing_Y_df for evaluation metrics.
     """
+    def _cb(pct: int, msg: str) -> None:
+        if progress_cb:
+            try:
+                progress_cb(pct, msg)
+            except Exception:
+                pass
+
     if not pipeline.is_trained:
         raise Exception("Model is not trained. Complete Phase 3 first.")
     if pipeline.testing_X is None or pipeline.testing_X.empty:
         raise Exception("Missing testing dataset_X. Complete Phase 4 first.")
 
+    _cb(10, "Předzpracovávám testovací příznaky...")
     feature_cols = [c for c in pipeline.feature_spec if c in pipeline.testing_X.columns]
     X_test = _preprocess_features(
         pipeline.testing_X[feature_cols],
@@ -361,6 +369,7 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None) -> dict:
     )
 
     # RuleKit prediction
+    _cb(25, "RuleKit predikce...")
     rulekit_pred = pipeline.model.predict(X_test)
 
     # XGBoost prediction (with scaling)
@@ -383,7 +392,9 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None) -> dict:
         X_test_scaled = X_test
 
     if hasattr(pipeline, 'xgb_model') and pipeline.xgb_model is not None:
+        _cb(40, "XGBoost predikce...")
         xgb_pred = pipeline.xgb_model.predict(X_test_scaled)
+        _cb(55, "Ensemble kombinace (RuleKit + XGBoost)...")
         predictions = RULEKIT_WEIGHT * rulekit_pred + XGB_WEIGHT * xgb_pred
     else:
         # Fallback: RuleKit only (legacy models)
@@ -413,8 +424,14 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None) -> dict:
     results = []
     pred_list: list[float] = []
     actual_list: list[float] = []
+    total_items = len(pipeline.testing_X)
+    _cb(60, f"Sestavuji výsledky (0/{total_items})...")
+    report_every = max(1, total_items // 10)
 
-    for i, row in pipeline.testing_X.iterrows():
+    for row_num, (i, row) in enumerate(pipeline.testing_X.iterrows()):
+        if row_num % report_every == 0:
+            pct = 60 + int(((row_num + 1) / total_items) * 28)
+            _cb(pct, f"Sestavuji výsledky ({row_num + 1}/{total_items})...")
         pred_score = float(predictions[i])
         media_name = str(row.get("media_name", f"object_{i}"))
         rule = _find_covering_rule(row, pipeline.rules) if pipeline.rules else "Default rule"
@@ -435,6 +452,7 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None) -> dict:
 
         results.append(item)
 
+    _cb(92, "Výpočet evaluačních metrik...")
     metrics = None
     if pred_list and actual_list:
         pred_arr = np.array(pred_list)
