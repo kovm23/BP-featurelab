@@ -9,10 +9,5 @@ binding = "ASSETS"
 [build]
 command = "npm install && npm run build"
 
-# Set BACKEND_URL via:  wrangler secret put BACKEND_URL
-# e.g. https://your-tunnel.trycloudflare.com
-#
-# NOTE: Cloudflare Workers free tier limits request bodies to 100 MB.
-# For ZIP uploads larger than that, build the frontend with
-#   VITE_API_BASE=https://your-tunnel.trycloudflare.com
-# so the browser uploads directly to the backend, bypassing this Worker.
+[vars]
+BACKEND_URL = "https://optimum-productive-archive-liz.trycloudflare.com"
