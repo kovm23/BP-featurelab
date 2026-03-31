@@ -178,9 +178,10 @@ def _run_cross_validation(X: pd.DataFrame, y: pd.Series, n_splits: int = 5) -> d
     }
 
 
-def train_model(pipeline, target_column: str) -> dict:
+def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
     """Train RuleKit + XGBoost ensemble from stored training_X + training_Y_df.
 
+    *progress_cb(pct: int, msg: str)* is called at key stages (optional).
     Updates pipeline state in-place and persists to disk.
     Returns a result dict suitable for JSON serialisation.
     """
@@ -228,11 +229,20 @@ def train_model(pipeline, target_column: str) -> dict:
                 f"Available columns: {list(df_gt.columns)}"
             )
 
+    def _cb(pct: int, msg: str) -> None:
+        if progress_cb:
+            try:
+                progress_cb(pct, msg)
+            except Exception:
+                pass
+
     # --- StandardScaler ---
+    _cb(15, "Normalizace příznaků (StandardScaler)...")
     scaler = StandardScaler()
     X_scaled = pd.DataFrame(scaler.fit_transform(X), columns=X.columns, index=X.index)
 
     # --- RuleKit ---
+    _cb(25, "Trénuji RuleKit (indukce pravidel)...")
     logger.info("Training RuleKit model...")
     rulekit_model = RuleRegressor()
     rulekit_model.fit(X, y)  # RuleKit works on unscaled data
@@ -246,6 +256,7 @@ def train_model(pipeline, target_column: str) -> dict:
     rulekit_mse = round(float(mean_squared_error(y, rulekit_pred)), 6)
 
     # --- XGBoost ---
+    _cb(60, "Trénuji XGBoost...")
     logger.info("Training XGBoost model...")
     xgb_model = XGBRegressor(
         n_estimators=100, max_depth=4, learning_rate=0.1,
@@ -256,6 +267,7 @@ def train_model(pipeline, target_column: str) -> dict:
     xgb_mse = round(float(mean_squared_error(y, xgb_pred)), 6)
 
     # --- Ensemble ---
+    _cb(75, "Ensemble predikce...")
     ensemble_pred = RULEKIT_WEIGHT * rulekit_pred + XGB_WEIGHT * xgb_pred
     ensemble_mse = round(float(mean_squared_error(y, ensemble_pred)), 6)
 
@@ -265,6 +277,7 @@ def train_model(pipeline, target_column: str) -> dict:
     )
 
     # --- Cross-Validation ---
+    _cb(80, "K-fold křížová validace...")
     logger.info("Running %d-fold cross-validation...", min(5, len(X)))
     cv_results = _run_cross_validation(X, y)
     logger.info("CV results: %s", cv_results)
@@ -298,6 +311,7 @@ def train_model(pipeline, target_column: str) -> dict:
     pipeline._scaler_scale = scaler.scale_.tolist()
 
     pipeline.save_state()
+    _cb(98, "Ukládám model...")
 
     # --- Overfitting warning ---
     warnings = []

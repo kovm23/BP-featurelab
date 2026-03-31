@@ -540,23 +540,45 @@ export function useTrainingPipeline() {
     setTrainingBusy(true);
     setTrainResult(null);
     setError(null);
+    setProgress(0);
+    setProgressLabel("Spouštím trénink...");
+
+    const ctrl = new AbortController();
+    setActiveCtrl(ctrl);
 
     try {
       const res = await fetch(TRAIN_URL, {
         method: "POST",
         headers: { ...sessionHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({ target_column: targetColumn }),
+        signal: ctrl.signal,
       });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || "Trénink selhal");
+        throw new Error((errData as { error?: string }).error || "Trénink selhal");
       }
-      const data: TrainResult = await res.json();
-      setTrainResult(data);
+      const { job_id } = await res.json() as { job_id: string };
+      await pollProgress(
+        job_id,
+        (tick) => {
+          setProgress(Math.max(0, Math.min(100, tick.progress ?? 0)));
+          setProgressLabel(tick.stage || "Trénuji...");
+          if (tick.done && !tick.error) {
+            setTrainResult(tick.details as TrainResult);
+          }
+          if (tick.done && tick.error) {
+            setError("Fáze 3 selhala: " + tick.error);
+          }
+        },
+        ctrl.signal,
+      );
     } catch (e: unknown) {
-      setError("Fáze 3 selhala: " + (e instanceof Error ? e.message : String(e)));
+      if (!ctrl.signal.aborted) {
+        setError("Fáze 3 selhala: " + (e instanceof Error ? e.message : String(e)));
+      }
     } finally {
       setTrainingBusy(false);
+      setActiveCtrl(null);
     }
   }
 
@@ -568,27 +590,49 @@ export function useTrainingPipeline() {
     setPredictions(null);
     setPredictionMetrics(null);
     setError(null);
+    setProgress(0);
+    setProgressLabel("Spouštím predikci...");
+
+    const ctrl = new AbortController();
+    setActiveCtrl(ctrl);
 
     try {
       let res: Response;
       if (labelsFile) {
         const formData = new FormData();
         formData.append("labels_file", labelsFile);
-        res = await fetch(PREDICT_URL, { method: "POST", body: formData, headers: sessionHeaders() });
+        res = await fetch(PREDICT_URL, { method: "POST", body: formData, headers: sessionHeaders(), signal: ctrl.signal });
       } else {
-        res = await fetch(PREDICT_URL, { method: "POST", headers: sessionHeaders() });
+        res = await fetch(PREDICT_URL, { method: "POST", headers: sessionHeaders(), signal: ctrl.signal });
       }
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || "Predikce selhala");
+        throw new Error((errData as { error?: string }).error || "Predikce selhala");
       }
-      const data = await res.json();
-      setPredictions(data.predictions);
-      setPredictionMetrics(data.metrics || null);
+      const { job_id } = await res.json() as { job_id: string };
+      await pollProgress(
+        job_id,
+        (tick) => {
+          setProgress(Math.max(0, Math.min(100, tick.progress ?? 0)));
+          setProgressLabel(tick.stage || "Predikcuji...");
+          if (tick.done && !tick.error) {
+            const d = tick.details as { predictions: PredictionItem[]; metrics: PredictionMetrics };
+            setPredictions(d.predictions);
+            setPredictionMetrics(d.metrics || null);
+          }
+          if (tick.done && tick.error) {
+            setError("Fáze 5 selhala: " + tick.error);
+          }
+        },
+        ctrl.signal,
+      );
     } catch (e: unknown) {
-      setError("Fáze 5 selhala: " + (e instanceof Error ? e.message : String(e)));
+      if (!ctrl.signal.aborted) {
+        setError("Fáze 5 selhala: " + (e instanceof Error ? e.message : String(e)));
+      }
     } finally {
       setPredictBusy(false);
+      setActiveCtrl(null);
     }
   }
 

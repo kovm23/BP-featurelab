@@ -1176,6 +1176,20 @@ export function TrainingView({
             </Button>
           </div>
 
+          {/* Progress bar during training */}
+          {isTraining && (
+            <div className="space-y-2 mt-4">
+              <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel || "Trénuji model..."} />
+              {onCancel && (
+                <div className="flex justify-center">
+                  <Button variant="outline" size="sm" onClick={onCancel} className="text-xs">
+                    ✕ Zastavit
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Train results */}
           {trainResult && trainResult.status === "success" && (
             <div className={`rounded-xl p-4 space-y-3 border ${cls(deluxe, "bg-green-50 border-green-100", "bg-green-900/20 border-green-800/50")}`}>
@@ -1469,6 +1483,20 @@ export function TrainingView({
                   </>
                 )}
               </Button>
+            </div>
+          )}
+
+          {/* Progress bar during prediction */}
+          {isPredicting && (
+            <div className="space-y-2 mt-4">
+              <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel || "Predikcuji..."} />
+              {onCancel && (
+                <div className="flex justify-center">
+                  <Button variant="outline" size="sm" onClick={onCancel} className="text-xs">
+                    ✕ Zastavit
+                  </Button>
+                </div>
+              )}
             </div>
           )}
 

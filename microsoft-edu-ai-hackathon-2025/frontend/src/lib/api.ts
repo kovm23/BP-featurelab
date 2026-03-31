@@ -143,12 +143,19 @@ export interface PredictionMetrics {
   total_count: number;
 }
 
+export interface PredictDetails {
+  status: string;
+  predictions: PredictionItem[];
+  metrics: PredictionMetrics | null;
+  count: number;
+}
+
 export type StatusPayload = {
   progress: number;
   stage?: string;
   done?: boolean;
   error?: string;
-  details?: ExtractDetails;
+  details?: ExtractDetails | TrainResult | PredictDetails;
   suggested_features?: Record<string, string>;
 };
 
