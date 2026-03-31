@@ -237,10 +237,10 @@ class MachineLearningPipeline:
             dataset_type, csv_path, labels_df
         )
 
-    def train_model(self, target_column: str) -> dict:
+    def train_model(self, target_column: str, progress_cb=None) -> dict:
         """Phase 3: Train RuleKit model."""
-        return train_model(self, target_column)
+        return train_model(self, target_column, progress_cb=progress_cb)
 
-    def predict_batch(self, testing_Y_df=None) -> dict:
+    def predict_batch(self, testing_Y_df=None, progress_cb=None) -> dict:
         """Phase 5: Batch prediction."""
-        return predict_batch(self, testing_Y_df)
+        return predict_batch(self, testing_Y_df, progress_cb=progress_cb)
