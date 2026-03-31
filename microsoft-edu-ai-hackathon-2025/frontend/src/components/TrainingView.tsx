@@ -69,6 +69,8 @@ export interface TrainingViewProps {
   clearError: () => void;
   ollamaOk?: boolean | null;
   recheckOllama?: () => void;
+  queueBusy?: boolean;
+  queuedCount?: number;
 }
 
 /* ------------------------------------------------------------------ */
@@ -524,6 +526,8 @@ export function TrainingView({
   clearError,
   ollamaOk,
   recheckOllama,
+  queueBusy,
+  queuedCount,
 }: TrainingViewProps) {
   const [discoveryFiles, setDiscoveryFiles] = useState<File[]>([]);
   const [trainZipFile, setTrainZipFile] = useState<File | null>(null);
@@ -619,6 +623,16 @@ export function TrainingView({
         </div>
         );
       })()}
+
+      {/* ---- QUEUE BUSY BANNER ---- */}
+      {queueBusy && (queuedCount ?? 0) > 0 && (
+        <div className={`mb-4 flex items-start gap-2 p-3 rounded-lg border ${cls(deluxe, "bg-blue-50 border-blue-200 text-blue-800", "bg-blue-900/30 border-blue-800/50 text-blue-300")}`}>
+          <Loader2 className="h-4 w-4 mt-0.5 flex-shrink-0 animate-spin" />
+          <p className="text-sm">
+            Systém zpracovává požadavky jiných uživatelů ({queuedCount} ve frontě). Vaše úloha poběží, jakmile se uvolní kapacita — může to trvat déle než obvykle.
+          </p>
+        </div>
+      )}
 
       {/* ---- STEPPER ---- */}
       <div className="flex items-center justify-center gap-1 mb-6 flex-wrap">

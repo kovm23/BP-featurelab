@@ -5,7 +5,7 @@ import re
 
 import pandas as pd
 
-from services.openai_service import local_client, _ollama_lock
+from services.openai_service import local_client, _tracked_ollama_lock
 from services.processing import process_single_media
 
 logger = logging.getLogger(__name__)
@@ -90,7 +90,7 @@ def discover_features(
         f"\"speech_presence\": \"binary 0 or 1, whether speech is audible\"}}"
     )
 
-    with _ollama_lock:
+    with _tracked_ollama_lock():
         response = local_client.chat.completions.create(
             model=model_name,
             messages=[{"role": "user", "content": synthesis_prompt}],

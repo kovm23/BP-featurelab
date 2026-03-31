@@ -482,6 +482,8 @@ export default function MediaFeatureLabPro() {
             clearError={pipeline.clearError}
             ollamaOk={pipeline.ollamaOk}
             recheckOllama={pipeline.recheckOllama}
+            queueBusy={pipeline.queueBusy}
+            queuedCount={pipeline.queuedCount}
           />
         ) : (
           <div className="grid grid-cols-1 gap-6">

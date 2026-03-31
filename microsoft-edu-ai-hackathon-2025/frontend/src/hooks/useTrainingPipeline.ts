@@ -20,6 +20,7 @@ import {
   STATE_URL,
   STATUS_URL,
   HEALTH_URL,
+  QUEUE_INFO_URL,
   sessionHeaders,
 } from "@/lib/api";
 import { pollProgress } from "@/hooks/usePollProgress";
@@ -146,6 +147,10 @@ export function useTrainingPipeline() {
 
   // --- Ollama availability ---
   const [ollamaOk, setOllamaOk] = useState<boolean | null>(null);
+
+  // --- Queue info (other users waiting) ---
+  const [queueBusy, setQueueBusy] = useState(false);
+  const [queuedCount, setQueuedCount] = useState(0);
 
   // Refs for values captured in async polling callbacks (prevents stale closures)
   const modelProviderRef = useRef(modelProvider);
@@ -294,6 +299,24 @@ export function useTrainingPipeline() {
     checkHealth(true);
     return () => { cancelled = true; };
   }, []);
+
+  // --- Poll queue info while any phase is busy ---
+  const anyBusy = isDiscovering || extractionBusy || trainingBusy || testExtractionBusy || predictBusy;
+  useEffect(() => {
+    if (!anyBusy) { setQueueBusy(false); setQueuedCount(0); return; }
+    let cancelled = false;
+    const poll = () => {
+      fetch(QUEUE_INFO_URL, { cache: "no-store" })
+        .then((r) => r.json())
+        .then((d: { busy: boolean; queued: number }) => {
+          if (!cancelled) { setQueueBusy(d.busy); setQueuedCount(d.queued); }
+        })
+        .catch(() => {});
+    };
+    poll();
+    const id = setInterval(poll, 5000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [anyBusy]);
 
   // --- Persistence (lightweight — only metadata, no large datasets) ---
   function persist() {
@@ -637,6 +660,8 @@ export function useTrainingPipeline() {
     resetPipeline,
     persist,
     ollamaOk,
+    queueBusy,
+    queuedCount,
     recheckOllama: () => {
       fetch(HEALTH_URL, { cache: "no-store" })
         .then((r) => r.json())

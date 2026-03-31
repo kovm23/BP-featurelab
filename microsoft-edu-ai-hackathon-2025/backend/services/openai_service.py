@@ -23,7 +23,40 @@ local_client = openai.OpenAI(
 # vrací EOF při načítání modelu. Semaphore serializuje volání.
 _ollama_lock = threading.Semaphore(1)
 
+# Counter of threads currently waiting to acquire the lock (for /queue-info).
+_ollama_waiting = 0
+_waiting_lock = threading.Lock()
+
 DEFAULT_MODEL = "qwen2.5vl:7b"
+
+
+from contextlib import contextmanager
+
+@contextmanager
+def _tracked_ollama_lock():
+    """Acquire _ollama_lock while tracking how many threads are waiting."""
+    global _ollama_waiting
+    with _waiting_lock:
+        _ollama_waiting += 1
+    try:
+        _ollama_lock.acquire()
+        try:
+            yield
+        finally:
+            _ollama_lock.release()
+    finally:
+        with _waiting_lock:
+            _ollama_waiting -= 1
+
+
+def get_ollama_queue_info() -> dict:
+    """Return current Ollama queue status for the /queue-info endpoint."""
+    with _waiting_lock:
+        waiting = _ollama_waiting
+    # waiting >= 1 means at least one thread is active (holding or waiting)
+    busy = waiting > 0
+    queued = max(0, waiting - 1)  # first one is running, rest are queued
+    return {"busy": busy, "queued": queued}
 
 
 def image_to_base64(img_arr):
@@ -64,7 +97,7 @@ def extract_image_features_with_llm(image_base64_list, prompt=None, deployment_n
 
         for attempt in range(max_retries):
             try:
-                with _ollama_lock:
+                with _tracked_ollama_lock():
                     response = local_client.chat.completions.create(
                         model=model_name,
                         messages=[
@@ -114,7 +147,7 @@ def extract_text_features_with_llm(text_list, prompt=None, deployment_name=None,
 
         for attempt in range(max_retries):
             try:
-                with _ollama_lock:
+                with _tracked_ollama_lock():
                     response = local_client.chat.completions.create(
                         model=model_name,
                         messages=[
