@@ -71,6 +71,9 @@ export default {
           redirect: 'follow',
         });
 
+        // Buffer the response body so it's not lost in stream handoff.
+        const resBody = await proxyRes.arrayBuffer();
+
         const resHeaders = new Headers(proxyRes.headers);
         const origin = request.headers.get('Origin') || '*';
         resHeaders.set('Access-Control-Allow-Origin', origin);
@@ -78,7 +81,7 @@ export default {
         resHeaders.set('Access-Control-Allow-Headers', 'Content-Type, X-Session-ID');
         resHeaders.set('Access-Control-Allow-Credentials', 'true');
 
-        return new Response(proxyRes.body, {
+        return new Response(resBody, {
           status: proxyRes.status,
           statusText: proxyRes.statusText,
           headers: resHeaders,
