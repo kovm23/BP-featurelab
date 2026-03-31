@@ -568,7 +568,7 @@ export function TrainingView({
   // Auto-select first target column when columns arrive
   useEffect(() => {
     if (datasetYColumns && datasetYColumns.length > 0 && !targetColumn) {
-      setTargetColumn(datasetYColumns[0]);
+      setTargetColumn(datasetYColumns[datasetYColumns.length - 1]);
     }
   }, [datasetYColumns]); // eslint-disable-line react-hooks/exhaustive-deps
 
