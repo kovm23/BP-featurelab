@@ -1,2 +1,8 @@
-name = "media-feature-lab"
-pages_build_output_dir = "./dist"
+name = "bpfeaturelab"
+compatibility_date = "2025-01-01"
+
+[assets]
+directory = "./dist"
+
+[build]
+command = "npm install && npm run build"
