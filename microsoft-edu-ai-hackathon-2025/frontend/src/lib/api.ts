@@ -37,6 +37,24 @@ export function sessionHeaders(): Record<string, string> {
   return { "X-Session-ID": getSessionId() };
 }
 
+export async function fetchJson<T>(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Promise<T> {
+  const response = await fetch(input, init);
+  if (!response.ok) {
+    let errorMessage = `${response.status} ${response.statusText}`;
+    try {
+      const payload = await response.json() as { error?: string; message?: string };
+      errorMessage = payload.error || payload.message || errorMessage;
+    } catch {
+      // Fall back to the HTTP status when the response body is not JSON.
+    }
+    throw new Error(errorMessage);
+  }
+  return response.json() as Promise<T>;
+}
+
 // =====================================================
 // KONFIGURACE MODELŮ
 // =====================================================

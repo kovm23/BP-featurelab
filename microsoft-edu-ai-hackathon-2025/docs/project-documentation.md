@@ -808,10 +808,13 @@ Pro srovnávací experiment v bakalářské práci doporučuji následující de
 |---|---|---|
 | `VITE_API_BASE` | `""` | Frontend API base URL (prázdné = proxy) |
 | `BACKEND_URL` | - | Backend URL pro Cloudflare Worker proxy (`frontend/wrangler.toml` → `[vars]`) |
+| `ALLOWED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173,https://bpfeaturelab.kovm23.workers.dev` | CORS allowlist backendu pro browser requesty a Worker frontend |
 | `FLASK_DEBUG` | `0` | Debug mode (0 = production) |
 | `EXTRACTION_PASSES` | `2` | Počet LLM callů per médium při extrakci |
 
 Poznámka: při použití `trycloudflare.com` je `BACKEND_URL` dočasná adresa, která se mění po restartu tunelu.
+
+Poznámka: při produkčním nasazení přes `*.workers.dev` musí backend `ALLOWED_ORIGINS` obsahovat veřejný frontend origin, jinak polling na `/status/<job_id>` a `/queue-info` skončí 403.
 
 ### 6.2 PM2 procesy
 

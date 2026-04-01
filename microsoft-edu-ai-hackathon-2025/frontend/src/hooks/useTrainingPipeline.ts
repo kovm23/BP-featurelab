@@ -16,6 +16,7 @@ import {
   DISCOVER_URL,
   EXTRACT_URL,
   EXTRACT_LOCAL_URL,
+  fetchJson,
   TRAIN_URL,
   PREDICT_URL,
   RESET_URL,
@@ -210,8 +211,7 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
     restoredRef.current = true;
 
     let cancelled = false;
-    fetch(STATE_URL, { headers: sessionHeaders() })
-      .then((r) => r.json())
+    fetchJson<PipelineState>(STATE_URL, { headers: sessionHeaders() })
       .then((state: PipelineState) => {
         if (cancelled) return;
         // Only restore if backend has meaningful state
@@ -264,8 +264,10 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
     if (!saved) return;
 
     // Check if job is still running
-    fetch(STATUS_URL(saved.job_id), { cache: "no-store", headers: sessionHeaders() })
-      .then((r) => r.json())
+    fetchJson<StatusPayload>(STATUS_URL(saved.job_id), {
+      cache: "no-store",
+      headers: sessionHeaders(),
+    })
       .then((s: StatusPayload) => {
         if (s.done) {
           // Job finished while we were away — clean up; state restore handled by /state effect
@@ -338,8 +340,7 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
   useEffect(() => {
     let cancelled = false;
     const checkHealth = (retryOnFail: boolean) => {
-      fetch(HEALTH_URL, { cache: "no-store" })
-        .then((r) => r.json())
+      fetchJson<{ ok: boolean; ollama: boolean }>(HEALTH_URL, { cache: "no-store" })
         .then((data: { ok: boolean; ollama: boolean }) => {
           if (!cancelled) setOllamaOk(data.ollama);
         })
@@ -360,12 +361,19 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
     if (!anyBusy) { setQueueBusy(false); setQueuedCount(0); return; }
     let cancelled = false;
     const poll = () => {
-      fetch(QUEUE_INFO_URL, { cache: "no-store" })
-        .then((r) => r.json())
+      fetchJson<{ busy: boolean; queued: number }>(QUEUE_INFO_URL, {
+        cache: "no-store",
+        headers: sessionHeaders(),
+      })
         .then((d: { busy: boolean; queued: number }) => {
           if (!cancelled) { setQueueBusy(d.busy); setQueuedCount(d.queued); }
         })
-        .catch(() => {});
+        .catch(() => {
+          if (!cancelled) {
+            setQueueBusy(false);
+            setQueuedCount(0);
+          }
+        });
     };
     poll();
     const id = setInterval(poll, 5000);
@@ -766,8 +774,7 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
     queueBusy,
     queuedCount,
     recheckOllama: () => {
-      fetch(HEALTH_URL, { cache: "no-store" })
-        .then((r) => r.json())
+      fetchJson<{ ok: boolean; ollama: boolean }>(HEALTH_URL, { cache: "no-store" })
         .then((data: { ok: boolean; ollama: boolean }) => setOllamaOk(data.ollama))
         .catch(() => { /* keep current state */ });
     },

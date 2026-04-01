@@ -1,4 +1,4 @@
-import { STATUS_URL, sessionHeaders } from "@/lib/api";
+import { fetchJson, STATUS_URL, sessionHeaders } from "@/lib/api";
 import type { StatusPayload } from "@/lib/api";
 
 const _POLL_MIN_MS = 600;
@@ -12,13 +12,11 @@ export async function pollProgress(
   let delay = _POLL_MIN_MS;
   while (!signal.aborted) {
     try {
-      const r = await fetch(STATUS_URL(jobId), {
+      const s = await fetchJson<StatusPayload>(STATUS_URL(jobId), {
         signal,
         cache: "no-store",
         headers: sessionHeaders(),
       });
-      if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
-      const s: StatusPayload = await r.json();
       onTick(s);
       if (s.done || s.progress >= 100) break;
       // Job disappeared from registry (TTL cleanup or server restart)
