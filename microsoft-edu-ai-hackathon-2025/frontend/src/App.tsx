@@ -12,7 +12,10 @@ export default function MediaFeatureLabPro() {
   const [lang, setLang] = useState<"cs" | "en">(() => {
     try {
       const saved = localStorage.getItem("mflLang");
-      return saved === "en" ? "en" : "cs";
+      if (saved === "en" || saved === "cs") return saved;
+      // Auto-detect from browser on first visit
+      const browserLang = navigator.language || navigator.languages?.[0] || "cs";
+      return browserLang.toLowerCase().startsWith("en") ? "en" : "cs";
     } catch {
       return "cs";
     }

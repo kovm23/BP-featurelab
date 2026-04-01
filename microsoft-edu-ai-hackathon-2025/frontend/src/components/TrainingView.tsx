@@ -1467,6 +1467,12 @@ export function TrainingView({
                     {trainResult.cv_f1_macro != null && (
                       <p>Cross-val F1 macro: <strong>{Number(trainResult.cv_f1_macro).toFixed(4)}</strong></p>
                     )}
+                    {trainResult.cv_precision_macro != null && (
+                      <p>Cross-val Precision: <strong>{Number(trainResult.cv_precision_macro).toFixed(4)}</strong></p>
+                    )}
+                    {trainResult.cv_recall_macro != null && (
+                      <p>Cross-val Recall: <strong>{Number(trainResult.cv_recall_macro).toFixed(4)}</strong></p>
+                    )}
                   </>
                 ) : (
                   <>
@@ -1489,6 +1495,9 @@ export function TrainingView({
                           {trainResult.cv_mse < (trainResult.mse ?? 0) * 2 ? "✓ model zobecňuje" : "⚠ možné přetrénování"}
                         </span>
                       </p>
+                    )}
+                    {trainResult.cv_mae != null && (
+                      <p>Cross-val MAE: <strong>{Number(trainResult.cv_mae).toFixed(4)}</strong></p>
                     )}
                   </>
                 )}
