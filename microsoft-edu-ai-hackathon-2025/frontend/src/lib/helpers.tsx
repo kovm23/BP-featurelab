@@ -193,6 +193,77 @@ export function CopyButton({ getText }: { getText: () => string }) {
 // ML PIPELINE EXPORT FUNKCE
 // =====================================================
 
+function normalizeFeatureSpecForExport(featureSpec: FeatureSpec): Record<string, unknown> {
+  const rangePattern =
+    /(?:score|range|scale|hodnota)?\s*(\d+(?:\.\d+)?)\s*[-–—to]+\s*(\d+(?:\.\d+)?)/i;
+  const binaryPattern = /\b(?:binary|bool|boolean)\b|(?:0\s+or\s+1)|(?:0\/1)/i;
+  const percentagePattern = /\b(?:percent|percentage|%)\b/i;
+  const enumHintPattern = /^(?:one of|enum|categories?|values?)\s*[:\-]?\s*/i;
+
+  const normalized: Record<string, unknown> = {};
+
+  for (const [key, raw] of Object.entries(featureSpec as Record<string, unknown>)) {
+    if (Array.isArray(raw)) {
+      if (raw.length === 2 && raw.every((v) => typeof v === "number")) {
+        const lo = Number(raw[0]);
+        const hi = Number(raw[1]);
+        normalized[key] = lo <= hi ? [lo, hi] : [hi, lo];
+        continue;
+      }
+
+      if (raw.every((v) => typeof v === "string")) {
+        const vals = raw.map((v) => String(v).trim()).filter(Boolean);
+        if (vals.length > 0) normalized[key] = vals;
+        continue;
+      }
+    }
+
+    if (typeof raw !== "string") {
+      normalized[key] = raw;
+      continue;
+    }
+
+    const text = raw.trim();
+    if (!text) continue;
+
+    if (binaryPattern.test(text)) {
+      normalized[key] = [0, 1];
+      continue;
+    }
+
+    if (percentagePattern.test(text)) {
+      normalized[key] = [0, 100];
+      continue;
+    }
+
+    const m = text.match(rangePattern);
+    if (m) {
+      const lo = Number(m[1]);
+      const hi = Number(m[2]);
+      normalized[key] = lo <= hi ? [lo, hi] : [hi, lo];
+      continue;
+    }
+
+    const enumText = text.replace(enumHintPattern, "").trim().replace(/^[\[\(\{]\s*/, "").replace(/\s*[\]\)\}]$/, "");
+    const splitBy = enumText.includes(",") ? "," : (enumText.includes("|") ? "|" : null);
+    if (splitBy) {
+      const values = enumText
+        .split(splitBy)
+        .map((v) => v.trim().replace(/^['"]|['"]$/g, ""))
+        .filter(Boolean);
+      if (values.length >= 2) {
+        normalized[key] = values;
+        continue;
+      }
+    }
+
+    // Unknown legacy string: keep original to avoid data loss.
+    normalized[key] = text;
+  }
+
+  return normalized;
+}
+
 /**
  * Fáze 1c: Stáhni feature definition spec jako JSON
  */
@@ -200,7 +271,8 @@ export function downloadFeatureSpec(
   featureSpec: FeatureSpec,
   filename = `feature_spec_${new Date().toISOString().slice(0, 10)}.json`
 ) {
-  const json = JSON.stringify(featureSpec, null, 2);
+  const normalized = normalizeFeatureSpecForExport(featureSpec);
+  const json = JSON.stringify(normalized, null, 2);
   downloadText(filename, json, "application/json;charset=utf-8");
 }
 
@@ -282,7 +354,10 @@ export async function downloadExperimentZip(params: {
   const ts = new Date().toISOString().slice(0, 19).replace(/:/g, "-");
 
   if (params.featureSpec) {
-    zip.file("feature_spec.json", JSON.stringify(params.featureSpec, null, 2));
+    zip.file(
+      "feature_spec.json",
+      JSON.stringify(normalizeFeatureSpecForExport(params.featureSpec), null, 2)
+    );
   }
 
   if (params.trainingDataX && params.trainingDataX.length > 0) {
