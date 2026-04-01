@@ -12,19 +12,19 @@ Media Feature Lab je webová aplikace pro automatickou klasifikaci/regresi multi
 
 ### Stav implementace (aktualizace 2026-03-31)
 
-Tato sekce doplňuje historický popis níže o aktualni behavior aplikace:
+Tato sekce doplňuje historický popis níže o aktuální chování aplikace:
 
-- Faze 3 a Faze 5 jsou asynchronni (`/train`, `/predict` vraci `job_id` a frontend polluje `/status/{job_id}`).
+- Fáze 3 a Fáze 5 jsou asynchronní (`/train`, `/predict` vrací `job_id` a frontend polluje `/status/{job_id}`).
 - Pipeline podporuje `target_mode`:
   - `regression`: RuleKit + XGBoost ensemble, metriky `mse`, `mae`, `correlation`.
   - `classification`: XGBoost classifier, metriky `accuracy`, `f1_macro`, `precision_macro`, `recall_macro`, `confusion_matrix`.
-- Predikce ve classification rezimu vraci `predicted_label`, `confidence`, volitelne `actual_label`.
-- Predikce v regression rezimu vraci `predicted_score`, volitelne `actual_score`.
-- Skalirovani features bylo odstraneno dle pozadavku (pipeline bezi bez `StandardScaler`).
+- Predikce ve classification režimu vrací `predicted_label`, `confidence`, volitelně `actual_label`.
+- Predikce v regression režimu vrací `predicted_score`, volitelně `actual_score`.
+- Škálování features bylo odstraněno dle požadavku (pipeline běží bez `StandardScaler`).
 - Frontend používá lokalizaci CZ/EN s automatickou detekcí jazyka prohlížeče při prvním načtení a perzistencí volby (`localStorage`, key `mflLang`).
-- EN lokalizace je napojena i na klicove texty 5-fazoveho wizardu (phase titles/descriptions, hlavni CTA tlacitka, continue/stop akce, completion badges).
-- Runtime hlasky z `useTrainingPipeline` (fallback progress labely a frontendove error prefixy) respektuji zvoleny jazyk CZ/EN.
-- Produkcni routovani API pres Cloudflare Worker proxy je soucasti nasazeni frontendu.
+- EN lokalizace je napojena i na klíčové texty 5fázového wizardu (phase titles/descriptions, hlavní CTA tlačítka, continue/stop akce, completion badges).
+- Runtime hlášky z `useTrainingPipeline` (fallback progress labely a frontendové error prefixy) respektují zvolený jazyk CZ/EN.
+- Produkční routování API přes Cloudflare Worker proxy je součástí nasazení frontendu.
 
 ### Architektura
 
