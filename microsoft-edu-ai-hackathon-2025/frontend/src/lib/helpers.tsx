@@ -1,19 +1,14 @@
 import React, { useState } from "react";
 import JSZip from "jszip";
-import { Check, Copy } from "lucide-react";
-import {
-  FileVideo,
-  Image as ImageIcon,
-  import type { FeatureSpec } from "@/lib/api";
-  FileText,
-  Archive,
-} from "lucide-react";
-import type { FileType, ProcessingResult } from "@/lib/api";
+import { Check, Copy, FileVideo, FileText, Archive } from "lucide-react";
+import { Image as ImageIcon } from "lucide-react";
+import type { FeatureSpec, FileType, ProcessingResult } from "@/lib/api";
 import { TYPE_STYLES, EXT_GROUPS } from "@/lib/api";
 
 // =====================================================
-  export function downloadFeatureSpec(
-    featureSpec: FeatureSpec,
+// FILE DETECTION & UTILITIES
+// =====================================================
+
 export function detectType(files: File[]): FileType | null {
   const getGroup = (name: string): FileType | null => {
     const lower = name.toLowerCase();
@@ -23,8 +18,8 @@ export function detectType(files: File[]): FileType | null {
     if (EXT_GROUPS.archive.some((e) => lower.endsWith(e))) return "archive";
     return null;
   };
-  export async function downloadExperimentZip(params: {
-    featureSpec?: FeatureSpec | null;
+  const types = new Set<FileType>();
+  for (const f of files) {
     const t = getGroup(f.name);
     if (!t) return null;
     types.add(t);
@@ -202,7 +197,7 @@ export function CopyButton({ getText }: { getText: () => string }) {
  * Fáze 1c: Stáhni feature definition spec jako JSON
  */
 export function downloadFeatureSpec(
-  featureSpec: Record<string, string>,
+  featureSpec: FeatureSpec,
   filename = `feature_spec_${new Date().toISOString().slice(0, 10)}.json`
 ) {
   const json = JSON.stringify(featureSpec, null, 2);
