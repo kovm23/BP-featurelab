@@ -4,6 +4,7 @@
  */
 import { useState, useMemo, useEffect, useRef } from "react";
 import type {
+  FeatureSpec,
   PipelineState,
   StatusPayload,
   TargetMode,
@@ -33,7 +34,7 @@ interface PersistedPipeline {
   trainingStep?: 1 | 2 | 3 | 4 | 5;
   targetVariable?: string;
   targetMode?: TargetMode;
-  featureSpec?: Record<string, string> | null;
+  featureSpec?: FeatureSpec | null;
   modelProvider?: string;
 }
 
@@ -103,7 +104,42 @@ interface ExtractConfig {
 /* ------------------------------------------------------------------ */
 /*  Hook                                                               */
 /* ------------------------------------------------------------------ */
-export function useTrainingPipeline() {
+export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
+  const tx = uiLanguage === "en"
+    ? {
+      restoring: "Restoring...",
+      phase1Failed: "Phase 1 failed",
+      extractFailed: "Extraction failed",
+      featureDiscoveryFailed: "Feature Discovery failed",
+      startingExtraction: "Starting extraction...",
+      phase2: "Phase 2",
+      phase4: "Phase 4",
+      startingTraining: "Starting training...",
+      trainingFailed: "Training failed",
+      trainingInProgress: "Training...",
+      phase3Failed: "Phase 3 failed",
+      startingPrediction: "Starting prediction...",
+      predictionFailed: "Prediction failed",
+      predictingInProgress: "Predicting...",
+      phase5Failed: "Phase 5 failed",
+    }
+    : {
+      restoring: "Obnovuji...",
+      phase1Failed: "Faze 1 selhala",
+      extractFailed: "Extrakce selhala",
+      featureDiscoveryFailed: "Feature Discovery selhala",
+      startingExtraction: "Spoustim extrakci...",
+      phase2: "Faze 2",
+      phase4: "Faze 4",
+      startingTraining: "Spoustim trenink...",
+      trainingFailed: "Trenink selhal",
+      trainingInProgress: "Trenuji...",
+      phase3Failed: "Faze 3 selhala",
+      startingPrediction: "Spoustim predikci...",
+      predictionFailed: "Predikce selhala",
+      predictingInProgress: "Predikuji...",
+      phase5Failed: "Faze 5 selhala",
+    };
   const saved = useMemo(loadPersisted, []);
 
   // --- Phase navigation ---
@@ -118,7 +154,7 @@ export function useTrainingPipeline() {
   const [targetMode, setTargetMode] = useState<TargetMode>(
     saved?.targetMode ?? "regression",
   );
-  const [featureSpec, setFeatureSpec] = useState<Record<string, string> | null>(
+  const [featureSpec, setFeatureSpec] = useState<FeatureSpec | null>(
     saved?.featureSpec ?? null,
   );
   const [isDiscovering, setIsDiscovering] = useState(false);
@@ -238,7 +274,7 @@ export function useTrainingPipeline() {
         const ctrl = new AbortController();
         setActiveCtrl(ctrl);
         setProgress(Math.max(0, Math.min(100, s.progress ?? 0)));
-        setProgressLabel(s.stage || "Obnovuji...");
+        setProgressLabel(s.stage || tx.restoring);
 
         if (saved.phase === "discover") {
           setIsDiscovering(true);
@@ -262,7 +298,7 @@ export function useTrainingPipeline() {
               }
               if (tick.done && tick.error) {
                 clearActiveJob();
-                setError("Fáze 1 selhala: " + tick.error);
+                setError(tx.phase1Failed + ": " + tick.error);
               }
             },
             ctrl.signal,
@@ -284,7 +320,7 @@ export function useTrainingPipeline() {
               }
               if (tick.done && tick.error) {
                 clearActiveJob();
-                setError(`Extrakce selhala: ${tick.error}`);
+                setError(`${tx.extractFailed}: ${tick.error}`);
               }
             },
             ctrl.signal,
@@ -382,7 +418,7 @@ export function useTrainingPipeline() {
       const res = await fetch(DISCOVER_URL, { method: "POST", body: formData, headers: sessionHeaders() });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || "Feature Discovery selhala");
+        throw new Error(errData.error || tx.featureDiscoveryFailed);
       }
       const data = await res.json();
       if (data.job_id) {
@@ -409,7 +445,7 @@ export function useTrainingPipeline() {
             }
             if (s.done && s.error) {
               clearActiveJob();
-              setError("Fáze 1 selhala: " + s.error);
+              setError(tx.phase1Failed + ": " + s.error);
             }
           },
           ctrl.signal,
@@ -418,7 +454,7 @@ export function useTrainingPipeline() {
         setFeatureSpec(data.suggested_features);
       }
     } catch (err: unknown) {
-      setError("Fáze 1 selhala: " + (err instanceof Error ? err.message : String(err)));
+      setError(tx.phase1Failed + ": " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setIsDiscovering(false);
       setActiveCtrl(null);
@@ -436,7 +472,7 @@ export function useTrainingPipeline() {
     setBusy(true);
     setData(null);
     setProgress(0);
-    setProgressLabel("Spouštím extrakci...");
+    setProgressLabel(tx.startingExtraction);
     setError(null);
     // Clear stale downstream results so user doesn't see old data after re-extraction
     if (isTraining) setTrainResult(null);
@@ -450,7 +486,7 @@ export function useTrainingPipeline() {
       });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || "Extrakce selhala");
+        throw new Error(errData.error || tx.extractFailed);
       }
       const data = await res.json();
 
@@ -499,7 +535,7 @@ export function useTrainingPipeline() {
       url: EXTRACT_URL,
       body: formData,
       datasetType: "training",
-      phaseLabel: "Fáze 2",
+      phaseLabel: tx.phase2,
     });
   }
 
@@ -516,7 +552,7 @@ export function useTrainingPipeline() {
       }),
       headers: { "Content-Type": "application/json" },
       datasetType: "training",
-      phaseLabel: "Fáze 2",
+      phaseLabel: tx.phase2,
     });
   }
 
@@ -532,7 +568,7 @@ export function useTrainingPipeline() {
       url: EXTRACT_URL,
       body: formData,
       datasetType: "testing",
-      phaseLabel: "Fáze 4",
+      phaseLabel: tx.phase4,
     });
   }
 
@@ -548,7 +584,7 @@ export function useTrainingPipeline() {
       }),
       headers: { "Content-Type": "application/json" },
       datasetType: "testing",
-      phaseLabel: "Fáze 4",
+      phaseLabel: tx.phase4,
     });
   }
 
@@ -560,7 +596,7 @@ export function useTrainingPipeline() {
     setTrainResult(null);
     setError(null);
     setProgress(0);
-    setProgressLabel("Spouštím trénink...");
+    setProgressLabel(tx.startingTraining);
 
     const ctrl = new AbortController();
     setActiveCtrl(ctrl);
@@ -574,26 +610,26 @@ export function useTrainingPipeline() {
       });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error((errData as { error?: string }).error || "Trénink selhal");
+        throw new Error((errData as { error?: string }).error || tx.trainingFailed);
       }
       const { job_id } = await res.json() as { job_id: string };
       await pollProgress(
         job_id,
         (tick) => {
           setProgress(Math.max(0, Math.min(100, tick.progress ?? 0)));
-          setProgressLabel(tick.stage || "Trénuji...");
+          setProgressLabel(tick.stage || tx.trainingInProgress);
           if (tick.done && !tick.error) {
             setTrainResult(tick.details as TrainResult);
           }
           if (tick.done && tick.error) {
-            setError("Fáze 3 selhala: " + tick.error);
+            setError(tx.phase3Failed + ": " + tick.error);
           }
         },
         ctrl.signal,
       );
     } catch (e: unknown) {
       if (!ctrl.signal.aborted) {
-        setError("Fáze 3 selhala: " + (e instanceof Error ? e.message : String(e)));
+        setError(tx.phase3Failed + ": " + (e instanceof Error ? e.message : String(e)));
       }
     } finally {
       setTrainingBusy(false);
@@ -610,7 +646,7 @@ export function useTrainingPipeline() {
     setPredictionMetrics(null);
     setError(null);
     setProgress(0);
-    setProgressLabel("Spouštím predikci...");
+    setProgressLabel(tx.startingPrediction);
 
     const ctrl = new AbortController();
     setActiveCtrl(ctrl);
@@ -626,28 +662,28 @@ export function useTrainingPipeline() {
       }
       if (!res.ok) {
         const errData = await res.json().catch(() => ({}));
-        throw new Error((errData as { error?: string }).error || "Predikce selhala");
+        throw new Error((errData as { error?: string }).error || tx.predictionFailed);
       }
       const { job_id } = await res.json() as { job_id: string };
       await pollProgress(
         job_id,
         (tick) => {
           setProgress(Math.max(0, Math.min(100, tick.progress ?? 0)));
-          setProgressLabel(tick.stage || "Predikcuji...");
+          setProgressLabel(tick.stage || tx.predictingInProgress);
           if (tick.done && !tick.error) {
             const d = tick.details as { predictions: PredictionItem[]; metrics: PredictionMetrics };
             setPredictions(d.predictions);
             setPredictionMetrics(d.metrics || null);
           }
           if (tick.done && tick.error) {
-            setError("Fáze 5 selhala: " + tick.error);
+            setError(tx.phase5Failed + ": " + tick.error);
           }
         },
         ctrl.signal,
       );
     } catch (e: unknown) {
       if (!ctrl.signal.aborted) {
-        setError("Fáze 5 selhala: " + (e instanceof Error ? e.message : String(e)));
+        setError(tx.phase5Failed + ": " + (e instanceof Error ? e.message : String(e)));
       }
     } finally {
       setPredictBusy(false);

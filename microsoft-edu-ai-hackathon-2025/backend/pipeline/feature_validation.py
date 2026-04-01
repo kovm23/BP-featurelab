@@ -55,6 +55,38 @@ def validate_and_clamp(value, feature_name: str, feature_description: str) -> tu
     if value is None:
         return None, False
 
+    # New schema-first path: [min, max] numeric range
+    if isinstance(feature_description, list):
+        if (
+            len(feature_description) == 2
+            and all(isinstance(v, (int, float)) for v in feature_description)
+        ):
+            lo, hi = float(feature_description[0]), float(feature_description[1])
+            if lo > hi:
+                lo, hi = hi, lo
+            try:
+                numeric_val = float(value)
+            except (ValueError, TypeError):
+                return value, False
+
+            clamped = max(lo, min(hi, numeric_val))
+            # If schema bounds are integers, return an integer value.
+            if float(feature_description[0]).is_integer() and float(feature_description[1]).is_integer():
+                clamped = int(round(clamped))
+                original = int(round(numeric_val)) if isinstance(value, (int, float)) else value
+                return clamped, clamped != original
+
+            return clamped, clamped != numeric_val
+
+        # Categorical enum path: ["cat_a", "cat_b", ...]
+        if feature_description and all(isinstance(v, str) for v in feature_description):
+            allowed = {v.strip().lower(): v for v in feature_description}
+            val_norm = str(value).strip().lower()
+            if val_norm in allowed:
+                canonical = allowed[val_norm]
+                return canonical, canonical != value
+            return value, False
+
     spec = parse_feature_range(feature_description)
 
     if spec["type"] == "unknown":

@@ -9,12 +9,12 @@ from flask_cors import CORS
 
 import session_registry
 from routes import (
-    analyze_bp,
     discover_bp,
     extract_bp,
     health_bp,
     predict_bp,
     reset_bp,
+    session_transfer_bp,
     state_bp,
     status_bp,
     train_bp,
@@ -41,11 +41,11 @@ app.register_blueprint(discover_bp)
 app.register_blueprint(extract_bp)
 app.register_blueprint(train_bp)
 app.register_blueprint(predict_bp)
-app.register_blueprint(analyze_bp)
 app.register_blueprint(status_bp)
 app.register_blueprint(reset_bp)
 app.register_blueprint(state_bp)
 app.register_blueprint(health_bp)
+app.register_blueprint(session_transfer_bp)
 
 
 def get_pipeline():

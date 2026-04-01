@@ -24,12 +24,31 @@ _META_KEYS = {"summary", "classification", "reasoning", "observation", "descript
 EXTRACTION_PASSES = int(os.environ.get("EXTRACTION_PASSES", "2"))
 
 
+def _format_feature_constraint(spec_value) -> str:
+    """Render a feature schema value into explicit prompt instructions."""
+    if isinstance(spec_value, list):
+        if len(spec_value) == 2 and all(isinstance(v, (int, float)) for v in spec_value):
+            lo, hi = spec_value
+            if lo > hi:
+                lo, hi = hi, lo
+            value_kind = "integer" if float(lo).is_integer() and float(hi).is_integer() else "number"
+            return f"{value_kind} in [{lo}, {hi}]"
+
+        if spec_value and all(isinstance(v, str) for v in spec_value):
+            categories = json.dumps(spec_value, ensure_ascii=False)
+            return f"one of {categories}"
+
+        return f"match schema {json.dumps(spec_value, ensure_ascii=False)}"
+
+    return str(spec_value)
+
+
 def _build_extraction_prompt(feature_spec: dict, labels_context: str) -> str:
     """Build a chain-of-thought extraction prompt with explicit range enforcement."""
     # Build per-feature spec with explicit ranges
     feature_lines = []
     for name, desc in feature_spec.items():
-        feature_lines.append(f"  - {name}: {desc}")
+        feature_lines.append(f"  - {name}: {_format_feature_constraint(desc)}")
     features_block = "\n".join(feature_lines)
 
     prompt = (

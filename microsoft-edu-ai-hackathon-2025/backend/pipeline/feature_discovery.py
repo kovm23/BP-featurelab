@@ -110,10 +110,12 @@ def discover_features(
         f"- Have clear, unambiguous measurement criteria\n"
         f"- Are independent from each other (avoid redundant or highly correlated features)\n\n"
         f"Output STRICTLY a JSON object with 5–8 keys. Keys are feature names "
-        f"(lowercase_with_underscores). Values describe the measurement scale or "
-        f"categories. DO NOT output more than 8 features.\n"
-        f"Example: {{\"action_intensity\": \"score 0-10, how dynamic/fast-paced the clip is\", "
-        f"\"speech_presence\": \"binary 0 or 1, whether speech is audible\"}}"
+        f"(lowercase_with_underscores). Values MUST be one of:\n"
+        f"- numeric range as [min, max] (prefer integer ranges when possible)\n"
+        f"- categorical domain as [\"category_a\", \"category_b\", ...]\n"
+        f"DO NOT output more than 8 features.\n"
+        f"Example: {{\"action_intensity\": [0, 10], \"speech_presence\": [0, 1], "
+        f"\"scene_type\": [\"indoor\", \"outdoor\", \"mixed\"]}}"
     )
 
     with _tracked_ollama_lock():
@@ -144,4 +146,4 @@ def discover_features(
         return all_features
 
     # Fallback
-    return {"visual_complexity": "score 1-10", "action_intensity": "score 1-10"}
+    return {"visual_complexity": [0, 10], "action_intensity": [0, 10]}

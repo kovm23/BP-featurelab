@@ -7,12 +7,13 @@ export const DISCOVER_URL = `${API_BASE}/discover`;
 export const EXTRACT_URL = `${API_BASE}/extract`;
 export const TRAIN_URL = `${API_BASE}/train`;
 export const PREDICT_URL = `${API_BASE}/predict`;
-export const ANALYZE_URL = `${API_BASE}/analyze`;
 export const EXTRACT_LOCAL_URL = `${API_BASE}/extract-local`;
 export const RESET_URL = `${API_BASE}/reset`;
 export const STATE_URL = `${API_BASE}/state`;
 export const HEALTH_URL = `${API_BASE}/health`;
 export const QUEUE_INFO_URL = `${API_BASE}/queue-info`;
+export const EXPORT_SESSION_URL = `${API_BASE}/export-session`;
+export const IMPORT_SESSION_URL = `${API_BASE}/import-session`;
 export const STATUS_URL = (jobId: string) =>
   `${API_BASE}/status/${encodeURIComponent(jobId)}`;
 
@@ -49,6 +50,8 @@ export const AVAILABLE_MODELS = [
 // TYPY
 // =====================================================
 export type FileType = "text" | "image" | "video" | "archive";
+export type FeatureSpecValue = [number, number] | string[] | string;
+export type FeatureSpec = Record<string, FeatureSpecValue>;
 
 export interface ProcessingResult {
   type?: FileType;
@@ -86,7 +89,7 @@ export interface ExtractDetails {
   status: string;
   dataset_type: string;
   dataset_X: Record<string, unknown>[];
-  feature_spec: Record<string, string>;
+  feature_spec: FeatureSpec;
   rows_count: number;
   dataset_Y_columns?: string[];
   clamped_count?: number;
@@ -101,10 +104,16 @@ export interface TrainResult {
   cv_mse?: number;
   cv_std?: number;
   cv_mae?: number;
+  train_accuracy?: number;
+  train_f1_macro?: number;
+  cv_accuracy?: number;
+  cv_f1_macro?: number;
+  cv_precision_macro?: number;
+  cv_recall_macro?: number;
   cv_folds?: number;
   rules_count?: number;
   rules?: string[];
-  feature_spec?: Record<string, string>;
+  feature_spec?: FeatureSpec;
   feature_importance?: {
     xgboost?: Record<string, number>;
     rulekit?: Record<string, number>;
@@ -115,7 +124,7 @@ export interface TrainResult {
 }
 
 export interface PipelineState {
-  feature_spec: Record<string, string>;
+  feature_spec: FeatureSpec;
   target_variable: string;
   target_mode?: TargetMode;
   is_trained: boolean;
@@ -131,16 +140,26 @@ export interface PipelineState {
 
 export interface PredictionItem {
   media_name: string;
-  predicted_score: number;
+  predicted_score?: number;
   actual_score?: number;
+  predicted_label?: string;
+  actual_label?: string;
+  confidence?: number | null;
   rule_applied: string;
   extracted_features: Record<string, unknown>;
 }
 
 export interface PredictionMetrics {
-  mse: number;
-  mae: number;
-  correlation: number | null;
+  mode?: TargetMode;
+  mse?: number;
+  mae?: number;
+  correlation?: number | null;
+  accuracy?: number;
+  f1_macro?: number;
+  precision_macro?: number;
+  recall_macro?: number;
+  labels?: string[];
+  confusion_matrix?: number[][];
   matched_count: number;
   total_count: number;
 }
@@ -160,7 +179,7 @@ export type StatusPayload = {
   done?: boolean;
   error?: string;
   details?: ExtractDetails | TrainResult | PredictDetails;
-  suggested_features?: Record<string, string>;
+  suggested_features?: FeatureSpec;
 };
 
 // =====================================================

@@ -45,6 +45,11 @@ def api_reset():
     pipeline.cv_mae = None
     pipeline.feature_importance = {}
     pipeline.is_trained = False
+    pipeline.train_accuracy = None
+    pipeline.train_f1_macro = None
+    pipeline.cv_accuracy = None
+    pipeline.cv_f1_macro = None
+    pipeline._label_classes = []
     pipeline.testing_X = None
     pipeline._training_columns = []
     pipeline._scaler_mean = []

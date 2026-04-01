@@ -15,7 +15,13 @@ import {
   Trash2,
   Pencil,
 } from "lucide-react";
-import type { TrainResult, PredictionItem, PredictionMetrics } from "@/lib/api";
+import type {
+  FeatureSpec,
+  FeatureSpecValue,
+  TrainResult,
+  PredictionItem,
+  PredictionMetrics,
+} from "@/lib/api";
 import { AVAILABLE_MODELS } from "@/lib/api";
 import {
   downloadFeatureSpec,
@@ -30,6 +36,7 @@ import {
 
 export interface TrainingViewProps {
   deluxe: boolean;
+  uiLanguage?: "cs" | "en";
   /* Phase 1 */
   onDiscoverStart: (files: File[], labelsFile?: File | null) => void;
   isDiscovering: boolean;
@@ -37,8 +44,8 @@ export interface TrainingViewProps {
   setTargetVariable: (v: string) => void;
   targetMode: "regression" | "classification";
   setTargetMode: (v: "regression" | "classification") => void;
-  featureSpec: Record<string, string> | null;
-  setFeatureSpec: (spec: Record<string, string>) => void;
+  featureSpec: FeatureSpec | null;
+  setFeatureSpec: (spec: FeatureSpec) => void;
   /* Phase 2 */
   onExtractTraining: (file: File, labelsFile?: File | null) => void;
   onExtractTrainingLocal: (zipPath: string, labelsPath?: string) => void;
@@ -79,16 +86,13 @@ export interface TrainingViewProps {
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
-const PHASE_LABELS = [
-  { num: 1, short: "Discovery" },
-  { num: 2, short: "Extrakce" },
-  { num: 3, short: "Trénink" },
-  { num: 4, short: "Test ext." },
-  { num: 5, short: "Predikce" },
-];
-
 function cls(deluxe: boolean, light: string, dark: string) {
   return deluxe ? dark : light;
+}
+
+function isClassificationMetrics(metrics: PredictionMetrics | null): boolean {
+  if (!metrics) return false;
+  return metrics.mode === "classification" || typeof metrics.accuracy === "number";
 }
 
 /* ------------------------------------------------------------------ */
@@ -232,29 +236,87 @@ function FeatureSpecBox({
   onUpdate,
 }: {
   deluxe: boolean;
-  featureSpec: Record<string, string>;
+  featureSpec: FeatureSpec;
   targetVariable: string;
   editable?: boolean;
-  onUpdate?: (spec: Record<string, string>) => void;
+  onUpdate?: (spec: FeatureSpec) => void;
 }) {
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
-  const [editDesc, setEditDesc] = useState("");
+  const [editMode, setEditMode] = useState<"range" | "categories" | "text">("range");
+  const [editMin, setEditMin] = useState(0);
+  const [editMax, setEditMax] = useState(10);
+  const [editCategories, setEditCategories] = useState("");
+  const [editText, setEditText] = useState("");
   const [addingNew, setAddingNew] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newDesc, setNewDesc] = useState("");
+  const [newMode, setNewMode] = useState<"range" | "categories">("range");
+  const [newMin, setNewMin] = useState(0);
+  const [newMax, setNewMax] = useState(10);
+  const [newCategories, setNewCategories] = useState("");
 
-  const startEdit = (key: string, desc: string) => {
+  const formatSpecValue = (value: FeatureSpecValue): string => {
+    if (Array.isArray(value)) {
+      if (value.length === 2 && value.every((v) => typeof v === "number")) {
+        return `${value[0]}–${value[1]} (range)`;
+      }
+      return `[${value.map((v) => JSON.stringify(v)).join(", ")}]`;
+    }
+    return String(value);
+  };
+
+  const parseEditorState = (value: FeatureSpecValue) => {
+    if (Array.isArray(value)) {
+      if (value.length === 2 && value.every((v) => typeof v === "number")) {
+        setEditMode("range");
+        setEditMin(Number(value[0]));
+        setEditMax(Number(value[1]));
+        return;
+      }
+      if (value.every((v) => typeof v === "string")) {
+        setEditMode("categories");
+        setEditCategories(value.join(", "));
+        return;
+      }
+    }
+    setEditMode("text");
+    setEditText(String(value));
+  };
+
+  const buildEditedValue = (): FeatureSpecValue => {
+    if (editMode === "range") {
+      return [Number(editMin), Number(editMax)];
+    }
+    if (editMode === "categories") {
+      return editCategories
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+    return editText.trim();
+  };
+
+  const buildNewValue = (): FeatureSpecValue => {
+    if (newMode === "range") {
+      return [Number(newMin), Number(newMax)];
+    }
+    return newCategories
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  };
+
+  const startEdit = (key: string, value: FeatureSpecValue) => {
     setEditingKey(key);
     setEditName(key);
-    setEditDesc(desc);
+    parseEditorState(value);
   };
 
   const saveEdit = () => {
     if (!editingKey || !editName.trim() || !onUpdate) return;
     const updated = { ...featureSpec };
     if (editName !== editingKey) delete updated[editingKey];
-    updated[editName.trim()] = editDesc.trim();
+    updated[editName.trim()] = buildEditedValue();
     onUpdate(updated);
     setEditingKey(null);
   };
@@ -268,9 +330,12 @@ function FeatureSpecBox({
 
   const addFeature = () => {
     if (!newName.trim() || !onUpdate) return;
-    onUpdate({ ...featureSpec, [newName.trim()]: newDesc.trim() });
+    onUpdate({ ...featureSpec, [newName.trim()]: buildNewValue() });
     setNewName("");
-    setNewDesc("");
+    setNewMode("range");
+    setNewMin(0);
+    setNewMax(10);
+    setNewCategories("");
     setAddingNew(false);
   };
 
@@ -314,12 +379,33 @@ function FeatureSpecBox({
                 className={`text-xs font-mono px-1.5 py-0.5 rounded border outline-none ${cls(deluxe, "bg-white border-slate-300", "bg-slate-800 border-slate-600 text-white")}`}
                 placeholder="Název feature"
               />
-              <input
-                value={editDesc}
-                onChange={(e) => setEditDesc(e.target.value)}
-                className={`text-xs px-1.5 py-0.5 rounded border outline-none ${cls(deluxe, "bg-white border-slate-300", "bg-slate-800 border-slate-600 text-white")}`}
-                placeholder="Popis"
-              />
+              <div className="flex gap-1 text-[10px]">
+                <button type="button" onClick={() => setEditMode("range")} className={`px-1.5 py-0.5 rounded ${editMode === "range" ? "bg-blue-500 text-white" : "bg-black/10"}`}>Rozsah</button>
+                <button type="button" onClick={() => setEditMode("categories")} className={`px-1.5 py-0.5 rounded ${editMode === "categories" ? "bg-blue-500 text-white" : "bg-black/10"}`}>Kategorie</button>
+                <button type="button" onClick={() => setEditMode("text")} className={`px-1.5 py-0.5 rounded ${editMode === "text" ? "bg-blue-500 text-white" : "bg-black/10"}`}>Text</button>
+              </div>
+              {editMode === "range" && (
+                <div className="grid grid-cols-2 gap-1">
+                  <input type="number" value={editMin} onChange={(e) => setEditMin(Number(e.target.value))} className={`text-xs px-1.5 py-0.5 rounded border outline-none ${cls(deluxe, "bg-white border-slate-300", "bg-slate-800 border-slate-600 text-white")}`} placeholder="min" />
+                  <input type="number" value={editMax} onChange={(e) => setEditMax(Number(e.target.value))} className={`text-xs px-1.5 py-0.5 rounded border outline-none ${cls(deluxe, "bg-white border-slate-300", "bg-slate-800 border-slate-600 text-white")}`} placeholder="max" />
+                </div>
+              )}
+              {editMode === "categories" && (
+                <input
+                  value={editCategories}
+                  onChange={(e) => setEditCategories(e.target.value)}
+                  className={`text-xs px-1.5 py-0.5 rounded border outline-none ${cls(deluxe, "bg-white border-slate-300", "bg-slate-800 border-slate-600 text-white")}`}
+                  placeholder="cat_a, cat_b, cat_c"
+                />
+              )}
+              {editMode === "text" && (
+                <input
+                  value={editText}
+                  onChange={(e) => setEditText(e.target.value)}
+                  className={`text-xs px-1.5 py-0.5 rounded border outline-none ${cls(deluxe, "bg-white border-slate-300", "bg-slate-800 border-slate-600 text-white")}`}
+                  placeholder="Legacy text spec"
+                />
+              )}
               <div className="flex gap-1">
                 <button onClick={saveEdit} className="text-[10px] px-1.5 py-0.5 rounded bg-green-500 text-white hover:bg-green-600">Uložit</button>
                 <button onClick={() => setEditingKey(null)} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-400 text-white hover:bg-slate-500">Zrušit</button>
@@ -328,7 +414,7 @@ function FeatureSpecBox({
           ) : (
             <li key={key} className="flex items-center gap-2 group">
               <span className="font-mono bg-black/10 px-1 rounded">{key}</span>:{" "}
-              <span className="flex-1">{String(desc)}</span>
+              <span className="flex-1">{formatSpecValue(desc)}</span>
               {editable && (
                 <span className="flex gap-0.5 opacity-60 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                   <button onClick={() => startEdit(key, desc)} title="Upravit" className="p-0.5 rounded hover:bg-black/10">
@@ -354,12 +440,23 @@ function FeatureSpecBox({
                 className={`text-xs font-mono px-1.5 py-0.5 rounded border outline-none ${cls(deluxe, "bg-white border-slate-300", "bg-slate-800 border-slate-600 text-white")}`}
                 placeholder="Název nové feature (např. scene_brightness)"
               />
-              <input
-                value={newDesc}
-                onChange={(e) => setNewDesc(e.target.value)}
-                className={`text-xs px-1.5 py-0.5 rounded border outline-none ${cls(deluxe, "bg-white border-slate-300", "bg-slate-800 border-slate-600 text-white")}`}
-                placeholder="Popis (např. průměrný jas scény 0-255)"
-              />
+              <div className="flex gap-1 text-[10px]">
+                <button type="button" onClick={() => setNewMode("range")} className={`px-1.5 py-0.5 rounded ${newMode === "range" ? "bg-blue-500 text-white" : "bg-black/10"}`}>Rozsah</button>
+                <button type="button" onClick={() => setNewMode("categories")} className={`px-1.5 py-0.5 rounded ${newMode === "categories" ? "bg-blue-500 text-white" : "bg-black/10"}`}>Kategorie</button>
+              </div>
+              {newMode === "range" ? (
+                <div className="grid grid-cols-2 gap-1">
+                  <input type="number" value={newMin} onChange={(e) => setNewMin(Number(e.target.value))} className={`text-xs px-1.5 py-0.5 rounded border outline-none ${cls(deluxe, "bg-white border-slate-300", "bg-slate-800 border-slate-600 text-white")}`} placeholder="min" />
+                  <input type="number" value={newMax} onChange={(e) => setNewMax(Number(e.target.value))} className={`text-xs px-1.5 py-0.5 rounded border outline-none ${cls(deluxe, "bg-white border-slate-300", "bg-slate-800 border-slate-600 text-white")}`} placeholder="max" />
+                </div>
+              ) : (
+                <input
+                  value={newCategories}
+                  onChange={(e) => setNewCategories(e.target.value)}
+                  className={`text-xs px-1.5 py-0.5 rounded border outline-none ${cls(deluxe, "bg-white border-slate-300", "bg-slate-800 border-slate-600 text-white")}`}
+                  placeholder="cat_a, cat_b, cat_c"
+                />
+              )}
               <div className="flex gap-1">
                 <button onClick={addFeature} disabled={!newName.trim()} className="text-[10px] px-1.5 py-0.5 rounded bg-green-500 text-white hover:bg-green-600 disabled:opacity-50">Přidat</button>
                 <button onClick={() => setAddingNew(false)} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-400 text-white hover:bg-slate-500">Zrušit</button>
@@ -511,6 +608,7 @@ function enrichError(raw: string): { message: string; hint?: string } {
 
 export function TrainingView({
   deluxe,
+  uiLanguage = "cs",
   onDiscoverStart,
   isDiscovering,
   targetVariable,
@@ -549,14 +647,104 @@ export function TrainingView({
   queueBusy,
   queuedCount,
 }: TrainingViewProps) {
+  const tr = uiLanguage === "en"
+    ? {
+      phaseTitle1: "Phase 1: Feature Discovery",
+      phaseTitle2: "Phase 2: Feature Inference (Extraction)",
+      phaseTitle3: "Phase 3: ML Model Training",
+      phaseTitle4: "Phase 4: Test Data Feature Inference",
+      phaseTitle5: "Phase 5: Prediction",
+      phaseDesc1: "Upload sample media and define the target variable. AI will propose a Feature Definition Spec.",
+      phaseDesc2: "Review and edit Feature Spec, then upload training ZIP with media and labels CSV.",
+      phaseDesc3: "Select target column from CSV and train the model on dataset_X + dataset_Y.",
+      phaseDesc4: "Upload test ZIP (different media than training). AI extracts features with the same Feature Spec.",
+      phaseDesc5: "Model predicts outputs for test objects. Regression returns score, classification returns label and confidence.",
+      targetType: "Target Variable Type",
+      regression: "Continuous (Regression)",
+      classification: "Categorical (Classification)",
+      processWith: "Process with:",
+      stepDiscovery: "Discovery",
+      stepExtraction: "Extraction",
+      stepTraining: "Training",
+      stepTestExtraction: "Test ext.",
+      stepPrediction: "Prediction",
+      startDiscovery: "Start Feature Discovery",
+      startExtraction: "Start Feature Extraction",
+      startTraining: "Start Model Training",
+      startTestExtraction: "Start Test Extraction",
+      startPrediction: "Start Prediction",
+      stop: "Stop",
+      continue2: "Continue to Phase 2",
+      continue3: "Continue to Phase 3",
+      continue4: "Continue to Phase 4",
+      continue5: "Continue to Phase 5",
+      discoveryDone: "Feature Discovery completed",
+      extractionDone: "Extraction completed",
+      predictionDone: "Prediction completed",
+      rows: "rows",
+      objects: "objects",
+      pickTargetColumn: "Select target column",
+      uploadSamples: "Upload sample media",
+      downloadPredCsv: "Predictions (CSV)",
+      rerunPrediction: "Run prediction again",
+    }
+    : {
+      phaseTitle1: "Faze 1: Feature Discovery",
+      phaseTitle2: "Faze 2: Feature Inference (Extrakce)",
+      phaseTitle3: "Faze 3: Trenink ML modelu",
+      phaseTitle4: "Faze 4: Test Data Feature Inference",
+      phaseTitle5: "Faze 5: Predikce",
+      phaseDesc1: "Nahrajte ZIP s ukazkovymi medii (nebo jedno video/obrazek) a popiste cilovou promennou. AI analyzuje vzorky a navrhne Feature Definition Spec.",
+      phaseDesc2: "Zkontrolujte a upravte Feature Spec z Faze 1. Pote nahrajte trenovaci ZIP (media + CSV s labels). AI extrahuje hodnoty features pro kazdy soubor.",
+      phaseDesc3: "Vyberte sloupec s cilovou promennou z CSV. Model natrenuje pravidla a metriky z dataset_X + dataset_Y.",
+      phaseDesc4: "Nahrajte testovaci ZIP dataset (jina media nez trenovaci). AI extrahuje features stejnym Feature Specem.",
+      phaseDesc5: "Model predikuje vystup pro kazdy testovaci objekt. Pro regression vraci score, pro classification vraci label (+ confidence).",
+      targetType: "Typ cilove promenne",
+      regression: "Spojita (Regression)",
+      classification: "Kategoricka (Classification)",
+      processWith: "Zpracovat pomoci:",
+      stepDiscovery: "Discovery",
+      stepExtraction: "Extrakce",
+      stepTraining: "Trenink",
+      stepTestExtraction: "Test ext.",
+      stepPrediction: "Predikce",
+      startDiscovery: "Spustit Feature Discovery",
+      startExtraction: "Spustit extrakci features",
+      startTraining: "Spustit trenink modelu",
+      startTestExtraction: "Spustit testovaci extrakci",
+      startPrediction: "Spustit predikci",
+      stop: "Zastavit",
+      continue2: "Pokracovat na Fazi 2",
+      continue3: "Pokracovat na Fazi 3",
+      continue4: "Pokracovat na Fazi 4",
+      continue5: "Pokracovat na Fazi 5",
+      discoveryDone: "Feature Discovery dokoncena",
+      extractionDone: "Extrakce dokoncena",
+      predictionDone: "Predikce dokoncena",
+      rows: "radku",
+      objects: "objektu",
+      pickTargetColumn: "Vyberte sloupec s cilovou promennou",
+      uploadSamples: "Nahrajte vzorkova media",
+      downloadPredCsv: "Predikce (CSV)",
+      rerunPrediction: "Spustit predikci znovu",
+    };
+
+  const phaseLabels = [
+    { num: 1, short: tr.stepDiscovery },
+    { num: 2, short: tr.stepExtraction },
+    { num: 3, short: tr.stepTraining },
+    { num: 4, short: tr.stepTestExtraction },
+    { num: 5, short: tr.stepPrediction },
+  ];
+
   const [discoveryFiles, setDiscoveryFiles] = useState<File[]>([]);
   const [trainZipFile, setTrainZipFile] = useState<File | null>(null);
   const [testZipFile, setTestZipFile] = useState<File | null>(null);
   const [useServerPathTrain, setUseServerPathTrain] = useState(false);
-  const [serverPathTrain, setServerPathTrain] = useState("/home/kovm23/train_split.zip");
+  const [serverPathTrain, setServerPathTrain] = useState("");
   const [serverLabelsPathTrain, setServerLabelsPathTrain] = useState("");
   const [useServerPathTest, setUseServerPathTest] = useState(false);
-  const [serverPathTest, setServerPathTest] = useState("/home/kovm23/test_split.zip");
+  const [serverPathTest, setServerPathTest] = useState("");
   const [targetColumn, setTargetColumn] = useState("");
   // Optional labels files
   const [discoveryLabels, setDiscoveryLabels] = useState<File | null>(null);
@@ -582,23 +770,19 @@ export function TrainingView({
   }, [predictions]);
 
   const phaseTitle: Record<number, string> = {
-    1: "Fáze 1: Feature Discovery",
-    2: "Fáze 2: Feature Inference (Extrakce)",
-    3: "Fáze 3: Trénink ML modelu (RuleKit)",
-    4: "Fáze 4: Test Data Feature Inference",
-    5: "Fáze 5: Predikce",
+    1: tr.phaseTitle1,
+    2: tr.phaseTitle2,
+    3: tr.phaseTitle3,
+    4: tr.phaseTitle4,
+    5: tr.phaseTitle5,
   };
 
   const phaseDesc: Record<number, string> = {
-    1: "Nahrajte ZIP s ukázkovými médii (nebo jedno video/obrázek) a popište cílovou proměnnou. " +
-       "AI analyzuje vzorky a navrhne Feature Definition Spec — slovník feature_name → popis s rozsahem/jednotkou.",
-    2: "Zkontrolujte a upravte Feature Spec z Fáze 1. Poté nahrajte trénovací ZIP (média + CSV s labels). " +
-       "AI extrahuje hodnoty features pro každý soubor → vznikne training dataset_X.",
-    3: "Vyberte sloupec s cílovou proměnnou z CSV. RuleKit natrénuje pravidlový model z dataset_X + dataset_Y.",
-    4: "Nahrajte testovací ZIP dataset (jiná média než trénovací!). " +
-       "AI extrahuje features stejným Feature Specem → vznikne testing dataset_X.",
-    5: "Model predikuje label pro každý testovací objekt. " +
-       "U každé predikce vidíte: predikovaný score a použité IF-THEN pravidlo.",
+     1: tr.phaseDesc1,
+     2: tr.phaseDesc2,
+     3: tr.phaseDesc3,
+     4: tr.phaseDesc4,
+     5: tr.phaseDesc5,
   };
 
   const anyBusy = isDiscovering || isExtracting || isTraining || isExtractingTest || isPredicting;
@@ -656,7 +840,7 @@ export function TrainingView({
 
       {/* ---- STEPPER ---- */}
       <div className="flex items-center justify-center gap-1 mb-6 flex-wrap">
-        {PHASE_LABELS.map((p, i) => {
+        {phaseLabels.map((p, i) => {
           // Can user navigate to this step? (precondition met)
           const stepReachable =
             p.num === 1 ? true :
@@ -745,7 +929,7 @@ export function TrainingView({
               "text-slate-400"
             )}`}
           >
-            <Cpu className="h-3.5 w-3.5" /> Zpracovat pomocí:
+              <Cpu className="h-3.5 w-3.5" /> {tr.processWith}
           </span>
           <select
             value={modelProvider}
@@ -800,7 +984,7 @@ export function TrainingView({
                 "text-slate-300"
               )}`}
             >
-              Typ cílové proměnné
+              {tr.targetType}
             </label>
             <div className="flex gap-2">
               <button
@@ -812,7 +996,7 @@ export function TrainingView({
                     : cls(deluxe, "bg-white text-slate-700 border-slate-300", "bg-slate-900 text-slate-300 border-slate-700")
                 }`}
               >
-                Spojitá (Regression)
+                {tr.regression}
               </button>
               <button
                 type="button"
@@ -823,7 +1007,7 @@ export function TrainingView({
                     : cls(deluxe, "bg-white text-slate-700 border-slate-300", "bg-slate-900 text-slate-300 border-slate-700")
                 }`}
               >
-                Kategorická (Classification)
+                {tr.classification}
               </button>
             </div>
           </div>
@@ -930,7 +1114,7 @@ export function TrainingView({
               onClick={() => discoveryFiles.length > 0 && onDiscoverStart(discoveryFiles, useDiscoveryLabels ? discoveryLabels : null)}
               disabled={discoveryFiles.length === 0 || !targetVariable || isDiscovering}
               title={[
-                discoveryFiles.length === 0 && "Nahrajte vzorková média",
+                discoveryFiles.length === 0 && tr.uploadSamples,
                 !targetVariable && "Zadejte cílovou proměnnou",
               ].filter(Boolean).join("; ") || undefined}
             >
@@ -940,7 +1124,7 @@ export function TrainingView({
                 </>
               ) : (
                 <>
-                  <Lightbulb className="mr-2 h-4 w-4" /> Spustit Feature Discovery
+                  <Lightbulb className="mr-2 h-4 w-4" /> {tr.startDiscovery}
                 </>
               )}
             </Button>
@@ -953,7 +1137,7 @@ export function TrainingView({
               {onCancel && (
                 <div className="flex justify-center">
                   <Button variant="outline" size="sm" onClick={onCancel} className="text-xs">
-                    ✕ Zastavit
+                    ✕ {tr.stop}
                   </Button>
                 </div>
               )}
@@ -964,7 +1148,7 @@ export function TrainingView({
           {featureSpec && !isDiscovering && (
             <div className={`flex items-center gap-2 p-2 rounded-lg ${cls(deluxe, "bg-green-50 text-green-700", "bg-green-900/30 text-green-400")}`}>
               <CheckCircle2 className="h-4 w-4" />
-              <span className="text-sm font-medium">Feature Discovery dokončena — {Object.keys(featureSpec).length} featur navrženo</span>
+              <span className="text-sm font-medium">{tr.discoveryDone} — {Object.keys(featureSpec).length} featur navrzeno</span>
             </div>
           )}
           {featureSpec && (
@@ -986,7 +1170,7 @@ export function TrainingView({
               </div>
               <div className="flex justify-center mt-4">
                 <Button onClick={() => onGoToStep?.(2)}>
-                  <ChevronRight className="mr-2 h-4 w-4" /> Pokračovat na Fázi 2
+                  <ChevronRight className="mr-2 h-4 w-4" /> {tr.continue2}
                 </Button>
               </div>
             </>
@@ -1125,7 +1309,7 @@ export function TrainingView({
                 </>
               ) : (
                 <>
-                  <PlayCircle className="mr-2 h-4 w-4" /> Spustit extrakci features
+                  <PlayCircle className="mr-2 h-4 w-4" /> {tr.startExtraction}
                 </>
               )}
             </Button>
@@ -1142,7 +1326,7 @@ export function TrainingView({
               <div className="flex gap-2">
                 {onCancel && (
                   <Button variant="outline" size="sm" onClick={onCancel} className="text-xs">
-                    ✕ Zastavit
+                    ✕ {tr.stop}
                   </Button>
                 )}
               </div>
@@ -1153,7 +1337,7 @@ export function TrainingView({
           {trainingDataX && !isExtracting && (
             <div className={`flex items-center gap-2 p-2 rounded-lg ${cls(deluxe, "bg-green-50 text-green-700", "bg-green-900/30 text-green-400")}`}>
               <CheckCircle2 className="h-4 w-4" />
-              <span className="text-sm font-medium">Extrakce dokončena — {trainingDataX.length} řádků</span>
+              <span className="text-sm font-medium">{tr.extractionDone} — {trainingDataX.length} {tr.rows}</span>
             </div>
           )}
           {trainingDataX && (
@@ -1169,7 +1353,7 @@ export function TrainingView({
               </div>
               <div className="flex justify-center mt-4">
                 <Button onClick={() => onGoToStep?.(3)}>
-                  <ChevronRight className="mr-2 h-4 w-4" /> Pokračovat na Fázi 3
+                  <ChevronRight className="mr-2 h-4 w-4" /> {tr.continue3}
                 </Button>
               </div>
             </>
@@ -1234,7 +1418,7 @@ export function TrainingView({
             <Button
               onClick={() => onTrain(targetColumn)}
               disabled={!targetColumn || isTraining}
-              title={!targetColumn ? "Vyberte sloupec s cílovou proměnnou" : undefined}
+              title={!targetColumn ? tr.pickTargetColumn : undefined}
             >
               {isTraining ? (
                 <>
@@ -1242,7 +1426,7 @@ export function TrainingView({
                 </>
               ) : (
                 <>
-                  <PlayCircle className="mr-2 h-4 w-4" /> Spustit trénink (RuleKit)
+                  <PlayCircle className="mr-2 h-4 w-4" /> {tr.startTraining}
                 </>
               )}
             </Button>
@@ -1255,7 +1439,7 @@ export function TrainingView({
               {onCancel && (
                 <div className="flex justify-center">
                   <Button variant="outline" size="sm" onClick={onCancel} className="text-xs">
-                    ✕ Zastavit
+                    ✕ {tr.stop}
                   </Button>
                 </div>
               )}
@@ -1270,25 +1454,43 @@ export function TrainingView({
                 <p className="text-sm font-bold">Trénink dokončen!</p>
               </div>
               <div className={`text-xs space-y-0.5 ${cls(deluxe, "text-green-700", "text-green-400/80")}`}>
-                <p>Ensemble MSE: <strong>{trainResult.mse != null ? Number(trainResult.mse).toFixed(4) : "—"}</strong></p>
-                {trainResult.rulekit_mse != null && (
-                  <p>RuleKit MSE: <strong>{Number(trainResult.rulekit_mse).toFixed(4)}</strong></p>
-                )}
-                {trainResult.xgb_mse != null && (
-                  <p>XGBoost MSE: <strong>{Number(trainResult.xgb_mse).toFixed(4)}</strong></p>
-                )}
-                {trainResult.cv_mse != null && (
-                  <p>
-                    Cross-val MSE ({trainResult.cv_folds ?? 5}-fold):{" "}
-                    <strong>{Number(trainResult.cv_mse).toFixed(4)}</strong>
-                    {trainResult.cv_std != null && (
-                      <span className="opacity-70"> ± {Number(trainResult.cv_std).toFixed(4)}</span>
+                {trainResult.target_mode === "classification" ? (
+                  <>
+                    <p>Train Accuracy: <strong>{trainResult.train_accuracy != null ? Number(trainResult.train_accuracy).toFixed(4) : "—"}</strong></p>
+                    <p>Train F1 macro: <strong>{trainResult.train_f1_macro != null ? Number(trainResult.train_f1_macro).toFixed(4) : "—"}</strong></p>
+                    {trainResult.cv_accuracy != null && (
+                      <p>
+                        Cross-val Accuracy ({trainResult.cv_folds ?? 5}-fold):{" "}
+                        <strong>{Number(trainResult.cv_accuracy).toFixed(4)}</strong>
+                      </p>
                     )}
-                    {" "}
-                    <span className={trainResult.cv_mse < (trainResult.mse ?? 0) * 2 ? "text-green-500" : "text-amber-500"}>
-                      {trainResult.cv_mse < (trainResult.mse ?? 0) * 2 ? "✓ model zobecňuje" : "⚠ možné přetrénování"}
-                    </span>
-                  </p>
+                    {trainResult.cv_f1_macro != null && (
+                      <p>Cross-val F1 macro: <strong>{Number(trainResult.cv_f1_macro).toFixed(4)}</strong></p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <p>Ensemble MSE: <strong>{trainResult.mse != null ? Number(trainResult.mse).toFixed(4) : "—"}</strong></p>
+                    {trainResult.rulekit_mse != null && (
+                      <p>RuleKit MSE: <strong>{Number(trainResult.rulekit_mse).toFixed(4)}</strong></p>
+                    )}
+                    {trainResult.xgb_mse != null && (
+                      <p>XGBoost MSE: <strong>{Number(trainResult.xgb_mse).toFixed(4)}</strong></p>
+                    )}
+                    {trainResult.cv_mse != null && (
+                      <p>
+                        Cross-val MSE ({trainResult.cv_folds ?? 5}-fold):{" "}
+                        <strong>{Number(trainResult.cv_mse).toFixed(4)}</strong>
+                        {trainResult.cv_std != null && (
+                          <span className="opacity-70"> ± {Number(trainResult.cv_std).toFixed(4)}</span>
+                        )}
+                        {" "}
+                        <span className={trainResult.cv_mse < (trainResult.mse ?? 0) * 2 ? "text-green-500" : "text-amber-500"}>
+                          {trainResult.cv_mse < (trainResult.mse ?? 0) * 2 ? "✓ model zobecňuje" : "⚠ možné přetrénování"}
+                        </span>
+                      </p>
+                    )}
+                  </>
                 )}
                 {trainResult.warnings?.map((w, i) => (
                   <p key={i} className="text-amber-600">⚠ {w}</p>
@@ -1356,7 +1558,7 @@ export function TrainingView({
               {onGoToStep && (
                 <div className="flex justify-center mt-4">
                   <Button onClick={() => onGoToStep(4)}>
-                    <ChevronRight className="mr-2 h-4 w-4" /> Pokračovat na Fázi 4
+                    <ChevronRight className="mr-2 h-4 w-4" /> {tr.continue4}
                   </Button>
                 </div>
               )}
@@ -1448,7 +1650,7 @@ export function TrainingView({
                 </>
               ) : (
                 <>
-                  <PlayCircle className="mr-2 h-4 w-4" /> Spustit testovací extrakci
+                  <PlayCircle className="mr-2 h-4 w-4" /> {tr.startTestExtraction}
                 </>
               )}
             </Button>
@@ -1465,7 +1667,7 @@ export function TrainingView({
               <div className="flex gap-2">
                 {onCancel && (
                   <Button variant="outline" size="sm" onClick={onCancel} className="text-xs">
-                    ✕ Zastavit
+                    ✕ {tr.stop}
                   </Button>
                 )}
               </div>
@@ -1492,7 +1694,7 @@ export function TrainingView({
               </div>
               <div className="flex justify-center mt-4">
                 <Button onClick={() => onGoToStep?.(5)}>
-                  <ChevronRight className="mr-2 h-4 w-4" /> Pokračovat na Fázi 5
+                  <ChevronRight className="mr-2 h-4 w-4" /> {tr.continue5}
                 </Button>
               </div>
             </>
@@ -1559,7 +1761,7 @@ export function TrainingView({
                   </>
                 ) : (
                   <>
-                    <PlayCircle className="mr-2 h-4 w-4" /> Spustit predikci
+                    <PlayCircle className="mr-2 h-4 w-4" /> {tr.startPrediction}
                   </>
                 )}
               </Button>
@@ -1573,7 +1775,7 @@ export function TrainingView({
               {onCancel && (
                 <div className="flex justify-center">
                   <Button variant="outline" size="sm" onClick={onCancel} className="text-xs">
-                    ✕ Zastavit
+                    ✕ {tr.stop}
                   </Button>
                 </div>
               )}
@@ -1586,7 +1788,7 @@ export function TrainingView({
               <div className={`flex items-center gap-2 ${cls(deluxe, "text-green-800", "text-green-400")}`}>
                 <CheckCircle2 className="h-4 w-4" />
                 <p className="text-sm font-bold">
-                  Predikce dokončena ({predictions.length} objektů)
+                  {tr.predictionDone} ({predictions.length} {tr.objects})
                 </p>
               </div>
 
@@ -1598,38 +1800,65 @@ export function TrainingView({
                   </p>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {(() => {
-                      const mse = typeof predictionMetrics.mse === "number" ? predictionMetrics.mse : 0;
-                      const mae = typeof predictionMetrics.mae === "number" ? predictionMetrics.mae : 0;
-                      const corr = predictionMetrics.correlation;
+                      const isCls = isClassificationMetrics(predictionMetrics);
                       const matchPct = predictionMetrics.total_count > 0
                         ? Math.round((predictionMetrics.matched_count / predictionMetrics.total_count) * 100)
                         : 0;
-                      // Color based on quality: lower MSE/MAE = better (green), higher corr = better
+
+                      if (isCls) {
+                        const acc = predictionMetrics.accuracy ?? 0;
+                        const f1 = predictionMetrics.f1_macro ?? 0;
+                        const prec = predictionMetrics.precision_macro ?? 0;
+                        const rec = predictionMetrics.recall_macro ?? 0;
+                        return (
+                          <>
+                            <div className="text-center">
+                              <p className={`text-lg font-bold ${cls(deluxe, "text-blue-700", "text-blue-400")}`}>{acc.toFixed(4)}</p>
+                              <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>Accuracy</p>
+                            </div>
+                            <div className="text-center">
+                              <p className={`text-lg font-bold ${cls(deluxe, "text-blue-700", "text-blue-400")}`}>{f1.toFixed(4)}</p>
+                              <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>F1 macro</p>
+                            </div>
+                            <div className="text-center">
+                              <p className={`text-lg font-bold ${cls(deluxe, "text-blue-700", "text-blue-400")}`}>{prec.toFixed(4)}</p>
+                              <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>Precision macro</p>
+                            </div>
+                            <div className="text-center">
+                              <p className={`text-lg font-bold ${rec > 0.6 ? "text-green-600" : rec > 0.3 ? "text-yellow-600" : "text-red-500"}`}>{rec.toFixed(4)}</p>
+                              <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>Recall macro</p>
+                            </div>
+                            <div className="text-center col-span-2 sm:col-span-4">
+                              <p className={`text-sm ${cls(deluxe, "text-blue-700", "text-blue-400")}`}>
+                                Spárováno: {predictionMetrics.matched_count}/{predictionMetrics.total_count} ({matchPct}%)
+                              </p>
+                            </div>
+                          </>
+                        );
+                      }
+
+                      const mse = typeof predictionMetrics.mse === "number" ? predictionMetrics.mse : 0;
+                      const mae = typeof predictionMetrics.mae === "number" ? predictionMetrics.mae : 0;
+                      const corr = predictionMetrics.correlation ?? null;
                       const corrColor = corr !== null && corr > 0.5 ? "text-green-600" : corr !== null && corr > 0 ? "text-yellow-600" : "text-red-500";
                       return (
                         <>
                           <div className="text-center">
-                            <p className={`text-lg font-bold ${cls(deluxe, "text-blue-700", "text-blue-400")}`}>
-                              {typeof mse === "number" ? mse.toFixed(4) : mse}
-                            </p>
+                            <p className={`text-lg font-bold ${cls(deluxe, "text-blue-700", "text-blue-400")}`}>{mse.toFixed(4)}</p>
                             <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>MSE (nižší = lepší)</p>
                           </div>
                           <div className="text-center">
-                            <p className={`text-lg font-bold ${cls(deluxe, "text-blue-700", "text-blue-400")}`}>
-                              {typeof mae === "number" ? mae.toFixed(4) : mae}
-                            </p>
+                            <p className={`text-lg font-bold ${cls(deluxe, "text-blue-700", "text-blue-400")}`}>{mae.toFixed(4)}</p>
                             <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>MAE (nižší = lepší)</p>
                           </div>
                           <div className="text-center">
                             <p className={`text-lg font-bold ${corrColor}`}>
-                              {corr !== null ? (typeof corr === "number" ? corr.toFixed(4) : corr) : "N/A"}
+                              {corr !== null ? corr.toFixed(4) : "N/A"}
                             </p>
                             <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>Korelace (vyšší = lepší)</p>
                           </div>
                           <div className="text-center">
-                            <p className={`text-lg font-bold ${matchPct === 100 ? "text-green-600" : matchPct > 50 ? "text-yellow-600" : "text-red-500"}`}>
-                              {matchPct}%
-                            </p>
+                            <p className={`text-lg font-bold ${matchPct === 100 ? "text-green-600" : matchPct > 50 ? "text-yellow-600" : "text-red-500"}`}>{matchPct}%</p>
                             <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>
                               Spárováno ({predictionMetrics.matched_count}/{predictionMetrics.total_count})
                             </p>
@@ -1656,9 +1885,18 @@ export function TrainingView({
                     <thead>
                       <tr className={cls(deluxe, "bg-slate-50", "bg-slate-900")}>
                         <th className="px-2 py-1 text-left font-mono">media_name</th>
-                        <th className="px-2 py-1 text-left font-mono">predicted_score</th>
-                        {predictions.some((p) => p.actual_score !== undefined) && (
-                          <th className="px-2 py-1 text-left font-mono">actual_score</th>
+                        {predictions.some((p) => p.predicted_label !== undefined) ? (
+                          <>
+                            <th className="px-2 py-1 text-left font-mono">predicted_label</th>
+                            <th className="px-2 py-1 text-left font-mono">confidence</th>
+                          </>
+                        ) : (
+                          <th className="px-2 py-1 text-left font-mono">predicted_score</th>
+                        )}
+                        {predictions.some((p) => p.actual_score !== undefined || p.actual_label !== undefined) && (
+                          <th className="px-2 py-1 text-left font-mono">
+                            {predictions.some((p) => p.actual_label !== undefined) ? "actual_label" : "actual_score"}
+                          </th>
                         )}
                         <th className="px-2 py-1 text-left font-mono">rule_applied</th>
                         {showFeatureCols && featureSpec && Object.keys(featureSpec).map((f) => (
@@ -1670,10 +1908,17 @@ export function TrainingView({
                       {predictions.map((pred, i) => (
                         <tr key={i} className={i % 2 === 0 ? cls(deluxe, "bg-white", "bg-slate-800/50") : cls(deluxe, "bg-slate-50/50", "bg-slate-900/50")}>
                           <td className="px-2 py-1 whitespace-nowrap font-medium">{pred.media_name}</td>
-                          <td className="px-2 py-1 whitespace-nowrap font-bold text-blue-600">{pred.predicted_score}</td>
-                          {predictions.some((p) => p.actual_score !== undefined) && (
+                          {predictions.some((p) => p.predicted_label !== undefined) ? (
+                            <>
+                              <td className="px-2 py-1 whitespace-nowrap font-bold text-blue-600">{pred.predicted_label ?? "—"}</td>
+                              <td className="px-2 py-1 whitespace-nowrap font-bold text-indigo-600">{pred.confidence != null ? Number(pred.confidence).toFixed(4) : "—"}</td>
+                            </>
+                          ) : (
+                            <td className="px-2 py-1 whitespace-nowrap font-bold text-blue-600">{pred.predicted_score}</td>
+                          )}
+                          {predictions.some((p) => p.actual_score !== undefined || p.actual_label !== undefined) && (
                             <td className="px-2 py-1 whitespace-nowrap font-bold text-green-600">
-                              {pred.actual_score !== undefined ? pred.actual_score : "—"}
+                              {pred.actual_label ?? (pred.actual_score !== undefined ? pred.actual_score : "—")}
                             </td>
                           )}
                           <td className="px-2 py-1 whitespace-nowrap font-mono text-[10px]">{pred.rule_applied}</td>
@@ -1700,14 +1945,22 @@ export function TrainingView({
                       if (s.includes(",") || s.includes('"') || s.includes("\n")) return `"${s.replace(/"/g, '""')}"`;
                       return s;
                     };
-                    const hasActual = predictions.some((p) => p.actual_score !== undefined);
-                    const headers = ["media_name", "predicted_score", ...(hasActual ? ["actual_score"] : []), "rule_applied", ...(featureSpec ? Object.keys(featureSpec) : [])];
+                    const hasLabelPred = predictions.some((p) => p.predicted_label !== undefined);
+                    const hasActual = predictions.some((p) => p.actual_score !== undefined || p.actual_label !== undefined);
+                    const actualColName = predictions.some((p) => p.actual_label !== undefined) ? "actual_label" : "actual_score";
+                    const headers = [
+                      "media_name",
+                      ...(hasLabelPred ? ["predicted_label", "confidence"] : ["predicted_score"]),
+                      ...(hasActual ? [actualColName] : []),
+                      "rule_applied",
+                      ...(featureSpec ? Object.keys(featureSpec) : []),
+                    ];
                     const csv = [
                       headers.join(","),
                       ...predictions.map((p) => [
                         esc(p.media_name),
-                        esc(p.predicted_score),
-                        ...(hasActual ? [esc(p.actual_score !== undefined ? p.actual_score : "")] : []),
+                        ...(hasLabelPred ? [esc(p.predicted_label), esc(p.confidence)] : [esc(p.predicted_score)]),
+                        ...(hasActual ? [esc(p.actual_label ?? (p.actual_score !== undefined ? p.actual_score : ""))] : []),
                         esc(p.rule_applied),
                         ...(featureSpec ? Object.keys(featureSpec).map((f) => esc(p.extracted_features[f])) : []),
                       ].join(","))
@@ -1722,7 +1975,7 @@ export function TrainingView({
                   }}
                   className="px-3 py-1.5 bg-slate-500 text-white rounded text-xs hover:bg-slate-600 flex items-center gap-1"
                 >
-                  <Download className="w-3 h-3" /> Predikce (CSV)
+                  <Download className="w-3 h-3" /> {tr.downloadPredCsv}
                 </button>
                 <button
                   onClick={() => downloadExperimentZip({
@@ -1744,7 +1997,7 @@ export function TrainingView({
               {!isPredicting && (
                 <div className="flex justify-center mt-2">
                   <Button variant="outline" size="sm" onClick={() => setShowPredictForm(true)}>
-                    <PlayCircle className="mr-2 h-3 w-3" /> Spustit predikci znovu
+                    <PlayCircle className="mr-2 h-3 w-3" /> {tr.rerunPrediction}
                   </Button>
                 </div>
               )}

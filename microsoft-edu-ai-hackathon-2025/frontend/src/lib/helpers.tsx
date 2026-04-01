@@ -4,6 +4,7 @@ import { Check, Copy } from "lucide-react";
 import {
   FileVideo,
   Image as ImageIcon,
+  import type { FeatureSpec } from "@/lib/api";
   FileText,
   Archive,
 } from "lucide-react";
@@ -11,8 +12,8 @@ import type { FileType, ProcessingResult } from "@/lib/api";
 import { TYPE_STYLES, EXT_GROUPS } from "@/lib/api";
 
 // =====================================================
-// UTILITY FUNKCE
-// =====================================================
+  export function downloadFeatureSpec(
+    featureSpec: FeatureSpec,
 export function detectType(files: File[]): FileType | null {
   const getGroup = (name: string): FileType | null => {
     const lower = name.toLowerCase();
@@ -22,8 +23,8 @@ export function detectType(files: File[]): FileType | null {
     if (EXT_GROUPS.archive.some((e) => lower.endsWith(e))) return "archive";
     return null;
   };
-  const types = new Set<FileType>();
-  for (const f of files) {
+  export async function downloadExperimentZip(params: {
+    featureSpec?: FeatureSpec | null;
     const t = getGroup(f.name);
     if (!t) return null;
     types.add(t);
@@ -274,7 +275,7 @@ export function downloadTestingDataWithPrediction(
  * Download all experiment artifacts as a single ZIP file.
  */
 export async function downloadExperimentZip(params: {
-  featureSpec?: Record<string, string> | null;
+  featureSpec?: FeatureSpec | null;
   trainingDataX?: Record<string, unknown>[] | null;
   testingDataX?: Record<string, unknown>[] | null;
   rules?: string[] | null;

@@ -10,6 +10,22 @@ Media Feature Lab je webová aplikace pro automatickou klasifikaci/regresi multi
 4. **Feature Extraction (testing)** — Extrakce features z testovacích médií
 5. **Prediction** — Ensemble predikce s evaluačními metrikami
 
+### Stav implementace (aktualizace 2026-03-31)
+
+Tato sekce doplňuje historický popis níže o aktualni behavior aplikace:
+
+- Faze 3 a Faze 5 jsou asynchronni (`/train`, `/predict` vraci `job_id` a frontend polluje `/status/{job_id}`).
+- Pipeline podporuje `target_mode`:
+  - `regression`: RuleKit + XGBoost ensemble, metriky `mse`, `mae`, `correlation`.
+  - `classification`: XGBoost classifier, metriky `accuracy`, `f1_macro`, `precision_macro`, `recall_macro`, `confusion_matrix`.
+- Predikce ve classification rezimu vraci `predicted_label`, `confidence`, volitelne `actual_label`.
+- Predikce v regression rezimu vraci `predicted_score`, volitelne `actual_score`.
+- Skalirovani features bylo odstraneno dle pozadavku (pipeline bezi bez `StandardScaler`).
+- Frontend ma zakladni prepinac jazyka CZ/EN v hlavnim shellu aplikace s perzistenci volby (`localStorage`, key `mflLang`).
+- EN lokalizace je napojena i na klicove texty 5-fazoveho wizardu (phase titles/descriptions, hlavni CTA tlacitka, continue/stop akce, completion badges).
+- Runtime hlasky z `useTrainingPipeline` (fallback progress labely a frontendove error prefixy) respektuji zvoleny jazyk CZ/EN.
+- Produkcni routovani API pres Cloudflare Worker proxy je soucasti nasazeni frontendu.
+
 ### Architektura
 
 ```

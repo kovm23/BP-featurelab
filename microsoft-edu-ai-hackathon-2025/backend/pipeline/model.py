@@ -52,6 +52,11 @@ class MachineLearningPipeline:
         self.cv_mae: float | None = None
         self.feature_importance: dict = {}
         self.is_trained: bool = False
+        self.train_accuracy: float | None = None
+        self.train_f1_macro: float | None = None
+        self.cv_accuracy: float | None = None
+        self.cv_f1_macro: float | None = None
+        self._label_classes: list[str] = []
         # Phase 4 outputs
         self.testing_X: pd.DataFrame | None = None
         # Internal
@@ -81,6 +86,11 @@ class MachineLearningPipeline:
                 "cv_mae": self.cv_mae,
                 "feature_importance": self.feature_importance,
                 "is_trained": self.is_trained,
+                "train_accuracy": self.train_accuracy,
+                "train_f1_macro": self.train_f1_macro,
+                "cv_accuracy": self.cv_accuracy,
+                "cv_f1_macro": self.cv_f1_macro,
+                "_label_classes": self._label_classes,
                 "_training_columns": self._training_columns,
                 "_scaler_mean": self._scaler_mean,
                 "_scaler_scale": self._scaler_scale,
@@ -144,6 +154,11 @@ class MachineLearningPipeline:
             self.cv_mae = state.get("cv_mae")
             self.feature_importance = state.get("feature_importance", {})
             self.is_trained = state.get("is_trained", False)
+            self.train_accuracy = state.get("train_accuracy")
+            self.train_f1_macro = state.get("train_f1_macro")
+            self.cv_accuracy = state.get("cv_accuracy")
+            self.cv_f1_macro = state.get("cv_f1_macro")
+            self._label_classes = state.get("_label_classes", [])
             self._training_columns = state.get("_training_columns", [])
             self._scaler_mean = state.get("_scaler_mean", [])
             self._scaler_scale = state.get("_scaler_scale", [])
@@ -182,6 +197,11 @@ class MachineLearningPipeline:
             self.rules = state.get("rules", [])
             self.mse = state.get("mse")
             self.is_trained = state.get("is_trained", False)
+            self.train_accuracy = state.get("train_accuracy")
+            self.train_f1_macro = state.get("train_f1_macro")
+            self.cv_accuracy = state.get("cv_accuracy")
+            self.cv_f1_macro = state.get("cv_f1_macro")
+            self._label_classes = state.get("_label_classes", [])
             self.testing_X = state.get("testing_X")
             self._training_columns = state.get("_training_columns", [])
             logger.info("Pipeline state loaded from legacy pickle (will migrate).")

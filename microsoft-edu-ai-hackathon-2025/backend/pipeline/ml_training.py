@@ -16,9 +16,18 @@ import re
 import numpy as np
 import pandas as pd
 from rulekit.regression import RuleRegressor
-from sklearn.metrics import mean_squared_error, mean_absolute_error
+from sklearn.metrics import (
+    accuracy_score,
+    confusion_matrix,
+    f1_score,
+    mean_absolute_error,
+    mean_squared_error,
+    precision_score,
+    recall_score,
+)
 from sklearn.model_selection import KFold
-from xgboost import XGBRegressor
+from sklearn.preprocessing import LabelEncoder
+from xgboost import XGBClassifier, XGBRegressor
 
 logger = logging.getLogger(__name__)
 
@@ -168,6 +177,57 @@ def _run_cross_validation(X: pd.DataFrame, y: pd.Series, n_splits: int = 5) -> d
     }
 
 
+def _run_cross_validation_classification(
+    X: pd.DataFrame, y_encoded: np.ndarray, n_splits: int = 5
+) -> dict:
+    """Run K-fold CV for classification with XGBoost classifier."""
+    n_splits = min(n_splits, len(X))
+    if n_splits < 2:
+        return {
+            "cv_accuracy": None,
+            "cv_f1_macro": None,
+            "cv_precision_macro": None,
+            "cv_recall_macro": None,
+            "n_folds": n_splits,
+            "note": "Too few samples for CV",
+        }
+
+    kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+    fold_acc = []
+    fold_f1 = []
+    fold_prec = []
+    fold_rec = []
+
+    for train_idx, val_idx in kf.split(X):
+        X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
+        y_train, y_val = y_encoded[train_idx], y_encoded[val_idx]
+
+        clf = XGBClassifier(
+            n_estimators=120,
+            max_depth=4,
+            learning_rate=0.1,
+            random_state=42,
+            verbosity=0,
+            eval_metric="mlogloss",
+            objective="multi:softprob",
+        )
+        clf.fit(X_train, y_train)
+        y_pred = clf.predict(X_val)
+
+        fold_acc.append(float(accuracy_score(y_val, y_pred)))
+        fold_f1.append(float(f1_score(y_val, y_pred, average="macro", zero_division=0)))
+        fold_prec.append(float(precision_score(y_val, y_pred, average="macro", zero_division=0)))
+        fold_rec.append(float(recall_score(y_val, y_pred, average="macro", zero_division=0)))
+
+    return {
+        "cv_accuracy": round(float(np.mean(fold_acc)), 6),
+        "cv_f1_macro": round(float(np.mean(fold_f1)), 6),
+        "cv_precision_macro": round(float(np.mean(fold_prec)), 6),
+        "cv_recall_macro": round(float(np.mean(fold_rec)), 6),
+        "n_folds": n_splits,
+    }
+
+
 def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
     """Train RuleKit + XGBoost ensemble from stored training_X + training_Y_df.
 
@@ -208,11 +268,11 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
     X = _preprocess_features(df_merged[feature_cols])
 
     if target_column in df_merged.columns:
-        y = df_merged[target_column]
+        y_raw = df_merged[target_column]
     else:
         found = [c for c in df_merged.columns if c.lower() == target_column.lower()]
         if found:
-            y = df_merged[found[0]]
+            y_raw = df_merged[found[0]]
         else:
             raise Exception(
                 f"Column '{target_column}' not found in CSV. "
@@ -226,24 +286,111 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
             except Exception:
                 pass
 
+    target_mode = getattr(pipeline, "target_mode", "regression")
+
     # --- Feature matrix ready (no scaling by request) ---
     _cb(15, "Příznaky připraveny (bez škálování)...")
 
-    # --- RuleKit ---
+    warnings = []
+
+    if target_mode == "classification":
+        y = y_raw.astype(str)
+        le = LabelEncoder()
+        y_encoded = le.fit_transform(y)
+
+        _cb(25, "Trénuji XGBoost klasifikátor...")
+        xgb_model = XGBClassifier(
+            n_estimators=120,
+            max_depth=4,
+            learning_rate=0.1,
+            random_state=42,
+            verbosity=0,
+            eval_metric="mlogloss",
+            objective="multi:softprob",
+        )
+        xgb_model.fit(X, y_encoded)
+        xgb_pred = xgb_model.predict(X)
+
+        train_accuracy = round(float(accuracy_score(y_encoded, xgb_pred)), 6)
+        train_f1_macro = round(float(f1_score(y_encoded, xgb_pred, average="macro", zero_division=0)), 6)
+
+        _cb(80, "K-fold validace klasifikace...")
+        cv_results = _run_cross_validation_classification(X, y_encoded)
+
+        xgb_importance = {}
+        if hasattr(xgb_model, "feature_importances_"):
+            for fname, imp in zip(X.columns, xgb_model.feature_importances_):
+                if imp > 0.001:
+                    xgb_importance[fname] = round(float(imp), 4)
+            xgb_importance = dict(sorted(xgb_importance.items(), key=lambda x: -x[1]))
+
+        pipeline.model = None
+        pipeline.xgb_model = xgb_model
+        pipeline.scaler = None
+        pipeline.rules = []
+        pipeline.mse = None
+        pipeline.rulekit_mse = None
+        pipeline.xgb_mse = None
+        pipeline.cv_mse = None
+        pipeline.cv_std = None
+        pipeline.cv_mae = None
+        pipeline.train_accuracy = train_accuracy
+        pipeline.train_f1_macro = train_f1_macro
+        pipeline.cv_accuracy = cv_results.get("cv_accuracy")
+        pipeline.cv_f1_macro = cv_results.get("cv_f1_macro")
+        pipeline.feature_importance = {"xgboost": xgb_importance, "rulekit": {}}
+        pipeline.is_trained = True
+        pipeline.target_variable = target_column
+        pipeline._training_columns = list(X.columns)
+        pipeline._scaler_mean = []
+        pipeline._scaler_scale = []
+        pipeline._label_classes = [str(c) for c in le.classes_]
+
+        pipeline.save_state()
+        _cb(98, "Ukládám model...")
+
+        return {
+            "status": "success",
+            "target_mode": "classification",
+            "train_accuracy": train_accuracy,
+            "train_f1_macro": train_f1_macro,
+            "cv_accuracy": cv_results.get("cv_accuracy"),
+            "cv_f1_macro": cv_results.get("cv_f1_macro"),
+            "cv_precision_macro": cv_results.get("cv_precision_macro"),
+            "cv_recall_macro": cv_results.get("cv_recall_macro"),
+            "cv_folds": cv_results.get("n_folds"),
+            "rules_count": 0,
+            "rules": [],
+            "feature_spec": pipeline.feature_spec,
+            "feature_importance": {
+                "xgboost": xgb_importance,
+                "rulekit": {},
+            },
+            "warnings": warnings,
+            "training_data_X": json.loads(pipeline.training_X.to_json(orient="records")),
+        }
+
+    # ---------------- Regression branch ----------------
+    y = pd.to_numeric(y_raw, errors="coerce")
+    valid_mask = ~y.isna()
+    if not valid_mask.any():
+        raise Exception("Target column is not numeric. For non-numeric labels switch to classification mode.")
+    X = X.loc[valid_mask]
+    y = y.loc[valid_mask]
+
     _cb(25, "Trénuji RuleKit (indukce pravidel)...")
     logger.info("Training RuleKit model...")
     rulekit_model = RuleRegressor()
-    rulekit_model.fit(X, y)  # RuleKit works on unscaled data
+    rulekit_model.fit(X, y)
 
     rules = (
         [str(rule) for rule in rulekit_model.model.rules]
-        if hasattr(rulekit_model, 'model')
+        if hasattr(rulekit_model, "model")
         else []
     )
     rulekit_pred = rulekit_model.predict(X)
     rulekit_mse = round(float(mean_squared_error(y, rulekit_pred)), 6)
 
-    # --- XGBoost ---
     _cb(60, "Trénuji XGBoost...")
     logger.info("Training XGBoost model...")
     xgb_model = XGBRegressor(
@@ -254,25 +401,17 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
     xgb_pred = xgb_model.predict(X)
     xgb_mse = round(float(mean_squared_error(y, xgb_pred)), 6)
 
-    # --- Ensemble ---
     _cb(75, "Ensemble predikce...")
     ensemble_pred = RULEKIT_WEIGHT * rulekit_pred + XGB_WEIGHT * xgb_pred
     ensemble_mse = round(float(mean_squared_error(y, ensemble_pred)), 6)
 
-    logger.info(
-        "Training MSE — RuleKit: %.6f, XGBoost: %.6f, Ensemble: %.6f",
-        rulekit_mse, xgb_mse, ensemble_mse,
-    )
-
-    # --- Cross-Validation ---
     _cb(80, "K-fold křížová validace...")
     logger.info("Running %d-fold cross-validation...", min(5, len(X)))
     cv_results = _run_cross_validation(X, y)
     logger.info("CV results: %s", cv_results)
 
-    # --- Feature Importance ---
     xgb_importance = {}
-    if hasattr(xgb_model, 'feature_importances_'):
+    if hasattr(xgb_model, "feature_importances_"):
         for fname, imp in zip(X.columns, xgb_model.feature_importances_):
             if imp > 0.001:
                 xgb_importance[fname] = round(float(imp), 4)
@@ -280,7 +419,6 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
 
     rulekit_importance = _count_rule_features(rules, list(X.columns))
 
-    # --- Store in pipeline ---
     pipeline.model = rulekit_model
     pipeline.xgb_model = xgb_model
     pipeline.scaler = None
@@ -291,29 +429,31 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
     pipeline.cv_mse = cv_results.get("cv_mse")
     pipeline.cv_std = cv_results.get("cv_std")
     pipeline.cv_mae = cv_results.get("cv_mae")
+    pipeline.train_accuracy = None
+    pipeline.train_f1_macro = None
+    pipeline.cv_accuracy = None
+    pipeline.cv_f1_macro = None
     pipeline.feature_importance = {"xgboost": xgb_importance, "rulekit": rulekit_importance}
     pipeline.is_trained = True
     pipeline.target_variable = target_column
     pipeline._training_columns = list(X.columns)
     pipeline._scaler_mean = []
     pipeline._scaler_scale = []
+    pipeline._label_classes = []
 
     pipeline.save_state()
     _cb(98, "Ukládám model...")
 
-    # --- Overfitting warning ---
-    warnings = []
-    if cv_results.get("cv_mse") is not None:
-        if cv_results["cv_mse"] > 2 * ensemble_mse:
-            warnings.append(
-                f"Possible overfitting: CV MSE ({cv_results['cv_mse']:.6f}) "
-                f"is much higher than training MSE ({ensemble_mse:.6f}). "
-                f"Consider adding more training data."
-            )
+    if cv_results.get("cv_mse") is not None and cv_results["cv_mse"] > 2 * ensemble_mse:
+        warnings.append(
+            f"Possible overfitting: CV MSE ({cv_results['cv_mse']:.6f}) "
+            f"is much higher than training MSE ({ensemble_mse:.6f}). "
+            f"Consider adding more training data."
+        )
 
     return {
         "status": "success",
-        "target_mode": getattr(pipeline, "target_mode", "regression"),
+        "target_mode": "regression",
         "mse": ensemble_mse,
         "rulekit_mse": rulekit_mse,
         "xgb_mse": xgb_mse,
@@ -357,11 +497,100 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
         training_columns=pipeline._training_columns,
     )
 
-    # RuleKit prediction
+    target_mode = getattr(pipeline, "target_mode", "regression")
+
+    if target_mode == "classification":
+        _cb(25, "XGBoost klasifikační predikce...")
+        if not hasattr(pipeline, "xgb_model") or pipeline.xgb_model is None:
+            raise Exception("Classification model is missing. Train Phase 3 again.")
+
+        y_pred_encoded = pipeline.xgb_model.predict(X_test)
+        y_pred_proba = None
+        if hasattr(pipeline.xgb_model, "predict_proba"):
+            y_pred_proba = pipeline.xgb_model.predict_proba(X_test)
+
+        label_classes = getattr(pipeline, "_label_classes", []) or []
+
+        actual_values: dict[str, str] = {}
+        if testing_Y_df is not None:
+            join_col = testing_Y_df.columns[0]
+            testing_Y_df = testing_Y_df.rename(columns={join_col: "media_name"})
+            testing_Y_df["media_name"] = testing_Y_df["media_name"].astype(str).str.strip()
+            target_col = None
+            for c in testing_Y_df.columns:
+                if c.lower() == pipeline.target_variable.lower() or c == pipeline.target_variable:
+                    target_col = c
+                    break
+            if target_col is None:
+                other_cols = [c for c in testing_Y_df.columns if c != "media_name"]
+                if other_cols:
+                    target_col = other_cols[-1]
+            if target_col:
+                for _, row in testing_Y_df.iterrows():
+                    actual_values[str(row["media_name"]).strip()] = str(row[target_col])
+
+        results = []
+        pred_list: list[str] = []
+        actual_list: list[str] = []
+        total_items = len(pipeline.testing_X)
+        _cb(60, f"Sestavuji výsledky (0/{total_items})...")
+        report_every = max(1, total_items // 10)
+
+        for row_num, (i, row) in enumerate(pipeline.testing_X.iterrows()):
+            if row_num % report_every == 0:
+                pct = 60 + int(((row_num + 1) / total_items) * 28)
+                _cb(pct, f"Sestavuji výsledky ({row_num + 1}/{total_items})...")
+
+            media_name = str(row.get("media_name", f"object_{i}"))
+            cls_idx = int(y_pred_encoded[row_num])
+            pred_label = label_classes[cls_idx] if 0 <= cls_idx < len(label_classes) else str(cls_idx)
+            confidence = None
+            if y_pred_proba is not None:
+                confidence = float(np.max(y_pred_proba[row_num]))
+
+            item = {
+                "media_name": media_name,
+                "predicted_label": pred_label,
+                "confidence": round(confidence, 4) if confidence is not None else None,
+                "rule_applied": "XGBoost classification (no single rule match)",
+                "extracted_features": {
+                    k: row[k] for k in pipeline.feature_spec if k in row
+                },
+            }
+
+            if media_name in actual_values:
+                item["actual_label"] = actual_values[media_name]
+                pred_list.append(pred_label)
+                actual_list.append(actual_values[media_name])
+
+            results.append(item)
+
+        _cb(92, "Výpočet evaluačních metrik...")
+        metrics = None
+        if pred_list and actual_list:
+            labels = sorted(set(actual_list) | set(pred_list))
+            acc = float(accuracy_score(actual_list, pred_list))
+            f1m = float(f1_score(actual_list, pred_list, average="macro", zero_division=0))
+            prec = float(precision_score(actual_list, pred_list, average="macro", zero_division=0))
+            rec = float(recall_score(actual_list, pred_list, average="macro", zero_division=0))
+            cm = confusion_matrix(actual_list, pred_list, labels=labels)
+            metrics = {
+                "mode": "classification",
+                "accuracy": round(acc, 6),
+                "f1_macro": round(f1m, 6),
+                "precision_macro": round(prec, 6),
+                "recall_macro": round(rec, 6),
+                "labels": labels,
+                "confusion_matrix": cm.tolist(),
+                "matched_count": len(pred_list),
+                "total_count": len(results),
+            }
+
+        return {"predictions": results, "metrics": metrics}
+
+    # ---------------- Regression branch ----------------
     _cb(25, "RuleKit predikce...")
     rulekit_pred = pipeline.model.predict(X_test)
-
-    # XGBoost prediction (no scaling)
     X_test_scaled = X_test
 
     if hasattr(pipeline, 'xgb_model') and pipeline.xgb_model is not None:
@@ -370,7 +599,6 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
         _cb(55, "Ensemble kombinace (RuleKit + XGBoost)...")
         predictions = RULEKIT_WEIGHT * rulekit_pred + XGB_WEIGHT * xgb_pred
     else:
-        # Fallback: RuleKit only (legacy models)
         predictions = rulekit_pred
 
     actual_values: dict[str, float] = {}
@@ -405,7 +633,7 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
         if row_num % report_every == 0:
             pct = 60 + int(((row_num + 1) / total_items) * 28)
             _cb(pct, f"Sestavuji výsledky ({row_num + 1}/{total_items})...")
-        pred_score = float(predictions[i])
+        pred_score = float(predictions[row_num])
         media_name = str(row.get("media_name", f"object_{i}"))
         rule = _find_covering_rule(row, pipeline.rules) if pipeline.rules else "Default rule"
 
@@ -437,6 +665,7 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
         else:
             correlation = None
         metrics = {
+            "mode": "regression",
             "mse": round(mse, 6),
             "mae": round(mae, 6),
             "correlation": round(correlation, 4) if correlation is not None else None,
