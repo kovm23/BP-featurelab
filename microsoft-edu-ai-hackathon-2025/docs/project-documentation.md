@@ -78,6 +78,7 @@ backend/
 │   ├── model.py                # MachineLearningPipeline — centrální stavový objekt
 │   ├── feature_discovery.py    # Fáze 1: LLM-based feature specification
 │   ├── feature_extraction.py   # Fáze 2/4: Multi-pass feature extraction
+│   ├── feature_schema.py       # Normalizace feature_spec do strukturovaného tvaru
 │   ├── feature_validation.py   # Validace a clamping extrahovaných hodnot
 │   └── ml_training.py          # Fáze 3/5: Ensemble training + prediction
 ├── routes/
@@ -109,7 +110,7 @@ Každý uživatel (prohlížeč) dostane vlastní instanci `MachineLearningPipel
 
 | Atribut | Typ | Popis |
 |---|---|---|
-| `feature_spec` | `dict` | Definice featur ve schema formátu `{name: [min,max]}` nebo `{name: ["cat_a","cat_b"]}` |
+| `feature_spec` | `dict` | Definice featur ve schématu `{name: [min,max]}` nebo `{name: ["cat_a","cat_b"]}` |
 | `target_variable` | `str` | Název cílové proměnné |
 | `training_X` | `DataFrame \| None` | Extrahované features z trénovacích dat |
 | `training_Y_df` | `DataFrame \| None` | Labels CSV (ground truth) |
@@ -184,11 +185,19 @@ Based on these observations, define EXACTLY 5 to 8 measurable features that:
 - Are independent from each other
 
 Output STRICTLY a JSON object with 5–8 keys.
+Each value MUST be either a numeric range [min, max]
+or a categorical domain ["value_a", "value_b", ...].
 ```
 
 **Parametry:** Temperature 0.3 (nízká kreativita pro deterministický výstup)
 
 **JSON extrakce:** `json.JSONDecoder().raw_decode()` — najde první validní JSON objekt v odpovědi. Filtruje meta klíče (`summary`, `classification`, `reasoning`). Hard cap na 8 features.
+
+**Normalizace schématu:** Výstup z discovery se následně převádí přes `feature_schema.normalize_feature_spec(...)` na kanonický tvar. Preferovaný a ukládaný formát je:
+- numerická feature: `[min, max]`
+- kategorická feature: `["hodnota_a", "hodnota_b", ...]`
+
+Legacy stringové popisy jsou při načtení nebo při volání `/extract` pouze best-effort převedeny do tohoto tvaru kvůli zpětné kompatibilitě.
 
 **Výstup:** `dict {feature_name: schema}`, např.:
 ```json
@@ -217,6 +226,12 @@ Discovery nyní reportuje jemnější progress přes `progress_cb`:
 
 Extrahuje hodnoty features z každého média podle feature_spec.
 
+Před samotnou extrakcí se `feature_spec` vždy normalizuje do strukturovaného schématu:
+- `[min, max]` pro numerické features
+- `["a", "b", "c"]` pro kategorické features
+
+To platí jak pro freshly generated spec z discovery, tak pro spec načtený ze session nebo poslaný klientem přes `/extract` a `/extract-local`.
+
 #### Chain-of-Thought Extraction Prompt
 
 ```
@@ -236,6 +251,7 @@ mean=0.534, std=0.182. Use this to calibrate your estimates.
 
 Output format: First your brief observation (2-3 sentences),
 then on a new line output ONLY a valid JSON object with the exact keys.
+Each value MUST respect the specified range or categorical domain.
 ```
 
 **Proč chain-of-thought:** Nutí LLM nejdříve analyzovat obsah a teprve pak kvantifikovat. Snižuje počet "hádalých" numerických odpovědí.
@@ -255,13 +271,15 @@ Pro každé médium:
 
 #### Feature Validation & Clamping
 
-**Soubor:** `backend/pipeline/feature_validation.py`
+**Soubory:** `backend/pipeline/feature_schema.py`, `backend/pipeline/feature_validation.py`
 
 Po každém LLM callu se extrahované hodnoty validují a clampují podle deklarovaných rozsahů ve feature_spec:
 
 - Schema-first validace: pokud je hodnota definovaná jako `[min,max]`, výstup se clampuje numericky do rozsahu.
 - Pokud je hodnota definovaná jako enum pole (`["cat_a","cat_b",...]`), výstup se ověřuje proti povoleným kategoriím.
-- Legacy string popisy (`"score 0-10"`, `"binary 0 or 1"`) jsou stále podporované kvůli zpětné kompatibilitě starších session.
+- Legacy string popisy (`"score 0-10"`, `"binary 0 or 1"`) jsou stále podporované kvůli zpětné kompatibilitě starších session, ale před dalším zpracováním se nejdřív převádějí na strukturovaný tvar.
+
+**Doporučený formát pro nové integrace:** neposílat stringové popisy, ale rovnou strukturované hodnoty `[min,max]` nebo enum pole.
 
 | Popis ve feature_spec | Detekce (regex) | Akce |
 |---|---|---|
@@ -838,9 +856,18 @@ Spustí feature extraction ze ZIP archivu.
 **Request:** `multipart/form-data`
 - `file`: ZIP archiv s médii
 - `model`: ID LLM modelu
-- `feature_spec`: JSON string s feature definicemi
+- `feature_spec`: JSON string se strukturovanými definicemi featur
 - `dataset_type`: `"training"` nebo `"testing"`
 - `labels_file` (optional): CSV s labels
+
+**Doporučený tvar `feature_spec`:**
+```json
+{
+  "action_intensity": [0, 10],
+  "speech_presence": [0, 1],
+  "scene_type": ["indoor", "outdoor", "mixed"]
+}
+```
 
 **Response:** `{"job_id": "uuid"}`
 
@@ -852,7 +879,10 @@ Extraction z lokální cesty na serveru.
 {
   "zip_path": "/path/to/data.zip",
   "model": "qwen2.5vl:7b",
-  "feature_spec": {...},
+  "feature_spec": {
+    "action_intensity": [0, 10],
+    "scene_type": ["indoor", "outdoor", "mixed"]
+  },
   "dataset_type": "training",
   "labels_path": "/path/to/labels.csv"
 }

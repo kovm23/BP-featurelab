@@ -9,6 +9,7 @@ import pandas as pd
 from config import CHECKPOINT_FOLDER
 from pipeline.feature_discovery import discover_features
 from pipeline.feature_extraction import extract_features_async
+from pipeline.feature_schema import normalize_feature_spec
 from pipeline.ml_training import train_model, predict_batch
 
 logger = logging.getLogger(__name__)
@@ -141,7 +142,7 @@ class MachineLearningPipeline:
         try:
             with open(self._state_json, "r", encoding="utf-8") as f:
                 state = json.load(f)
-            self.feature_spec = state.get("feature_spec", {})
+            self.feature_spec = normalize_feature_spec(state.get("feature_spec", {}))
             self.target_variable = state.get("target_variable", "")
             self.target_mode = state.get("target_mode", "regression")
             self.training_Y_column = state.get("training_Y_column", "")
@@ -186,7 +187,7 @@ class MachineLearningPipeline:
         try:
             with open(self._legacy_state_file, "rb") as f:
                 state = pickle.load(f)
-            self.feature_spec = state.get("feature_spec", {})
+            self.feature_spec = normalize_feature_spec(state.get("feature_spec", {}))
             self.target_variable = state.get("target_variable", "")
             self.target_mode = state.get("target_mode", "regression")
             self.training_X = state.get("training_X")

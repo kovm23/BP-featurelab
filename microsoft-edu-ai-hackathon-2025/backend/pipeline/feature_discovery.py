@@ -6,6 +6,7 @@ import re
 
 import pandas as pd
 
+from pipeline.feature_schema import normalize_feature_spec
 from services.openai_service import local_client, _tracked_ollama_lock
 from services.processing import process_single_media
 
@@ -135,6 +136,7 @@ def discover_features(
             all_features, _ = decoder.raw_decode(raw_content, start)
             for key in _META_KEYS:
                 all_features.pop(key, None)
+            all_features = normalize_feature_spec(all_features)
             # Cap at 8 features
             if len(all_features) > 8:
                 all_features = dict(list(all_features.items())[:8])

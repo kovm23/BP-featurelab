@@ -10,6 +10,7 @@ from flask import Blueprint, jsonify, request
 from werkzeug.utils import secure_filename
 
 from config import DATASET_FOLDER, UPLOAD_FOLDER, ALLOWED_EXTENSIONS
+from pipeline.feature_schema import normalize_feature_spec
 from utils.file_utils import allowed_file, extract_zip_contents
 from utils.csv_utils import load_labels_from_request, load_labels_from_path
 import jobs as job_registry
@@ -70,6 +71,7 @@ def api_extract():
         feature_spec = json.loads(request.form.get("feature_spec", "{}"))
     except (json.JSONDecodeError, TypeError):
         return jsonify({"error": "Invalid feature_spec JSON."}), 400
+    feature_spec = normalize_feature_spec(feature_spec)
     dataset_type = request.form.get("dataset_type", "training")
 
     if not feature_spec:
@@ -114,6 +116,7 @@ def api_extract_local():
     zip_path = data.get("zip_path")
     model_name = data.get("model", "qwen2.5vl:7b")
     feature_spec = data.get("feature_spec", {})
+    feature_spec = normalize_feature_spec(feature_spec)
     dataset_type = data.get("dataset_type", "training")
 
     if not zip_path:

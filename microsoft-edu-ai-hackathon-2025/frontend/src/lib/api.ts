@@ -50,7 +50,7 @@ export const AVAILABLE_MODELS = [
 // TYPY
 // =====================================================
 export type FileType = "text" | "image" | "video" | "archive";
-export type FeatureSpecValue = [number, number] | string[] | string;
+export type FeatureSpecValue = [number, number] | string[];
 export type FeatureSpec = Record<string, FeatureSpecValue>;
 
 export interface ProcessingResult {

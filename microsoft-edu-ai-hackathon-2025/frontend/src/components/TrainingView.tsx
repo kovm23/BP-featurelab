@@ -250,11 +250,10 @@ function FeatureSpecBox({
 }) {
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
-  const [editMode, setEditMode] = useState<"range" | "categories" | "text">("range");
+  const [editMode, setEditMode] = useState<"range" | "categories">("range");
   const [editMin, setEditMin] = useState(0);
   const [editMax, setEditMax] = useState(10);
   const [editCategories, setEditCategories] = useState("");
-  const [editText, setEditText] = useState("");
   const [addingNew, setAddingNew] = useState(false);
   const [newName, setNewName] = useState("");
   const [newMode, setNewMode] = useState<"range" | "categories">("range");
@@ -269,10 +268,8 @@ function FeatureSpecBox({
       editable: "Editable",
       range: "Range",
       categories: "Categories",
-      text: "Text",
       featureName: "Feature name",
       newFeatureName: "New feature name (e.g. scene_brightness)",
-      legacyPlaceholder: "Legacy text spec",
       save: "Save",
       cancel: "Cancel",
       edit: "Edit",
@@ -287,10 +284,8 @@ function FeatureSpecBox({
       editable: "Editovatelné",
       range: "Rozsah",
       categories: "Kategorie",
-      text: "Text",
       featureName: "Název feature",
       newFeatureName: "Název nové feature (např. scene_brightness)",
-      legacyPlaceholder: "Legacy text spec",
       save: "Uložit",
       cancel: "Zrušit",
       edit: "Upravit",
@@ -300,7 +295,7 @@ function FeatureSpecBox({
       rangeSuffix: "rozsah",
     };
 
-  const formatSpecValue = (value: FeatureSpecValue): string => {
+  const formatSpecValue = (value: FeatureSpecValue | string): string => {
     if (Array.isArray(value)) {
       if (value.length === 2 && value.every((v) => typeof v === "number")) {
         return `${value[0]}–${value[1]} (${tx.rangeSuffix})`;
@@ -310,7 +305,7 @@ function FeatureSpecBox({
     return String(value);
   };
 
-  const parseEditorState = (value: FeatureSpecValue) => {
+  const parseEditorState = (value: FeatureSpecValue | string) => {
     if (Array.isArray(value)) {
       if (value.length === 2 && value.every((v) => typeof v === "number")) {
         setEditMode("range");
@@ -324,21 +319,18 @@ function FeatureSpecBox({
         return;
       }
     }
-    setEditMode("text");
-    setEditText(String(value));
+    setEditMode("categories");
+    setEditCategories(String(value));
   };
 
   const buildEditedValue = (): FeatureSpecValue => {
     if (editMode === "range") {
       return [Number(editMin), Number(editMax)];
     }
-    if (editMode === "categories") {
-      return editCategories
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-    }
-    return editText.trim();
+    return editCategories
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
   };
 
   const buildNewValue = (): FeatureSpecValue => {
@@ -427,7 +419,6 @@ function FeatureSpecBox({
               <div className="flex gap-1 text-[10px]">
                 <button type="button" onClick={() => setEditMode("range")} className={`px-1.5 py-0.5 rounded ${editMode === "range" ? "bg-blue-500 text-white" : "bg-black/10"}`}>{tx.range}</button>
                 <button type="button" onClick={() => setEditMode("categories")} className={`px-1.5 py-0.5 rounded ${editMode === "categories" ? "bg-blue-500 text-white" : "bg-black/10"}`}>{tx.categories}</button>
-                <button type="button" onClick={() => setEditMode("text")} className={`px-1.5 py-0.5 rounded ${editMode === "text" ? "bg-blue-500 text-white" : "bg-black/10"}`}>{tx.text}</button>
               </div>
               {editMode === "range" && (
                 <div className="grid grid-cols-2 gap-1">
@@ -441,14 +432,6 @@ function FeatureSpecBox({
                   onChange={(e) => setEditCategories(e.target.value)}
                   className={`text-xs px-1.5 py-0.5 rounded border outline-none ${cls(deluxe, "bg-white border-slate-300", "bg-slate-800 border-slate-600 text-white")}`}
                   placeholder="cat_a, cat_b, cat_c"
-                />
-              )}
-              {editMode === "text" && (
-                <input
-                  value={editText}
-                  onChange={(e) => setEditText(e.target.value)}
-                  className={`text-xs px-1.5 py-0.5 rounded border outline-none ${cls(deluxe, "bg-white border-slate-300", "bg-slate-800 border-slate-600 text-white")}`}
-                  placeholder={tx.legacyPlaceholder}
                 />
               )}
               <div className="flex gap-1">
