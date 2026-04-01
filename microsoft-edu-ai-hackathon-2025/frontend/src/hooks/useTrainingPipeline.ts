@@ -109,6 +109,7 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
     ? {
       restoring: "Restoring...",
       phase1Failed: "Phase 1 failed",
+      phaseFailed: "failed",
       extractFailed: "Extraction failed",
       featureDiscoveryFailed: "Feature Discovery failed",
       startingExtraction: "Starting extraction...",
@@ -125,20 +126,21 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
     }
     : {
       restoring: "Obnovuji...",
-      phase1Failed: "Faze 1 selhala",
+      phase1Failed: "Fáze 1 selhala",
+      phaseFailed: "selhala",
       extractFailed: "Extrakce selhala",
       featureDiscoveryFailed: "Feature Discovery selhala",
-      startingExtraction: "Spoustim extrakci...",
-      phase2: "Faze 2",
-      phase4: "Faze 4",
-      startingTraining: "Spoustim trenink...",
-      trainingFailed: "Trenink selhal",
-      trainingInProgress: "Trenuji...",
-      phase3Failed: "Faze 3 selhala",
-      startingPrediction: "Spoustim predikci...",
+      startingExtraction: "Spouštím extrakci...",
+      phase2: "Fáze 2",
+      phase4: "Fáze 4",
+      startingTraining: "Spouštím trénink...",
+      trainingFailed: "Trénink selhal",
+      trainingInProgress: "Trénuji...",
+      phase3Failed: "Fáze 3 selhala",
+      startingPrediction: "Spouštím predikci...",
       predictionFailed: "Predikce selhala",
       predictingInProgress: "Predikuji...",
-      phase5Failed: "Faze 5 selhala",
+      phase5Failed: "Fáze 5 selhala",
     };
   const saved = useMemo(loadPersisted, []);
 
@@ -509,14 +511,14 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
             }
             if (s.done && s.error) {
               clearActiveJob();
-              setError(`${config.phaseLabel} selhala: ${s.error}`);
+              setError(`${config.phaseLabel} ${tx.phaseFailed}: ${s.error}`);
             }
           },
           ctrl.signal,
         );
       }
     } catch (e: unknown) {
-      setError(`${config.phaseLabel} selhala: ${e instanceof Error ? e.message : String(e)}`);
+      setError(`${config.phaseLabel} ${tx.phaseFailed}: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setBusy(false);
     }

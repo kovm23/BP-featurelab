@@ -21,7 +21,7 @@ Tato sekce doplňuje historický popis níže o aktualni behavior aplikace:
 - Predikce ve classification rezimu vraci `predicted_label`, `confidence`, volitelne `actual_label`.
 - Predikce v regression rezimu vraci `predicted_score`, volitelne `actual_score`.
 - Skalirovani features bylo odstraneno dle pozadavku (pipeline bezi bez `StandardScaler`).
-- Frontend ma zakladni prepinac jazyka CZ/EN v hlavnim shellu aplikace s perzistenci volby (`localStorage`, key `mflLang`).
+- Frontend používá lokalizaci CZ/EN s automatickou detekcí jazyka prohlížeče při prvním načtení a perzistencí volby (`localStorage`, key `mflLang`).
 - EN lokalizace je napojena i na klicove texty 5-fazoveho wizardu (phase titles/descriptions, hlavni CTA tlacitka, continue/stop akce, completion badges).
 - Runtime hlasky z `useTrainingPipeline` (fallback progress labely a frontendove error prefixy) respektuji zvoleny jazyk CZ/EN.
 - Produkcni routovani API pres Cloudflare Worker proxy je soucasti nasazeni frontendu.
@@ -87,7 +87,9 @@ backend/
 │   ├── predict.py              # POST /predict
 │   ├── status.py               # GET /status/<job_id>
 │   ├── reset.py                # POST /reset
-│   └── analyze.py              # POST /analyze (standalone analysis)
+│   ├── state.py                # GET /state
+│   ├── health.py               # GET /health, GET /queue-info
+│   └── session_transfer.py     # GET /export-session, POST /import-session
 ├── services/
 │   ├── processing.py           # Media processing (video → keyframes + audio)
 │   ├── openai_service.py       # LLM API client (Ollama OpenAI-compatible)
@@ -107,7 +109,7 @@ Každý uživatel (prohlížeč) dostane vlastní instanci `MachineLearningPipel
 
 | Atribut | Typ | Popis |
 |---|---|---|
-| `feature_spec` | `dict` | Definice features `{name: description}` |
+| `feature_spec` | `dict` | Definice featur ve schema formátu `{name: [min,max]}` nebo `{name: ["cat_a","cat_b"]}` |
 | `target_variable` | `str` | Název cílové proměnné |
 | `training_X` | `DataFrame \| None` | Extrahované features z trénovacích dat |
 | `training_Y_df` | `DataFrame \| None` | Labels CSV (ground truth) |
@@ -188,12 +190,12 @@ Output STRICTLY a JSON object with 5–8 keys.
 
 **JSON extrakce:** `json.JSONDecoder().raw_decode()` — najde první validní JSON objekt v odpovědi. Filtruje meta klíče (`summary`, `classification`, `reasoning`). Hard cap na 8 features.
 
-**Výstup:** `dict {feature_name: description}`, např.:
+**Výstup:** `dict {feature_name: schema}`, např.:
 ```json
 {
-  "action_intensity": "score 0-10, how dynamic/fast-paced the clip is",
-  "speech_presence": "binary 0 or 1, whether speech is audible",
-  "visual_complexity": "score 0-10, number and variety of visual elements"
+  "action_intensity": [0, 10],
+  "speech_presence": [0, 1],
+  "scene_type": ["indoor", "outdoor", "mixed"]
 }
 ```
 
@@ -224,8 +226,9 @@ First, briefly describe what you observe in this media
 (2-3 sentences about visual content, audio, mood, pacing).
 
 Then extract EXACTLY these features:
-  - action_intensity: score 0-10, how dynamic/fast-paced the clip is.
-  - speech_presence: binary, exactly 0 or 1.
+  - action_intensity: integer in [0, 10]
+  - speech_presence: integer in [0, 1]
+  - scene_type: one of ["indoor", "outdoor", "mixed"]
   ...
 
 Context: The target variable 'memorability_score' has range [0.1, 0.95],
@@ -256,12 +259,31 @@ Pro každé médium:
 
 Po každém LLM callu se extrahované hodnoty validují a clampují podle deklarovaných rozsahů ve feature_spec:
 
+- Schema-first validace: pokud je hodnota definovaná jako `[min,max]`, výstup se clampuje numericky do rozsahu.
+- Pokud je hodnota definovaná jako enum pole (`["cat_a","cat_b",...]`), výstup se ověřuje proti povoleným kategoriím.
+- Legacy string popisy (`"score 0-10"`, `"binary 0 or 1"`) jsou stále podporované kvůli zpětné kompatibilitě starších session.
+
 | Popis ve feature_spec | Detekce (regex) | Akce |
 |---|---|---|
 | `"score 0-10"` | `(\d+)\s*[-–to]+\s*(\d+)` | clamp na [0, 10] |
 | `"binary 0 or 1"` | `binary\|0\s+or\s+1\|0/1` | round na 0/1 |
 | `"percentage"` | `percent\|percentage\|%` | clamp na [0, 100] |
 | jinak | — | bez akce |
+
+### 2.4.1 Přenos relace mezi servery (Export/Import session)
+
+Pipeline je přenositelná mezi servery přes snapshot aktuální session.
+
+1. `GET /export-session` vrátí ZIP s checkpointem session.
+2. `POST /import-session` přijme ZIP, obnoví checkpoint a naváže na předchozí stav.
+
+Frontend má pro tento workflow tlačítka **Export relace** a **Import relace** v horním panelu.
+
+**Poznámky kompatibility:**
+
+- Doporučená je stejná verze backendu na obou serverech.
+- Server musí mít kompatibilní Python závislosti (načítání `model.pkl` / `xgb_model.pkl`).
+- Pokud se interní formát checkpointu mezi verzemi změní, import může selhat.
 
 Loguje statistiky: kolik hodnot bylo clampnuto, pro které features.
 

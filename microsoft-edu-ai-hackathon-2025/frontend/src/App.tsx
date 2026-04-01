@@ -23,23 +23,25 @@ export default function MediaFeatureLabPro() {
 
   const i18n = {
     cs: {
-      toggleTheme: "Prepnout motiv",
-      guide: "Pruvodce",
+      toggleTheme: "Přepnout motiv",
+      guide: "Průvodce",
       reset: "Reset",
-      exportSession: "Export session",
-      importSession: "Import session",
+      exportSession: "Export relace",
+      importSession: "Import relace",
       language: "Jazyk",
-      importOk: "Session byla naimportována. Aplikace se obnoví.",
-      transferError: "Přenos session selhal",
+      schoolLogoAlt: "Logo školy",
+      importOk: "Relace byla naimportována. Aplikace se obnoví.",
+      transferError: "Přenos relace selhal",
       resetConfirm: "Opravdu chcete resetovat celý pipeline? Všechna data budou ztracena.",
     },
     en: {
       toggleTheme: "Toggle theme",
-      guide: "Guide",
+      guide: "Help",
       reset: "Reset",
       exportSession: "Export session",
       importSession: "Import session",
       language: "Language",
+      schoolLogoAlt: "School logo",
       importOk: "Session import completed. The app will reload.",
       transferError: "Session transfer failed",
       resetConfirm: "Do you really want to reset the whole pipeline? All data will be lost.",
@@ -154,7 +156,7 @@ export default function MediaFeatureLabPro() {
             <a href="https://www.vse.cz/" target="_blank" rel="noopener noreferrer">
               <img
                 src="/VSE_logo_CZ_circle_blue.png"
-                alt="Logo školy"
+                alt={t.schoolLogoAlt}
                 className="h-12 w-12 rounded-full shadow"
               />
             </a>

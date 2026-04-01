@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import {
   Card,
   CardHeader,
@@ -8,157 +8,133 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
-type Tab = "predict" | "train";
-
 export function Guide({
-  open,
   onClose,
+  uiLanguage = "cs",
+  deluxe = false,
 }: {
-  open: boolean;
   onClose: () => void;
+  uiLanguage?: "cs" | "en";
+  deluxe?: boolean;
 }) {
-  const [tab, setTab] = useState<Tab>("train");
   const cardRef = useRef<HTMLDivElement>(null);
 
-  // Close on Escape
+  const t = uiLanguage === "en"
+    ? {
+      title: "How to use Media Feature Lab",
+      subtitle: "Quick walkthrough of the 5-phase pipeline",
+      close: "Got it",
+      pipelineCard: "The training pipeline has 5 phases. Finish each phase before moving to the next one. Progress is saved automatically, so you can continue after refresh or restart.",
+      phase1Title: "Phase 1 — Feature Discovery",
+      phase1Desc: "Upload sample media, set target variable and target type (regression/classification). AI proposes a feature specification.",
+      phase2Title: "Phase 2 — Training Feature Extraction",
+      phase2Desc: "Review/edit feature spec and run extraction on training media. The output is training dataset_X.",
+      phase3Title: "Phase 3 — Model Training",
+      phase3Desc: "Select target column from labels and train the model. You get metrics, feature importance and rules.",
+      phase4Title: "Phase 4 — Testing Feature Extraction",
+      phase4Desc: "Extract the same features from unseen testing media.",
+      phase5Title: "Phase 5 — Prediction & Evaluation",
+      phase5Desc: "Run predictions, inspect applied rule per row, and evaluate metrics when test labels are provided.",
+      tipsTitle: "Practical tips",
+      tip1: "Use Export session / Import session to move work to another server.",
+      tip2: "Choose target mode at the beginning: continuous target = regression, categorical target = classification.",
+      tip3: "Download outputs after each phase for traceability and reporting.",
+    }
+    : {
+      title: "Jak používat Media Feature Lab",
+      subtitle: "Rychlý průvodce 5fázovou pipeline",
+      close: "Rozumím",
+      pipelineCard: "Trénovací pipeline má 5 fází. Každou fázi je potřeba dokončit, než přejdete na další. Postup se ukládá automaticky, takže po obnovení stránky nebo restartu navážete tam, kde jste skončili.",
+      phase1Title: "Fáze 1 — Objevování featur",
+      phase1Desc: "Nahrajte ukázková média, nastavte cílovou proměnnou a typ cíle (regrese/klasifikace). AI navrhne specifikaci featur.",
+      phase2Title: "Fáze 2 — Extrakce trénovacích featur",
+      phase2Desc: "Zkontrolujte/upravte feature spec a spusťte extrakci na trénovacích médiích. Výstupem je trénovací dataset_X.",
+      phase3Title: "Fáze 3 — Trénování modelu",
+      phase3Desc: "Vyberte cílový sloupec z labels a natrénujte model. Získáte metriky, důležitost featur a pravidla.",
+      phase4Title: "Fáze 4 — Extrakce testovacích featur",
+      phase4Desc: "Extrahujte stejné featury z dosud neviděných testovacích médií.",
+      phase5Title: "Fáze 5 — Predikce a vyhodnocení",
+      phase5Desc: "Spusťte predikce, zkontrolujte použité pravidlo pro každý řádek a vyhodnoťte metriky při nahrání testovacích labels.",
+      tipsTitle: "Praktické tipy",
+      tip1: "Pro přesun práce na jiný server použijte Export relace / Import relace.",
+      tip2: "Typ cíle vybírejte na začátku: spojitá hodnota = regrese, kategorická hodnota = klasifikace.",
+      tip3: "Po každé fázi si můžete stáhnout výstupy pro audit a reporting.",
+    };
+
   useEffect(() => {
-    if (!open) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", handler);
+    cardRef.current?.focus();
     return () => window.removeEventListener("keydown", handler);
-  }, [open, onClose]);
+  }, [onClose]);
 
-  // Focus trap
-  useEffect(() => {
-    if (open) cardRef.current?.focus();
-  }, [open]);
-
-  if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
         className="absolute inset-0 bg-black/30 backdrop-blur-sm"
         onClick={onClose}
       />
-      <Card ref={cardRef} tabIndex={-1} className="relative z-10 max-w-2xl w-full max-h-[85vh] overflow-y-auto border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-800 outline-none">
+      <Card
+        ref={cardRef}
+        tabIndex={-1}
+        className={`relative z-10 max-w-2xl w-full max-h-[85vh] overflow-y-auto outline-none ${
+          deluxe
+            ? "border-slate-700 bg-slate-900"
+            : "border-slate-200 bg-white"
+        }`}
+      >
         <CardHeader className="pb-2">
-          <CardTitle className="text-xl text-slate-900 dark:text-white">
-            Jak používat Media Feature Lab
+          <CardTitle className={deluxe ? "text-xl text-white" : "text-xl text-slate-900"}>
+            {t.title}
           </CardTitle>
-          <CardDescription className="text-slate-600 dark:text-slate-300">
-            Krátký průvodce pro první použití
+          <CardDescription className={deluxe ? "text-slate-300" : "text-slate-600"}>
+            {t.subtitle}
           </CardDescription>
-          <div className="flex gap-2 pt-2">
-            <button
-              onClick={() => setTab("train")}
-              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                tab === "train"
-                  ? "bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200"
-                  : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
-              }`}
-            >
-              Trénovací pipeline
-            </button>
-            <button
-              onClick={() => setTab("predict")}
-              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                tab === "predict"
-                  ? "bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200"
-                  : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400"
-              }`}
-            >
-              Predikce
-            </button>
-          </div>
         </CardHeader>
-        <CardContent className="space-y-3 text-sm leading-relaxed text-slate-800 dark:text-slate-100">
-          {tab === "train" ? <TrainGuide /> : <PredictGuide />}
+        <CardContent className={`space-y-3 text-sm leading-relaxed ${deluxe ? "text-slate-100" : "text-slate-800"}`}>
+          <div className={`rounded-lg p-3 border ${deluxe ? "bg-indigo-950/30 border-indigo-800" : "bg-indigo-50 border-indigo-200"}`}>
+            {t.pipelineCard}
+          </div>
+
+          <div className={deluxe ? "rounded-lg p-3 bg-white/5" : "rounded-lg p-3 bg-slate-50"}>
+            <b>{t.phase1Title}</b>
+            <p className={`mt-1 ${deluxe ? "text-slate-300" : "text-slate-600"}`}>{t.phase1Desc}</p>
+          </div>
+          <div className={deluxe ? "rounded-lg p-3 bg-white/5" : "rounded-lg p-3 bg-slate-50"}>
+            <b>{t.phase2Title}</b>
+            <p className={`mt-1 ${deluxe ? "text-slate-300" : "text-slate-600"}`}>{t.phase2Desc}</p>
+          </div>
+          <div className={deluxe ? "rounded-lg p-3 bg-white/5" : "rounded-lg p-3 bg-slate-50"}>
+            <b>{t.phase3Title}</b>
+            <p className={`mt-1 ${deluxe ? "text-slate-300" : "text-slate-600"}`}>{t.phase3Desc}</p>
+          </div>
+          <div className={deluxe ? "rounded-lg p-3 bg-white/5" : "rounded-lg p-3 bg-slate-50"}>
+            <b>{t.phase4Title}</b>
+            <p className={`mt-1 ${deluxe ? "text-slate-300" : "text-slate-600"}`}>{t.phase4Desc}</p>
+          </div>
+          <div className={deluxe ? "rounded-lg p-3 bg-white/5" : "rounded-lg p-3 bg-slate-50"}>
+            <b>{t.phase5Title}</b>
+            <p className={`mt-1 ${deluxe ? "text-slate-300" : "text-slate-600"}`}>{t.phase5Desc}</p>
+          </div>
+
+          <div className={`rounded-lg p-3 border ${deluxe ? "bg-amber-900/20 border-amber-800" : "bg-amber-50 border-amber-200"}`}>
+            <b>{t.tipsTitle}</b>
+            <ul className="mt-1 space-y-1 list-disc pl-5">
+              <li>{t.tip1}</li>
+              <li>{t.tip2}</li>
+              <li>{t.tip3}</li>
+            </ul>
+          </div>
+
           <div className="pt-2">
             <Button onClick={onClose} className="w-full">
-              Rozumím
+              {t.close}
             </Button>
           </div>
         </CardContent>
       </Card>
     </div>
-  );
-}
-
-function TrainGuide() {
-  return (
-    <>
-      <div className="rounded-lg p-3 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800">
-        <b>Trénovací pipeline</b> se skládá z 5 fází. Každá fáze musí být
-        dokončena, než můžeš pokračovat na další. Postup se automaticky ukládá
-        — pokud zavřeš prohlížeč, po návratu budeš pokračovat tam, kde jsi
-        skončil/a. Tlačítkem <i>Reset</i> se vrátíš na začátek.
-      </div>
-
-      <div className="rounded-lg p-3 bg-slate-50 dark:bg-white/5">
-        <b>Fáze 1 — Objevování featur</b>
-        <p className="mt-1 text-slate-600 dark:text-slate-300">
-          Nahraj trénovací média a zadej cílovou proměnnou (např. „movie
-          memorability score"). LLM analyzuje obsah a navrhne sadu featur,
-          které mohou být relevantní pro predikci. Volitelně můžeš přidat CSV
-          se štítky (dataset_Y) pro přesnější návrh.
-        </p>
-      </div>
-
-      <div className="rounded-lg p-3 bg-slate-50 dark:bg-white/5">
-        <b>Fáze 2 — Extrakce trénovacích featur</b>
-        <p className="mt-1 text-slate-600 dark:text-slate-300">
-          LLM extrahuje hodnoty navržených featur z každého trénovacího
-          souboru. Výsledkem je tabulka (dataset_X), kde každý řádek odpovídá
-          jednomu souboru. Opět lze přidat dataset_Y.
-        </p>
-      </div>
-
-      <div className="rounded-lg p-3 bg-slate-50 dark:bg-white/5">
-        <b>Fáze 3 — Trénování modelu (RuleKit)</b>
-        <p className="mt-1 text-slate-600 dark:text-slate-300">
-          Na extrahovaných datech se natrénuje RuleKit regresní model. Výsledkem
-          jsou interpretovatelná pravidla (IF … THEN …) a metrika MSE na
-          trénovacích datech.
-        </p>
-      </div>
-
-      <div className="rounded-lg p-3 bg-slate-50 dark:bg-white/5">
-        <b>Fáze 4 — Extrakce testovacích featur</b>
-        <p className="mt-1 text-slate-600 dark:text-slate-300">
-          Nahraj nová (testovací) média. LLM z nich extrahuje stejné featury
-          jako v fázi 2. Tato data se použijí pro predikci.
-        </p>
-      </div>
-
-      <div className="rounded-lg p-3 bg-slate-50 dark:bg-white/5">
-        <b>Fáze 5 — Predikce a vyhodnocení</b>
-        <p className="mt-1 text-slate-600 dark:text-slate-300">
-          Natrénovaná pravidla se aplikují na testovací data. Pro každý soubor
-          dostaneš predikovanou hodnotu a pravidlo, které se použilo. Pokud
-          nahraješ i testovací dataset_Y, zobrazí se metriky přesnosti (MSE,
-          MAE, korelace).
-        </p>
-      </div>
-    </>
-  );
-}
-
-function PredictGuide() {
-  return (
-    <>
-      <div className="rounded-lg p-3 bg-slate-50 dark:bg-white/5">
-        <b>1) Připrav si soubory</b> — nahraj vždy <i>jeden typ</i> (PDF{" "}
-        <b>nebo</b> obrázky <b>nebo</b> video <b>nebo</b> ZIP).
-      </div>
-      <div className="rounded-lg p-3 bg-slate-50 dark:bg-white/5">
-        <b>2) Klasifikace</b> — Zadej kategorie (např. „Podvod, Pravda"), pokud
-        chceš video automaticky roztřídit.
-      </div>
-      <div className="rounded-lg p-3 bg-slate-50 dark:bg-white/5">
-        <b>3) Spusť extrakci</b> — Vyber si model (Qwen 2.5 je doporučený).
-      </div>
-    </>
   );
 }

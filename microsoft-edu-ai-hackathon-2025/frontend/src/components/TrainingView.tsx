@@ -101,21 +101,26 @@ function isClassificationMetrics(metrics: PredictionMetrics | null): boolean {
 
 function FileDropZone({
   deluxe,
+  uiLanguage = "cs",
   file,
   onFile,
   accept,
   inputId,
   label,
   pickLabel,
+  selectedLabel,
 }: {
   deluxe: boolean;
+  uiLanguage?: "cs" | "en";
   file: File | null;
   onFile: (f: File) => void;
   accept: string;
   inputId: string;
   label: string;
   pickLabel: string;
+  selectedLabel?: string;
 }) {
+  const selectedText = selectedLabel || (uiLanguage === "en" ? "Selected" : "Vybráno");
   return (
     <div
       onDragOver={(e) => e.preventDefault()}
@@ -162,7 +167,7 @@ function FileDropZone({
       </label>
       {file && (
         <p className="mt-2 text-xs text-green-500 font-medium truncate">
-          Vybráno: {file.name}
+          {selectedText}: {file.name}
         </p>
       )}
     </div>
@@ -230,12 +235,14 @@ function ProgressBar({
 
 function FeatureSpecBox({
   deluxe,
+  uiLanguage = "cs",
   featureSpec,
   targetVariable,
   editable = false,
   onUpdate,
 }: {
   deluxe: boolean;
+  uiLanguage?: "cs" | "en";
   featureSpec: FeatureSpec;
   targetVariable: string;
   editable?: boolean;
@@ -255,10 +262,48 @@ function FeatureSpecBox({
   const [newMax, setNewMax] = useState(10);
   const [newCategories, setNewCategories] = useState("");
 
+  const tx = uiLanguage === "en"
+    ? {
+      title: "Feature Definition Spec",
+      target: "Target",
+      editable: "Editable",
+      range: "Range",
+      categories: "Categories",
+      text: "Text",
+      featureName: "Feature name",
+      newFeatureName: "New feature name (e.g. scene_brightness)",
+      legacyPlaceholder: "Legacy text spec",
+      save: "Save",
+      cancel: "Cancel",
+      edit: "Edit",
+      remove: "Remove",
+      addFeature: "Add feature",
+      add: "Add",
+      rangeSuffix: "range",
+    }
+    : {
+      title: "Feature Definition Spec",
+      target: "Cíl",
+      editable: "Editovatelné",
+      range: "Rozsah",
+      categories: "Kategorie",
+      text: "Text",
+      featureName: "Název feature",
+      newFeatureName: "Název nové feature (např. scene_brightness)",
+      legacyPlaceholder: "Legacy text spec",
+      save: "Uložit",
+      cancel: "Zrušit",
+      edit: "Upravit",
+      remove: "Odebrat",
+      addFeature: "Přidat feature",
+      add: "Přidat",
+      rangeSuffix: "rozsah",
+    };
+
   const formatSpecValue = (value: FeatureSpecValue): string => {
     if (Array.isArray(value)) {
       if (value.length === 2 && value.every((v) => typeof v === "number")) {
-        return `${value[0]}–${value[1]} (range)`;
+        return `${value[0]}–${value[1]} (${tx.rangeSuffix})`;
       }
       return `[${value.map((v) => JSON.stringify(v)).join(", ")}]`;
     }
@@ -355,11 +400,11 @@ function FeatureSpecBox({
             "text-white"
           )}`}
         >
-          Feature Definition Spec (Cíl: {targetVariable}):
+          {tx.title} ({tx.target}: {targetVariable}):
         </h3>
         {editable && (
           <span className={`text-[10px] px-1.5 py-0.5 rounded ${cls(deluxe, "bg-amber-100 text-amber-700", "bg-amber-900/40 text-amber-400")}`}>
-            Editovatelné
+            {tx.editable}
           </span>
         )}
       </div>
@@ -377,12 +422,12 @@ function FeatureSpecBox({
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
                 className={`text-xs font-mono px-1.5 py-0.5 rounded border outline-none ${cls(deluxe, "bg-white border-slate-300", "bg-slate-800 border-slate-600 text-white")}`}
-                placeholder="Název feature"
+                placeholder={tx.featureName}
               />
               <div className="flex gap-1 text-[10px]">
-                <button type="button" onClick={() => setEditMode("range")} className={`px-1.5 py-0.5 rounded ${editMode === "range" ? "bg-blue-500 text-white" : "bg-black/10"}`}>Rozsah</button>
-                <button type="button" onClick={() => setEditMode("categories")} className={`px-1.5 py-0.5 rounded ${editMode === "categories" ? "bg-blue-500 text-white" : "bg-black/10"}`}>Kategorie</button>
-                <button type="button" onClick={() => setEditMode("text")} className={`px-1.5 py-0.5 rounded ${editMode === "text" ? "bg-blue-500 text-white" : "bg-black/10"}`}>Text</button>
+                <button type="button" onClick={() => setEditMode("range")} className={`px-1.5 py-0.5 rounded ${editMode === "range" ? "bg-blue-500 text-white" : "bg-black/10"}`}>{tx.range}</button>
+                <button type="button" onClick={() => setEditMode("categories")} className={`px-1.5 py-0.5 rounded ${editMode === "categories" ? "bg-blue-500 text-white" : "bg-black/10"}`}>{tx.categories}</button>
+                <button type="button" onClick={() => setEditMode("text")} className={`px-1.5 py-0.5 rounded ${editMode === "text" ? "bg-blue-500 text-white" : "bg-black/10"}`}>{tx.text}</button>
               </div>
               {editMode === "range" && (
                 <div className="grid grid-cols-2 gap-1">
@@ -403,12 +448,12 @@ function FeatureSpecBox({
                   value={editText}
                   onChange={(e) => setEditText(e.target.value)}
                   className={`text-xs px-1.5 py-0.5 rounded border outline-none ${cls(deluxe, "bg-white border-slate-300", "bg-slate-800 border-slate-600 text-white")}`}
-                  placeholder="Legacy text spec"
+                  placeholder={tx.legacyPlaceholder}
                 />
               )}
               <div className="flex gap-1">
-                <button onClick={saveEdit} className="text-[10px] px-1.5 py-0.5 rounded bg-green-500 text-white hover:bg-green-600">Uložit</button>
-                <button onClick={() => setEditingKey(null)} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-400 text-white hover:bg-slate-500">Zrušit</button>
+                <button onClick={saveEdit} className="text-[10px] px-1.5 py-0.5 rounded bg-green-500 text-white hover:bg-green-600">{tx.save}</button>
+                <button onClick={() => setEditingKey(null)} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-400 text-white hover:bg-slate-500">{tx.cancel}</button>
               </div>
             </li>
           ) : (
@@ -417,10 +462,10 @@ function FeatureSpecBox({
               <span className="flex-1">{formatSpecValue(desc)}</span>
               {editable && (
                 <span className="flex gap-0.5 opacity-60 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                  <button onClick={() => startEdit(key, desc)} title="Upravit" className="p-0.5 rounded hover:bg-black/10">
+                  <button onClick={() => startEdit(key, desc)} title={tx.edit} className="p-0.5 rounded hover:bg-black/10">
                     <Pencil className="h-3 w-3" />
                   </button>
-                  <button onClick={() => removeFeature(key)} title="Odebrat" className="p-0.5 rounded hover:bg-red-100 text-red-500">
+                  <button onClick={() => removeFeature(key)} title={tx.remove} className="p-0.5 rounded hover:bg-red-100 text-red-500">
                     <Trash2 className="h-3 w-3" />
                   </button>
                 </span>
@@ -438,11 +483,11 @@ function FeatureSpecBox({
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 className={`text-xs font-mono px-1.5 py-0.5 rounded border outline-none ${cls(deluxe, "bg-white border-slate-300", "bg-slate-800 border-slate-600 text-white")}`}
-                placeholder="Název nové feature (např. scene_brightness)"
+                placeholder={tx.newFeatureName}
               />
               <div className="flex gap-1 text-[10px]">
-                <button type="button" onClick={() => setNewMode("range")} className={`px-1.5 py-0.5 rounded ${newMode === "range" ? "bg-blue-500 text-white" : "bg-black/10"}`}>Rozsah</button>
-                <button type="button" onClick={() => setNewMode("categories")} className={`px-1.5 py-0.5 rounded ${newMode === "categories" ? "bg-blue-500 text-white" : "bg-black/10"}`}>Kategorie</button>
+                <button type="button" onClick={() => setNewMode("range")} className={`px-1.5 py-0.5 rounded ${newMode === "range" ? "bg-blue-500 text-white" : "bg-black/10"}`}>{tx.range}</button>
+                <button type="button" onClick={() => setNewMode("categories")} className={`px-1.5 py-0.5 rounded ${newMode === "categories" ? "bg-blue-500 text-white" : "bg-black/10"}`}>{tx.categories}</button>
               </div>
               {newMode === "range" ? (
                 <div className="grid grid-cols-2 gap-1">
@@ -458,8 +503,8 @@ function FeatureSpecBox({
                 />
               )}
               <div className="flex gap-1">
-                <button onClick={addFeature} disabled={!newName.trim()} className="text-[10px] px-1.5 py-0.5 rounded bg-green-500 text-white hover:bg-green-600 disabled:opacity-50">Přidat</button>
-                <button onClick={() => setAddingNew(false)} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-400 text-white hover:bg-slate-500">Zrušit</button>
+                <button onClick={addFeature} disabled={!newName.trim()} className="text-[10px] px-1.5 py-0.5 rounded bg-green-500 text-white hover:bg-green-600 disabled:opacity-50">{tx.add}</button>
+                <button onClick={() => setAddingNew(false)} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-400 text-white hover:bg-slate-500">{tx.cancel}</button>
               </div>
             </div>
           ) : (
@@ -467,7 +512,7 @@ function FeatureSpecBox({
               onClick={() => setAddingNew(true)}
               className={`flex items-center gap-1 text-[10px] mt-1 px-2 py-0.5 rounded hover:bg-black/10 ${cls(deluxe, "text-blue-600", "text-blue-400")}`}
             >
-              <Plus className="h-3 w-3" /> Přidat feature
+              <Plus className="h-3 w-3" /> {tx.addFeature}
             </button>
           )}
         </div>
@@ -650,15 +695,15 @@ export function TrainingView({
   const tr = uiLanguage === "en"
     ? {
       phaseTitle1: "Phase 1: Feature Discovery",
-      phaseTitle2: "Phase 2: Feature Inference (Extraction)",
+      phaseTitle2: "Phase 2: Training Feature Extraction",
       phaseTitle3: "Phase 3: ML Model Training",
-      phaseTitle4: "Phase 4: Test Data Feature Inference",
-      phaseTitle5: "Phase 5: Prediction",
-      phaseDesc1: "Upload sample media and define the target variable. AI will propose a Feature Definition Spec.",
-      phaseDesc2: "Review and edit Feature Spec, then upload training ZIP with media and labels CSV.",
+      phaseTitle4: "Phase 4: Testing Feature Extraction",
+      phaseTitle5: "Phase 5: Prediction and Evaluation",
+      phaseDesc1: "Upload sample media and define the target variable. AI will propose a feature specification.",
+      phaseDesc2: "Review and edit the feature specification, then upload training ZIP with media and labels CSV.",
       phaseDesc3: "Select target column from CSV and train the model on dataset_X + dataset_Y.",
-      phaseDesc4: "Upload test ZIP (different media than training). AI extracts features with the same Feature Spec.",
-      phaseDesc5: "Model predicts outputs for test objects. Regression returns score, classification returns label and confidence.",
+      phaseDesc4: "Upload test ZIP (different media than training). AI extracts features using the same specification.",
+      phaseDesc5: "Model predicts outputs for test objects. Regression returns score, classification returns label with confidence.",
       targetType: "Target Variable Type",
       regression: "Continuous (Regression)",
       classification: "Categorical (Classification)",
@@ -687,46 +732,130 @@ export function TrainingView({
       uploadSamples: "Upload sample media",
       downloadPredCsv: "Predictions (CSV)",
       rerunPrediction: "Run prediction again",
+      selected: "Selected",
+      discoveryAnalyzing: "AI is analyzing samples...",
+      discoveryNeedTarget: "Enter target variable first",
+      featureCountProposed: "features proposed",
+      downloadFeatureSpec: "Download feature spec (JSON)",
+      uploadAlreadyOnServer: "File is already on server (large dataset)",
+      uploadTrainingZip: "Upload .ZIP training dataset (media + labels CSV)",
+      pickTrainingZip: "Select training ZIP",
+      serverZipPath: "Path to ZIP file on server",
+      serverLabelsPath: "Path to labels CSV (optional)",
+      serverLabelsPathPlaceholder: "(optional, CSV is inside ZIP)",
+      uploadLabelsSeparately: "Upload labels separately (dataset_Y)",
+      labelsAutoloadHint: "If labels CSV is in ZIP, it will be loaded automatically. You can upload it separately here.",
+      ollamaUnavailable: "Ollama is unavailable (localhost:11434). Start it with:",
+      checkAgain: "Check again",
+      uploadTrainingFirst: "Upload training ZIP first",
+      extractingFeatures: "Extracting features...",
+      processingMayTakeLong: "Processing in progress - larger files or slower models can take 10+ minutes.",
+      downloadTrainingX: "Download training dataset X (CSV)",
+      targetColumnLabel: "Target column name (from CSV in ZIP):",
+      selectColumn: "-- select column --",
+      targetPlaceholder: "e.g. memorability_score",
+      trainingInProgressLabel: "Training model...",
+      trainingDone: "Training completed!",
+      rulesGenerated: "Generated rules",
+      featureImportanceTop: "Feature importance (XGBoost - top 5)",
+      rulesModelTitle: "Rule-based model:",
+      downloadRuleModel: "Rule model",
+      uploadTestingZip: "Upload testing ZIP dataset (different media than training)",
+      pickTestingZip: "Select testing ZIP",
+      uploadTestingFirst: "Upload testing ZIP first",
+      testingExtractionDone: "Testing extraction completed",
+      downloadTestingX: "Download testing dataset X (CSV)",
+      uploadTestingY: "Upload testing dataset_Y (for evaluation)",
+      uploadTestingYHint: "CSV with true target values. Used to compare predictions vs. ground truth.",
+      predicting: "Predicting...",
+      predictionInProgressLabel: "Predicting...",
+      evalTitle: "Model evaluation (predictions vs. ground truth):",
+      paired: "Matched",
+      hideFeatureColumns: "Hide feature columns",
+      showFeatureColumns: "Show feature columns",
+      downloadExperiment: "Download experiment (ZIP)",
     }
     : {
-      phaseTitle1: "Faze 1: Feature Discovery",
-      phaseTitle2: "Faze 2: Feature Inference (Extrakce)",
-      phaseTitle3: "Faze 3: Trenink ML modelu",
-      phaseTitle4: "Faze 4: Test Data Feature Inference",
-      phaseTitle5: "Faze 5: Predikce",
-      phaseDesc1: "Nahrajte ZIP s ukazkovymi medii (nebo jedno video/obrazek) a popiste cilovou promennou. AI analyzuje vzorky a navrhne Feature Definition Spec.",
-      phaseDesc2: "Zkontrolujte a upravte Feature Spec z Faze 1. Pote nahrajte trenovaci ZIP (media + CSV s labels). AI extrahuje hodnoty features pro kazdy soubor.",
-      phaseDesc3: "Vyberte sloupec s cilovou promennou z CSV. Model natrenuje pravidla a metriky z dataset_X + dataset_Y.",
-      phaseDesc4: "Nahrajte testovaci ZIP dataset (jina media nez trenovaci). AI extrahuje features stejnym Feature Specem.",
-      phaseDesc5: "Model predikuje vystup pro kazdy testovaci objekt. Pro regression vraci score, pro classification vraci label (+ confidence).",
-      targetType: "Typ cilove promenne",
-      regression: "Spojita (Regression)",
-      classification: "Kategoricka (Classification)",
+      phaseTitle1: "Fáze 1: Objevování featur",
+      phaseTitle2: "Fáze 2: Extrakce trénovacích featur",
+      phaseTitle3: "Fáze 3: Trénink ML modelu",
+      phaseTitle4: "Fáze 4: Extrakce testovacích featur",
+      phaseTitle5: "Fáze 5: Predikce a vyhodnocení",
+      phaseDesc1: "Nahrajte ukázková média (ZIP nebo jednotlivé soubory) a zadejte cílovou proměnnou. AI navrhne specifikaci featur.",
+      phaseDesc2: "Zkontrolujte a upravte feature spec z Fáze 1. Poté nahrajte trénovací ZIP (média + CSV labels). AI extrahuje hodnoty featur pro každý soubor.",
+      phaseDesc3: "Vyberte sloupec s cílovou proměnnou z CSV. Model natrénuje pravidla a metriky z dataset_X + dataset_Y.",
+      phaseDesc4: "Nahrajte testovací ZIP (jiná média než trénovací). AI extrahuje featury podle stejného feature specu.",
+      phaseDesc5: "Model predikuje výstup pro každý testovací objekt. Regrese vrací score, klasifikace vrací label + confidence.",
+      targetType: "Typ cílové proměnné",
+      regression: "Spojitá (Regression)",
+      classification: "Kategorická (Classification)",
       processWith: "Zpracovat pomoci:",
       stepDiscovery: "Discovery",
       stepExtraction: "Extrakce",
-      stepTraining: "Trenink",
-      stepTestExtraction: "Test ext.",
+      stepTraining: "Trénink",
+      stepTestExtraction: "Test extr.",
       stepPrediction: "Predikce",
       startDiscovery: "Spustit Feature Discovery",
       startExtraction: "Spustit extrakci features",
-      startTraining: "Spustit trenink modelu",
-      startTestExtraction: "Spustit testovaci extrakci",
+      startTraining: "Spustit trénink modelu",
+      startTestExtraction: "Spustit testovací extrakci",
       startPrediction: "Spustit predikci",
       stop: "Zastavit",
-      continue2: "Pokracovat na Fazi 2",
-      continue3: "Pokracovat na Fazi 3",
-      continue4: "Pokracovat na Fazi 4",
-      continue5: "Pokracovat na Fazi 5",
-      discoveryDone: "Feature Discovery dokoncena",
-      extractionDone: "Extrakce dokoncena",
-      predictionDone: "Predikce dokoncena",
-      rows: "radku",
-      objects: "objektu",
-      pickTargetColumn: "Vyberte sloupec s cilovou promennou",
-      uploadSamples: "Nahrajte vzorkova media",
+      continue2: "Pokračovat na Fázi 2",
+      continue3: "Pokračovat na Fázi 3",
+      continue4: "Pokračovat na Fázi 4",
+      continue5: "Pokračovat na Fázi 5",
+      discoveryDone: "Feature Discovery dokončena",
+      extractionDone: "Extrakce dokončena",
+      predictionDone: "Predikce dokončena",
+      rows: "řádků",
+      objects: "objektů",
+      pickTargetColumn: "Vyberte cílový sloupec",
+      uploadSamples: "Nahrajte ukázková média",
       downloadPredCsv: "Predikce (CSV)",
       rerunPrediction: "Spustit predikci znovu",
+      selected: "Vybráno",
+      discoveryAnalyzing: "AI analyzuje vzorky...",
+      discoveryNeedTarget: "Zadejte cílovou proměnnou",
+      featureCountProposed: "featur navrženo",
+      downloadFeatureSpec: "Stáhnout feature spec (JSON)",
+      uploadAlreadyOnServer: "Soubor je již na serveru (velký dataset)",
+      uploadTrainingZip: "Nahrajte .ZIP trénovací dataset (média + CSV labels)",
+      pickTrainingZip: "Vybrat trénovací ZIP",
+      serverZipPath: "Cesta k ZIP souboru na serveru",
+      serverLabelsPath: "Cesta k CSV labels (volitelné)",
+      serverLabelsPathPlaceholder: "(volitelné, CSV je součástí ZIPu)",
+      uploadLabelsSeparately: "Nahrát labels zvlášť (dataset_Y)",
+      labelsAutoloadHint: "Pokud je CSV s labels v ZIPu, načte se automaticky. Zde ho lze nahrát zvlášť.",
+      ollamaUnavailable: "Ollama není dostupný (localhost:11434). Spusťte:",
+      checkAgain: "Zkontrolovat znovu",
+      uploadTrainingFirst: "Nejdříve nahrajte trénovací ZIP",
+      extractingFeatures: "Extrahuji featury...",
+      processingMayTakeLong: "Zpracování probíhá - větší soubory nebo pomalý model mohou trvat i 10+ minut.",
+      downloadTrainingX: "Stáhnout trénovací dataset X (CSV)",
+      targetColumnLabel: "Název sloupce s cílovou proměnnou (z CSV v ZIPu):",
+      selectColumn: "-- vyberte sloupec --",
+      targetPlaceholder: "např. memorability_score",
+      trainingInProgressLabel: "Trénuji model...",
+      trainingDone: "Trénink dokončen!",
+      rulesGenerated: "Vygenerováno pravidel",
+      featureImportanceTop: "Důležitost featur (XGBoost - top 5)",
+      rulesModelTitle: "Pravidlový model:",
+      downloadRuleModel: "Pravidlový model",
+      uploadTestingZip: "Nahrajte testovací ZIP dataset (jiná média než trénovací)",
+      pickTestingZip: "Vybrat testovací ZIP",
+      uploadTestingFirst: "Nejdříve nahrajte testovací ZIP",
+      testingExtractionDone: "Testovací extrakce dokončena",
+      downloadTestingX: "Stáhnout testovací dataset X (CSV)",
+      uploadTestingY: "Nahrát testing dataset_Y (pro vyhodnocení)",
+      uploadTestingYHint: "CSV se skutečnými hodnotami cílové proměnné. Slouží k porovnání predikcí vs. realita.",
+      predicting: "Predikuji...",
+      predictionInProgressLabel: "Predikuji...",
+      evalTitle: "Vyhodnocení modelu (predikce vs. skutečnost):",
+      paired: "Spárováno",
+      hideFeatureColumns: "Skrýt feature sloupce",
+      showFeatureColumns: "Zobrazit feature sloupce",
+      downloadExperiment: "Stáhnout experiment (ZIP)",
     };
 
   const phaseLabels = [
@@ -1028,7 +1157,9 @@ export function TrainingView({
           >
             <UploadCloud className={`h-8 w-8 mx-auto mb-3 ${cls(deluxe, "text-slate-400", "text-slate-500")}`} />
             <p className={`text-sm font-medium mb-1 ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>
-              Nahrajte ukázková média (doporučeno 3–5 vzorků = lepší návrh featur)
+              {uiLanguage === "en"
+                ? "Upload sample media (recommended 3-5 samples for better feature proposals)"
+                : "Nahrajte ukázková média (doporučeno 3-5 vzorků = lepší návrh featur)"}
             </p>
             <input
               type="file"
@@ -1046,7 +1177,7 @@ export function TrainingView({
               htmlFor="discovery-upload"
               className="cursor-pointer text-blue-500 hover:text-blue-600 text-sm font-medium"
             >
-              Vybrat soubory z disku
+              {uiLanguage === "en" ? "Choose files from disk" : "Vybrat soubory z disku"}
             </label>
             {discoveryFiles.length > 0 && (
               <div className="mt-2 space-y-1">
@@ -1056,7 +1187,7 @@ export function TrainingView({
                     <button
                       onClick={() => setDiscoveryFiles((prev) => prev.filter((_, j) => j !== i))}
                       className="text-red-400 hover:text-red-600"
-                      title="Odebrat"
+                      title={uiLanguage === "en" ? "Remove" : "Odebrat"}
                     >
                       <X className="h-3 w-3" />
                     </button>
@@ -1101,10 +1232,10 @@ export function TrainingView({
             <div className={`flex items-start gap-2 p-3 rounded-lg border ${cls(deluxe, "bg-amber-50 border-amber-300 text-amber-800", "bg-amber-900/30 border-amber-700 text-amber-300")}`}>
               <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
               <div className="flex-1">
-                <p className="text-sm">Ollama není dostupný (localhost:11434). Spusťte: <code className="font-mono bg-black/10 px-1 rounded">ollama serve</code></p>
+                <p className="text-sm">{tr.ollamaUnavailable} <code className="font-mono bg-black/10 px-1 rounded">ollama serve</code></p>
               </div>
               {recheckOllama && (
-                <button onClick={recheckOllama} className="text-xs underline opacity-70 hover:opacity-100 whitespace-nowrap">Zkontrolovat znovu</button>
+                <button onClick={recheckOllama} className="text-xs underline opacity-70 hover:opacity-100 whitespace-nowrap">{tr.checkAgain}</button>
               )}
             </div>
           )}
@@ -1115,12 +1246,12 @@ export function TrainingView({
               disabled={discoveryFiles.length === 0 || !targetVariable || isDiscovering}
               title={[
                 discoveryFiles.length === 0 && tr.uploadSamples,
-                !targetVariable && "Zadejte cílovou proměnnou",
+                !targetVariable && tr.discoveryNeedTarget,
               ].filter(Boolean).join("; ") || undefined}
             >
               {isDiscovering ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> AI analyzuje vzorky...
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> {tr.discoveryAnalyzing}
                 </>
               ) : (
                 <>
@@ -1133,7 +1264,7 @@ export function TrainingView({
           {/* Progress bar + cancel during discovery */}
           {isDiscovering && (
             <div className="space-y-2">
-              <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel || "AI analyzuje vzorky..."} />
+              <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel || tr.discoveryAnalyzing} />
               {onCancel && (
                 <div className="flex justify-center">
                   <Button variant="outline" size="sm" onClick={onCancel} className="text-xs">
@@ -1148,13 +1279,14 @@ export function TrainingView({
           {featureSpec && !isDiscovering && (
             <div className={`flex items-center gap-2 p-2 rounded-lg ${cls(deluxe, "bg-green-50 text-green-700", "bg-green-900/30 text-green-400")}`}>
               <CheckCircle2 className="h-4 w-4" />
-              <span className="text-sm font-medium">{tr.discoveryDone} — {Object.keys(featureSpec).length} featur navrzeno</span>
+              <span className="text-sm font-medium">{tr.discoveryDone} — {Object.keys(featureSpec).length} {tr.featureCountProposed}</span>
             </div>
           )}
           {featureSpec && (
             <>
               <FeatureSpecBox
                 deluxe={deluxe}
+                uiLanguage={uiLanguage}
                 featureSpec={featureSpec}
                 targetVariable={targetVariable}
                 editable
@@ -1165,7 +1297,7 @@ export function TrainingView({
                   onClick={() => downloadFeatureSpec(featureSpec)}
                   className="px-3 py-1.5 bg-slate-600 text-white rounded text-xs hover:bg-slate-700 flex items-center gap-1"
                 >
-                  <Download className="w-3 h-3" /> Stáhnout Feature Spec (JSON)
+                  <Download className="w-3 h-3" /> {tr.downloadFeatureSpec}
                 </button>
               </div>
               <div className="flex justify-center mt-4">
@@ -1186,6 +1318,7 @@ export function TrainingView({
           {featureSpec && (
             <FeatureSpecBox
               deluxe={deluxe}
+              uiLanguage={uiLanguage}
               featureSpec={featureSpec}
               targetVariable={targetVariable}
               editable
@@ -1203,7 +1336,7 @@ export function TrainingView({
                 className="rounded"
               />
               <span className={`text-sm font-medium ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>
-                Soubor je již na serveru (velký dataset)
+                {tr.uploadAlreadyOnServer}
               </span>
             </label>
           </div>
@@ -1211,17 +1344,19 @@ export function TrainingView({
           {!useServerPathTrain ? (
             <FileDropZone
               deluxe={deluxe}
+              uiLanguage={uiLanguage}
               file={trainZipFile}
               onFile={setTrainZipFile}
               accept=".zip"
               inputId="train-zip-upload"
-              label="Nahrajte .ZIP trénovací dataset (média + CSV s labels)"
-              pickLabel="Vybrat ZIP soubor"
+              label={tr.uploadTrainingZip}
+              pickLabel={tr.pickTrainingZip}
+              selectedLabel={tr.selected}
             />
           ) : (
             <div className="space-y-2">
               <label className={`text-sm font-medium ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>
-                Cesta k ZIP souboru na serveru
+                {tr.serverZipPath}
               </label>
               <input
                 type="text"
@@ -1231,13 +1366,13 @@ export function TrainingView({
                 className={`w-full px-3 py-2 rounded border text-sm font-mono ${cls(deluxe, "bg-white border-slate-300 text-slate-800", "bg-slate-900 border-slate-600 text-slate-200")}`}
               />
               <label className={`text-sm font-medium ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>
-                Cesta k CSV labels (volitelné)
+                {tr.serverLabelsPath}
               </label>
               <input
                 type="text"
                 value={serverLabelsPathTrain}
                 onChange={(e) => setServerLabelsPathTrain(e.target.value)}
-                placeholder="(volitelné, CSV je součástí ZIPu)"
+                placeholder={tr.serverLabelsPathPlaceholder}
                 className={`w-full px-3 py-2 rounded border text-sm font-mono ${cls(deluxe, "bg-white border-slate-300 text-slate-800", "bg-slate-900 border-slate-600 text-slate-200")}`}
               />
             </div>
@@ -1257,11 +1392,11 @@ export function TrainingView({
                   className="rounded"
                 />
                 <span className={`text-sm font-medium ${cls(deluxe, "text-amber-800", "text-amber-300")}`}>
-                  Nahrát labels zvlášť (dataset_Y)
+                  {tr.uploadLabelsSeparately}
                 </span>
               </label>
               <p className={`text-xs mt-1 ${cls(deluxe, "text-amber-600", "text-amber-400/70")}`}>
-                Pokud je CSV s labels v ZIPu, nahrajeme ho automaticky. Zde ho lze nahrát zvlášť.
+                {tr.labelsAutoloadHint}
               </p>
               {useExtractionLabels && (
                 <div className="mt-2">
@@ -1283,10 +1418,10 @@ export function TrainingView({
             <div className={`flex items-start gap-2 p-3 rounded-lg border ${cls(deluxe, "bg-amber-50 border-amber-300 text-amber-800", "bg-amber-900/30 border-amber-700 text-amber-300")}`}>
               <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
               <div className="flex-1">
-                <p className="text-sm">Ollama není dostupný (localhost:11434). Spusťte: <code className="font-mono bg-black/10 px-1 rounded">ollama serve</code></p>
+                <p className="text-sm">{tr.ollamaUnavailable} <code className="font-mono bg-black/10 px-1 rounded">ollama serve</code></p>
               </div>
               {recheckOllama && (
-                <button onClick={recheckOllama} className="text-xs underline opacity-70 hover:opacity-100 whitespace-nowrap">Zkontrolovat znovu</button>
+                <button onClick={recheckOllama} className="text-xs underline opacity-70 hover:opacity-100 whitespace-nowrap">{tr.checkAgain}</button>
               )}
             </div>
           )}
@@ -1301,11 +1436,11 @@ export function TrainingView({
                 }
               }}
               disabled={(useServerPathTrain ? !serverPathTrain : !trainZipFile) || isExtracting}
-              title={!useServerPathTrain && !trainZipFile ? "Nejdříve nahrajte trénovací ZIP" : undefined}
+              title={!useServerPathTrain && !trainZipFile ? tr.uploadTrainingFirst : undefined}
             >
               {isExtracting ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Extrahuji features...
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> {tr.extractingFeatures}
                 </>
               ) : (
                 <>
@@ -1320,7 +1455,7 @@ export function TrainingView({
               <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel} />
               {extractStalled && (
                 <p className={`text-xs ${cls(deluxe, "text-slate-500", "text-slate-400")}`}>
-                  ℹ Zpracování probíhá — větší soubory nebo pomalý model mohou trvat i 10+ minut.
+                  ℹ {tr.processingMayTakeLong}
                 </p>
               )}
               <div className="flex gap-2">
@@ -1348,7 +1483,7 @@ export function TrainingView({
                   onClick={() => downloadTrainingDataCSV(trainingDataX)}
                   className="px-3 py-1.5 bg-slate-600 text-white rounded text-xs hover:bg-slate-700 flex items-center gap-1"
                 >
-                  <Download className="w-3 h-3" /> Stáhnout Training Dataset X (CSV)
+                  <Download className="w-3 h-3" /> {tr.downloadTrainingX}
                 </button>
               </div>
               <div className="flex justify-center mt-4">
@@ -1369,6 +1504,7 @@ export function TrainingView({
           {featureSpec && (
             <FeatureSpecBox
               deluxe={deluxe}
+              uiLanguage={uiLanguage}
               featureSpec={featureSpec}
               targetVariable={targetVariable}
             />
@@ -1382,7 +1518,7 @@ export function TrainingView({
           {/* Target column selector */}
           <div>
             <label className={`block text-sm font-medium mb-1 ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>
-              Název sloupce s cílovou proměnnou (z CSV v ZIPu):
+              {tr.targetColumnLabel}
             </label>
             {datasetYColumns && datasetYColumns.length > 0 ? (
               <select
@@ -1394,7 +1530,7 @@ export function TrainingView({
                   "bg-slate-900 border-slate-700 text-white"
                 )}`}
               >
-                <option value="">-- vyberte sloupec --</option>
+                <option value="">{tr.selectColumn}</option>
                 {datasetYColumns.map((col) => (
                   <option key={col} value={col}>{col}</option>
                 ))}
@@ -1409,7 +1545,7 @@ export function TrainingView({
                   "bg-slate-50 border-slate-200 text-slate-900",
                   "bg-slate-900 border-slate-700 text-white"
                 )}`}
-                placeholder="např. memorability_score"
+                placeholder={tr.targetPlaceholder}
               />
             )}
           </div>
@@ -1422,7 +1558,7 @@ export function TrainingView({
             >
               {isTraining ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Trénuji model... ({trainSecs}s)
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> {tr.trainingInProgressLabel} ({trainSecs}s)
                 </>
               ) : (
                 <>
@@ -1435,7 +1571,7 @@ export function TrainingView({
           {/* Progress bar during training */}
           {isTraining && (
             <div className="space-y-2 mt-4">
-              <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel || "Trénuji model..."} />
+              <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel || tr.trainingInProgressLabel} />
               {onCancel && (
                 <div className="flex justify-center">
                   <Button variant="outline" size="sm" onClick={onCancel} className="text-xs">
@@ -1451,7 +1587,7 @@ export function TrainingView({
             <div className={`rounded-xl p-4 space-y-3 border ${cls(deluxe, "bg-green-50 border-green-100", "bg-green-900/20 border-green-800/50")}`}>
               <div className={`flex items-center gap-2 ${cls(deluxe, "text-green-800", "text-green-400")}`}>
                 <CheckCircle2 className="h-4 w-4" />
-                <p className="text-sm font-bold">Trénink dokončen!</p>
+                <p className="text-sm font-bold">{tr.trainingDone}</p>
               </div>
               <div className={`text-xs space-y-0.5 ${cls(deluxe, "text-green-700", "text-green-400/80")}`}>
                 {trainResult.target_mode === "classification" ? (
@@ -1504,14 +1640,14 @@ export function TrainingView({
                 {trainResult.warnings?.map((w, i) => (
                   <p key={i} className="text-amber-600">⚠ {w}</p>
                 ))}
-                <p>Vygenerováno pravidel: <strong>{trainResult.rules_count}</strong></p>
+                <p>{tr.rulesGenerated}: <strong>{trainResult.rules_count}</strong></p>
               </div>
 
               {/* Feature importance (top 5, collapsible) */}
               {trainResult.feature_importance?.xgboost && Object.keys(trainResult.feature_importance.xgboost).length > 0 && (
                 <details className={`text-xs rounded border p-2 ${cls(deluxe, "border-slate-200", "border-slate-700")}`}>
                   <summary className={`cursor-pointer font-medium ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>
-                    Důležitost features (XGBoost — top 5)
+                    {tr.featureImportanceTop}
                   </summary>
                   <ul className="mt-1.5 space-y-1">
                     {Object.entries(trainResult.feature_importance.xgboost)
@@ -1530,7 +1666,7 @@ export function TrainingView({
 
               {trainResult.rules && trainResult.rules.length > 0 && (
                 <div className={`p-3 rounded border text-left ${cls(deluxe, "bg-slate-100 border-slate-300", "bg-slate-800 border-slate-700")}`}>
-                  <p className="font-bold mb-2 text-xs">Pravidlový model:</p>
+                  <p className="font-bold mb-2 text-xs">{tr.rulesModelTitle}</p>
                   <div className={`max-h-40 overflow-y-auto text-xs font-mono space-y-1 ${cls(deluxe, "text-slate-600", "text-slate-300")}`}>
                     {trainResult.rules.map((rule, idx) => (
                       <div key={idx} className="whitespace-pre-wrap break-words">
@@ -1559,7 +1695,7 @@ export function TrainingView({
                   onClick={() => { if (trainResult.rules) downloadRulesModel(trainResult.rules, trainResult.mse); }}
                   className="col-span-2 px-2 py-1 bg-zinc-600 text-white rounded text-xs hover:bg-zinc-700 flex items-center justify-center gap-1"
                 >
-                  <Download className="w-3 h-3" /> Pravidlový model
+                  <Download className="w-3 h-3" /> {tr.downloadRuleModel}
                 </button>
               </div>
 
@@ -1584,6 +1720,7 @@ export function TrainingView({
           {featureSpec && (
             <FeatureSpecBox
               deluxe={deluxe}
+              uiLanguage={uiLanguage}
               featureSpec={featureSpec}
               targetVariable={targetVariable}
             />
@@ -1599,7 +1736,7 @@ export function TrainingView({
                 className="rounded"
               />
               <span className={`text-sm font-medium ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>
-                Soubor je již na serveru (velký dataset)
+                {tr.uploadAlreadyOnServer}
               </span>
             </label>
           </div>
@@ -1607,17 +1744,19 @@ export function TrainingView({
           {!useServerPathTest ? (
             <FileDropZone
               deluxe={deluxe}
+              uiLanguage={uiLanguage}
               file={testZipFile}
               onFile={setTestZipFile}
               accept=".zip"
               inputId="test-zip-upload"
-              label="Nahrajte testovací ZIP dataset (jiná média než trénovací)"
-              pickLabel="Vybrat testovací ZIP"
+              label={tr.uploadTestingZip}
+              pickLabel={tr.pickTestingZip}
+              selectedLabel={tr.selected}
             />
           ) : (
             <div className="space-y-2">
               <label className={`text-sm font-medium ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>
-                Cesta k ZIP souboru na serveru
+                {tr.serverZipPath}
               </label>
               <input
                 type="text"
@@ -1633,10 +1772,10 @@ export function TrainingView({
             <div className={`flex items-start gap-2 p-3 rounded-lg border ${cls(deluxe, "bg-amber-50 border-amber-300 text-amber-800", "bg-amber-900/30 border-amber-700 text-amber-300")}`}>
               <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
               <div className="flex-1">
-                <p className="text-sm">Ollama není dostupný (localhost:11434). Spusťte: <code className="font-mono bg-black/10 px-1 rounded">ollama serve</code></p>
+                <p className="text-sm">{tr.ollamaUnavailable} <code className="font-mono bg-black/10 px-1 rounded">ollama serve</code></p>
               </div>
               {recheckOllama && (
-                <button onClick={recheckOllama} className="text-xs underline opacity-70 hover:opacity-100 whitespace-nowrap">Zkontrolovat znovu</button>
+                <button onClick={recheckOllama} className="text-xs underline opacity-70 hover:opacity-100 whitespace-nowrap">{tr.checkAgain}</button>
               )}
             </div>
           )}
@@ -1651,11 +1790,11 @@ export function TrainingView({
                 }
               }}
               disabled={(useServerPathTest ? !serverPathTest : !testZipFile) || isExtractingTest}
-              title={!useServerPathTest && !testZipFile ? "Nejdříve nahrajte testovací ZIP" : undefined}
+              title={!useServerPathTest && !testZipFile ? tr.uploadTestingFirst : undefined}
             >
               {isExtractingTest ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Extrahuji features...
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> {tr.extractingFeatures}
                 </>
               ) : (
                 <>
@@ -1670,7 +1809,7 @@ export function TrainingView({
               <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel} />
               {testExtractStalled && (
                 <p className={`text-xs ${cls(deluxe, "text-slate-500", "text-slate-400")}`}>
-                  ℹ Zpracování probíhá — větší soubory nebo pomalý model mohou trvat i 10+ minut.
+                  ℹ {tr.processingMayTakeLong}
                 </p>
               )}
               <div className="flex gap-2">
@@ -1687,7 +1826,7 @@ export function TrainingView({
           {testingDataX && !isExtractingTest && (
             <div className={`flex items-center gap-2 p-2 rounded-lg ${cls(deluxe, "bg-green-50 text-green-700", "bg-green-900/30 text-green-400")}`}>
               <CheckCircle2 className="h-4 w-4" />
-              <span className="text-sm font-medium">Testovací extrakce dokončena — {testingDataX.length} řádků</span>
+              <span className="text-sm font-medium">{tr.testingExtractionDone} — {testingDataX.length} {tr.rows}</span>
             </div>
           )}
           {testingDataX && (
@@ -1698,7 +1837,7 @@ export function TrainingView({
                   onClick={() => downloadTrainingDataCSV(testingDataX, `testing_dataset_X_${new Date().toISOString().slice(0, 10)}.csv`)}
                   className="px-3 py-1.5 bg-slate-600 text-white rounded text-xs hover:bg-slate-700 flex items-center gap-1"
                 >
-                  <Download className="w-3 h-3" /> Stáhnout Testing Dataset X (CSV)
+                  <Download className="w-3 h-3" /> {tr.downloadTestingX}
                 </button>
               </div>
               <div className="flex justify-center mt-4">
@@ -1735,11 +1874,11 @@ export function TrainingView({
                   className="rounded"
                 />
                 <span className={`text-sm font-medium ${cls(deluxe, "text-amber-800", "text-amber-300")}`}>
-                  Nahrát testing dataset_Y (pro vyhodnocení přesnosti)
+                  {tr.uploadTestingY}
                 </span>
               </label>
               <p className={`text-xs mt-1 ${cls(deluxe, "text-amber-600", "text-amber-400/70")}`}>
-                CSV se skutečnými hodnotami cílové proměnné. Slouží k porovnání predikcí vs. realita.
+                {tr.uploadTestingYHint}
               </p>
               {useTestingLabels && (
                 <div className="mt-2">
@@ -1766,7 +1905,7 @@ export function TrainingView({
               >
                 {isPredicting ? (
                   <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Predikuji... ({predictSecs}s)
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> {tr.predicting} ({predictSecs}s)
                   </>
                 ) : (
                   <>
@@ -1780,7 +1919,7 @@ export function TrainingView({
           {/* Progress bar during prediction */}
           {isPredicting && (
             <div className="space-y-2 mt-4">
-              <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel || "Predikcuji..."} />
+              <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel || tr.predictionInProgressLabel} />
               {onCancel && (
                 <div className="flex justify-center">
                   <Button variant="outline" size="sm" onClick={onCancel} className="text-xs">
@@ -1805,7 +1944,7 @@ export function TrainingView({
               {predictionMetrics && (
                 <div className={`p-3 rounded-lg border ${cls(deluxe, "bg-blue-50 border-blue-200", "bg-blue-900/20 border-blue-800/50")}`}>
                   <p className={`text-xs font-bold mb-2 ${cls(deluxe, "text-blue-900", "text-blue-300")}`}>
-                    Vyhodnocení modelu (predikce vs. skutečnost):
+                    {tr.evalTitle}
                   </p>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {(() => {
@@ -1839,7 +1978,7 @@ export function TrainingView({
                             </div>
                             <div className="text-center col-span-2 sm:col-span-4">
                               <p className={`text-sm ${cls(deluxe, "text-blue-700", "text-blue-400")}`}>
-                                Spárováno: {predictionMetrics.matched_count}/{predictionMetrics.total_count} ({matchPct}%)
+                                {tr.paired}: {predictionMetrics.matched_count}/{predictionMetrics.total_count} ({matchPct}%)
                               </p>
                             </div>
                           </>
@@ -1869,7 +2008,7 @@ export function TrainingView({
                           <div className="text-center">
                             <p className={`text-lg font-bold ${matchPct === 100 ? "text-green-600" : matchPct > 50 ? "text-yellow-600" : "text-red-500"}`}>{matchPct}%</p>
                             <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>
-                              Spárováno ({predictionMetrics.matched_count}/{predictionMetrics.total_count})
+                              {tr.paired} ({predictionMetrics.matched_count}/{predictionMetrics.total_count})
                             </p>
                           </div>
                         </>
@@ -1885,7 +2024,7 @@ export function TrainingView({
                   onClick={() => setShowFeatureCols((v) => !v)}
                   className={`text-xs underline opacity-60 hover:opacity-100 ${cls(deluxe, "text-slate-500", "text-slate-400")}`}
                 >
-                  {showFeatureCols ? "Skrýt feature sloupce" : `Zobrazit feature sloupce (${Object.keys(featureSpec).length})`}
+                  {showFeatureCols ? tr.hideFeatureColumns : `${tr.showFeatureColumns} (${Object.keys(featureSpec).length})`}
                 </button>
               )}
               <div className={`rounded-lg border overflow-hidden ${cls(deluxe, "border-slate-200", "border-slate-700")}`}>
@@ -1998,7 +2137,7 @@ export function TrainingView({
                   })}
                   className="px-3 py-1.5 bg-slate-700 text-white rounded text-xs hover:bg-slate-800 flex items-center gap-1"
                 >
-                  <Download className="w-3 h-3" /> Stáhnout experiment (ZIP)
+                  <Download className="w-3 h-3" /> {tr.downloadExperiment}
                 </button>
               </div>
 
