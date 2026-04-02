@@ -858,6 +858,9 @@ export function TrainingView({
       rowCorrect: "Correct",
       rowWrong: "Incorrect",
       rowUnlabeled: "No label",
+      predictionSource: "Prediction source",
+      predictionSourceClassification: "Ensemble (RuleKit + XGBoost)",
+      predictionSourceRegression: "Ensemble (RuleKit + XGBoost)",
       etaRemaining: "Estimated remaining",
       predictedAxis: "Predicted",
       actualAxis: "Actual",
@@ -960,6 +963,9 @@ export function TrainingView({
       rowCorrect: "Správně",
       rowWrong: "Chybně",
       rowUnlabeled: "Bez labelu",
+      predictionSource: "Zdroj predikce",
+      predictionSourceClassification: "Ensemble (RuleKit + XGBoost)",
+      predictionSourceRegression: "Ensemble (RuleKit + XGBoost)",
       etaRemaining: "Odhad zbývá",
       predictedAxis: "Predikce",
       actualAxis: "Skutečnost",
@@ -2121,6 +2127,11 @@ export function TrainingView({
                 <p className="text-sm font-bold">
                   {tr.predictionDone} ({predictions.length} {tr.objects})
                 </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <span className={`text-[11px] px-2 py-1 rounded-full border ${cls(deluxe, "bg-white border-slate-200 text-slate-600", "bg-slate-900/40 border-slate-700 text-slate-300")}`}>
+                  {tr.predictionSource}: {isClassificationMetrics(predictionMetrics) ? tr.predictionSourceClassification : tr.predictionSourceRegression}
+                </span>
               </div>
 
               {/* Metrics panel */}
