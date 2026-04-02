@@ -6,7 +6,7 @@ import type {
   PredictionMetrics,
   TrainResult,
 } from "@/lib/api";
-import { downloadExperimentZip } from "@/lib/helpers";
+import { downloadExperimentZip } from "@/lib/pipelineDownloads";
 import { cls, isClassificationMetrics } from "./shared";
 import type { TrainingTranslations } from "./translations";
 

@@ -1,0 +1,240 @@
+import React from "react";
+import React from "react";
+import { CheckCircle2, ChevronRight, Download, Loader2, PlayCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import type { FeatureSpec } from "@/lib/api";
+import { downloadTrainingDataCSV } from "@/lib/pipelineDownloads";
+import { cls, DatasetTable, FeatureSpecBox, FileDropZone, ProgressBar } from "./shared";
+import { OllamaWarning } from "./OllamaWarning";
+import type { TrainingTranslations } from "./translations";
+
+export function TrainingExtractionPhasePanel(props: {
+  deluxe: boolean;
+  uiLanguage: "cs" | "en";
+  tr: TrainingTranslations;
+  featureSpec: FeatureSpec | null;
+  targetVariable: string;
+  setFeatureSpec: (spec: FeatureSpec) => void;
+  useServerPathTrain: boolean;
+  setUseServerPathTrain: React.Dispatch<React.SetStateAction<boolean>>;
+  trainZipFile: File | null;
+  setTrainZipFile: (file: File | null) => void;
+  serverPathTrain: string;
+  setServerPathTrain: React.Dispatch<React.SetStateAction<string>>;
+  serverLabelsPathTrain: string;
+  setServerLabelsPathTrain: React.Dispatch<React.SetStateAction<string>>;
+  useExtractionLabels: boolean;
+  setUseExtractionLabels: React.Dispatch<React.SetStateAction<boolean>>;
+  extractionLabels: File | null;
+  setExtractionLabels: React.Dispatch<React.SetStateAction<File | null>>;
+  onExtractTraining: (file: File, labelsFile?: File | null) => void;
+  onExtractTrainingLocal: (zipPath: string, labelsPath?: string) => void;
+  isExtracting: boolean;
+  trainingDataX: Record<string, unknown>[] | null;
+  ollamaOk?: boolean | null;
+  recheckOllama?: () => void;
+  progress: number;
+  progressLabel: string;
+  etaText?: string | null;
+  extractStalled: boolean;
+  onCancel?: () => void;
+  onGoToStep?: (step: number) => void;
+}) {
+  const {
+    deluxe,
+    uiLanguage,
+    tr,
+    featureSpec,
+    targetVariable,
+    setFeatureSpec,
+    useServerPathTrain,
+    setUseServerPathTrain,
+    trainZipFile,
+    setTrainZipFile,
+    serverPathTrain,
+    setServerPathTrain,
+    serverLabelsPathTrain,
+    setServerLabelsPathTrain,
+    useExtractionLabels,
+    setUseExtractionLabels,
+    extractionLabels,
+    setExtractionLabels,
+    onExtractTraining,
+    onExtractTrainingLocal,
+    isExtracting,
+    trainingDataX,
+    ollamaOk,
+    recheckOllama,
+    progress,
+    progressLabel,
+    etaText,
+    extractStalled,
+    onCancel,
+    onGoToStep,
+  } = props;
+
+  return (
+    <div className="space-y-4">
+      {featureSpec && (
+        <FeatureSpecBox
+          deluxe={deluxe}
+          uiLanguage={uiLanguage}
+          featureSpec={featureSpec}
+          targetVariable={targetVariable}
+          editable
+          onUpdate={setFeatureSpec}
+        />
+      )}
+
+      <div className={`p-3 rounded-lg border ${cls(deluxe, "bg-slate-50 border-slate-200", "bg-slate-800/50 border-slate-700")}`}>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={useServerPathTrain}
+            onChange={(e) => setUseServerPathTrain(e.target.checked)}
+            className="rounded"
+          />
+          <span className={`text-sm font-medium ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>
+            {tr.uploadAlreadyOnServer}
+          </span>
+        </label>
+      </div>
+
+      {!useServerPathTrain ? (
+        <FileDropZone
+          deluxe={deluxe}
+          uiLanguage={uiLanguage}
+          file={trainZipFile}
+          onFile={setTrainZipFile}
+          accept=".zip"
+          inputId="train-zip-upload"
+          label={tr.uploadTrainingZip}
+          pickLabel={tr.pickTrainingZip}
+          selectedLabel={tr.selected}
+        />
+      ) : (
+        <div className="space-y-2">
+          <label className={`text-sm font-medium ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>{tr.serverZipPath}</label>
+          <input
+            type="text"
+            value={serverPathTrain}
+            onChange={(e) => setServerPathTrain(e.target.value)}
+            placeholder="/home/kovm23/train.zip"
+            className={`w-full px-3 py-2 rounded border text-sm font-mono ${cls(deluxe, "bg-white border-slate-300 text-slate-800", "bg-slate-900 border-slate-600 text-slate-200")}`}
+          />
+          <label className={`text-sm font-medium ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>{tr.serverLabelsPath}</label>
+          <input
+            type="text"
+            value={serverLabelsPathTrain}
+            onChange={(e) => setServerLabelsPathTrain(e.target.value)}
+            placeholder={tr.serverLabelsPathPlaceholder}
+            className={`w-full px-3 py-2 rounded border text-sm font-mono ${cls(deluxe, "bg-white border-slate-300 text-slate-800", "bg-slate-900 border-slate-600 text-slate-200")}`}
+          />
+        </div>
+      )}
+
+      {!useServerPathTrain && (
+        <div className={`p-3 rounded-lg border ${cls(deluxe, "bg-amber-50/50 border-amber-200", "bg-amber-900/20 border-amber-800/50")}`}>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={useExtractionLabels}
+              onChange={(e) => {
+                setUseExtractionLabels(e.target.checked);
+                if (!e.target.checked) setExtractionLabels(null);
+              }}
+              className="rounded"
+            />
+            <span className={`text-sm font-medium ${cls(deluxe, "text-amber-800", "text-amber-300")}`}>
+              {tr.uploadLabelsSeparately}
+            </span>
+          </label>
+          <p className={`text-xs mt-1 ${cls(deluxe, "text-amber-600", "text-amber-400/70")}`}>{tr.labelsAutoloadHint}</p>
+          {useExtractionLabels && (
+            <div className="mt-2">
+              <input
+                type="file"
+                accept=".csv"
+                onChange={(e) => {
+                  if (e.target.files?.[0]) setExtractionLabels(e.target.files[0]);
+                }}
+                className={`text-xs ${cls(deluxe, "text-slate-600", "text-slate-400")}`}
+              />
+              {extractionLabels && <p className="mt-1 text-xs text-green-500 font-medium">CSV: {extractionLabels.name}</p>}
+            </div>
+          )}
+        </div>
+      )}
+
+      {ollamaOk === false && <OllamaWarning deluxe={deluxe} tr={tr} recheckOllama={recheckOllama} />}
+
+      <div className="flex justify-center mt-6">
+        <Button
+          onClick={() => {
+            if (useServerPathTrain) {
+              onExtractTrainingLocal(serverPathTrain, serverLabelsPathTrain || undefined);
+            } else if (trainZipFile) {
+              onExtractTraining(trainZipFile, useExtractionLabels ? extractionLabels : null);
+            }
+          }}
+          disabled={(useServerPathTrain ? !serverPathTrain : !trainZipFile) || isExtracting}
+          title={!useServerPathTrain && !trainZipFile ? tr.uploadTrainingFirst : undefined}
+        >
+          {isExtracting ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" /> {tr.extractingFeatures}
+            </>
+          ) : (
+            <>
+              <PlayCircle className="mr-2 h-4 w-4" /> {tr.startExtraction}
+            </>
+          )}
+        </Button>
+      </div>
+
+      {isExtracting && (
+        <div className="space-y-2">
+          <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel} etaText={etaText} />
+          {extractStalled && (
+            <p className={`text-xs ${cls(deluxe, "text-slate-500", "text-slate-400")}`}>
+              ℹ {tr.processingMayTakeLong}
+            </p>
+          )}
+          {onCancel && (
+            <Button variant="outline" size="sm" onClick={onCancel} className="text-xs">
+              ✕ {tr.stop}
+            </Button>
+          )}
+        </div>
+      )}
+
+      {trainingDataX && !isExtracting && (
+        <div className={`flex items-center gap-2 p-2 rounded-lg ${cls(deluxe, "bg-green-50 text-green-700", "bg-green-900/30 text-green-400")}`}>
+          <CheckCircle2 className="h-4 w-4" />
+          <span className="text-sm font-medium">
+            {tr.extractionDone} — {trainingDataX.length} {tr.rows}
+          </span>
+        </div>
+      )}
+
+      {trainingDataX && (
+        <>
+          <DatasetTable deluxe={deluxe} data={trainingDataX} title="Training Dataset X" />
+          <div className="flex justify-center mt-2">
+            <button
+              onClick={() => downloadTrainingDataCSV(trainingDataX)}
+              className="px-3 py-1.5 bg-slate-600 text-white rounded text-xs hover:bg-slate-700 flex items-center gap-1"
+            >
+              <Download className="w-3 h-3" /> {tr.downloadTrainingX}
+            </button>
+          </div>
+          <div className="flex justify-center mt-4">
+            <Button onClick={() => onGoToStep?.(3)}>
+              <ChevronRight className="mr-2 h-4 w-4" /> {tr.continue3}
+            </Button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

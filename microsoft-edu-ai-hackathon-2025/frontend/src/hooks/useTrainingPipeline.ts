@@ -13,136 +13,47 @@ import type {
   PredictionMetrics,
 } from "@/lib/api";
 import {
-  DISCOVER_URL,
-  EXTRACT_URL,
-  EXTRACT_LOCAL_URL,
   fetchJson,
-  TRAIN_URL,
-  PREDICT_URL,
   RESET_URL,
   STATE_URL,
   STATUS_URL,
-  HEALTH_URL,
-  QUEUE_INFO_URL,
   sessionHeaders,
 } from "@/lib/api";
-import { pollProgress } from "@/hooks/usePollProgress";
-
-/* ------------------------------------------------------------------ */
-/*  Persisted state shape (localStorage)                               */
-/* ------------------------------------------------------------------ */
-interface PersistedPipeline {
-  trainingStep?: 1 | 2 | 3 | 4 | 5;
-  targetVariable?: string;
-  targetMode?: TargetMode;
-  featureSpec?: FeatureSpec | null;
-  modelProvider?: string;
-}
-
-const STORAGE_KEY = "mflPipeline";
-
-function loadPersisted(): PersistedPipeline | null {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
-function savePersisted(data: PersistedPipeline) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  } catch {
-    /* quota exceeded or localStorage unavailable */
-  }
-}
-
-/* ------------------------------------------------------------------ */
-/*  Active job persistence (resume polling after page reload)          */
-/* ------------------------------------------------------------------ */
-type ActiveJobPhase = "discover" | "extract_training" | "extract_testing";
-
-interface ActiveJob {
-  job_id: string;
-  phase: ActiveJobPhase;
-}
-
-const ACTIVE_JOB_KEY = "mflActiveJob";
-
-function saveActiveJob(job: ActiveJob) {
-  try {
-    localStorage.setItem(ACTIVE_JOB_KEY, JSON.stringify(job));
-  } catch { /* */ }
-}
-
-function clearActiveJob() {
-  try {
-    localStorage.removeItem(ACTIVE_JOB_KEY);
-  } catch { /* */ }
-}
-
-function loadActiveJob(): ActiveJob | null {
-  try {
-    const raw = localStorage.getItem(ACTIVE_JOB_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
-/* ------------------------------------------------------------------ */
-/*  Generic extraction helper                                          */
-/* ------------------------------------------------------------------ */
-interface ExtractConfig {
-  url: string;
-  body: BodyInit | string;
-  headers?: Record<string, string>;
-  datasetType: "training" | "testing";
-  phaseLabel: string;
-}
+import {
+  clearActiveJob,
+  clearPersisted,
+  getTrainingPipelineText,
+  loadActiveJob,
+  loadPersisted,
+  saveActiveJob,
+  savePersisted,
+} from "@/hooks/trainingPipelineUtils";
+import {
+  pollDiscoveryJob,
+  pollExtractJob,
+  pollPredictJob,
+  pollTrainJob,
+  submitDiscoveryRequest,
+  submitExtractRequest,
+  submitPredictRequest,
+  submitTrainRequest,
+} from "@/hooks/trainingPipelineRequests";
+import {
+  applyBackendPipelineState,
+  persistDiscoveryOutcome,
+} from "@/hooks/trainingPipelineRecovery";
+import {
+  clearActivePipelineRuntime,
+  invalidatePipelineFromPhase,
+  resetPipelineLocalState,
+} from "@/hooks/trainingPipelineState";
+import { usePipelineRuntime } from "@/hooks/usePipelineRuntime";
 
 /* ------------------------------------------------------------------ */
 /*  Hook                                                               */
 /* ------------------------------------------------------------------ */
 export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
-  const tx = uiLanguage === "en"
-    ? {
-      restoring: "Restoring...",
-      phase1Failed: "Phase 1 failed",
-      phaseFailed: "failed",
-      extractFailed: "Extraction failed",
-      featureDiscoveryFailed: "Feature Discovery failed",
-      startingExtraction: "Starting extraction...",
-      phase2: "Phase 2",
-      phase4: "Phase 4",
-      startingTraining: "Starting training...",
-      trainingFailed: "Training failed",
-      trainingInProgress: "Training...",
-      phase3Failed: "Phase 3 failed",
-      startingPrediction: "Starting prediction...",
-      predictionFailed: "Prediction failed",
-      predictingInProgress: "Predicting...",
-      phase5Failed: "Phase 5 failed",
-    }
-    : {
-      restoring: "Obnovuji...",
-      phase1Failed: "Fáze 1 selhala",
-      phaseFailed: "selhala",
-      extractFailed: "Extrakce selhala",
-      featureDiscoveryFailed: "Feature Discovery selhala",
-      startingExtraction: "Spouštím extrakci...",
-      phase2: "Fáze 2",
-      phase4: "Fáze 4",
-      startingTraining: "Spouštím trénink...",
-      trainingFailed: "Trénink selhal",
-      trainingInProgress: "Trénuji...",
-      phase3Failed: "Fáze 3 selhala",
-      startingPrediction: "Spouštím predikci...",
-      predictionFailed: "Predikce selhala",
-      predictingInProgress: "Predikuji...",
-      phase5Failed: "Fáze 5 selhala",
-    };
+  const tx = getTrainingPipelineText(uiLanguage);
   const saved = useMemo(loadPersisted, []);
 
   // --- Phase navigation ---
@@ -189,33 +100,37 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
     saved?.modelProvider ?? "qwen2.5vl:7b",
   );
 
-  // --- Ollama availability ---
-  const [ollamaOk, setOllamaOk] = useState<boolean | null>(null);
+  const pipelineStateSetters = {
+    setFeatureSpec,
+    setTrainingDataX,
+    setDatasetYColumns,
+    setTrainResult,
+    setTestingDataX,
+    setPredictions,
+    setPredictionMetrics,
+    setTrainingStep,
+  };
 
-  // --- Queue info (other users waiting) ---
-  const [queueBusy, setQueueBusy] = useState(false);
-  const [queuedCount, setQueuedCount] = useState(0);
-
-  function invalidateFromPhase(startPhase: 1 | 2 | 3 | 4 | 5) {
-    if (startPhase <= 1) {
-      setFeatureSpec(null);
-    }
-    if (startPhase <= 2) {
-      setTrainingDataX(null);
-      setDatasetYColumns(null);
-    }
-    if (startPhase <= 3) {
-      setTrainResult(null);
-    }
-    if (startPhase <= 4) {
-      setTestingDataX(null);
-    }
-    if (startPhase <= 5) {
-      setPredictions(null);
-      setPredictionMetrics(null);
-    }
-    setTrainingStep((prev) => (prev > startPhase ? startPhase : prev));
-  }
+  const pipelineRuntimeSetters = {
+    setTrainingStep,
+    setTargetVariable,
+    setTargetMode,
+    setFeatureSpec,
+    setIsDiscovering,
+    setExtractionBusy,
+    setTrainingDataX,
+    setDatasetYColumns,
+    setTrainingBusy,
+    setTrainResult,
+    setTestExtractionBusy,
+    setTestingDataX,
+    setPredictBusy,
+    setPredictions,
+    setPredictionMetrics,
+    setProgress,
+    setProgressLabel,
+    setError,
+  };
 
   // Refs for values captured in async polling callbacks (prevents stale closures)
   const modelProviderRef = useRef(modelProvider);
@@ -245,38 +160,8 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
     fetchJson<PipelineState>(STATE_URL, { headers: sessionHeaders() })
       .then((state: PipelineState) => {
         if (cancelled) return;
-        // Only restore if backend has meaningful state
-        if (!state.completed_phases || state.completed_phases.length === 0) return;
-
-        if (state.feature_spec && Object.keys(state.feature_spec).length > 0) {
-          setFeatureSpec(state.feature_spec);
-        }
-        if (state.target_variable) {
-          setTargetVariable(state.target_variable);
-        }
-        if (state.target_mode) {
-          setTargetMode(state.target_mode);
-        }
-        if (state.training_data_X && state.training_data_X.length > 0) {
-          setTrainingDataX(state.training_data_X);
-        }
-        if (state.dataset_Y_columns) {
-          setDatasetYColumns(state.dataset_Y_columns);
-        }
-        if (state.train_result) {
-          setTrainResult(state.train_result);
-        }
-        if (state.testing_data_X && state.testing_data_X.length > 0) {
-          setTestingDataX(state.testing_data_X);
-        }
-        // Advance step only if localStorage didn't already set a later step
-        // Backend suggested_step is the source of truth when > current step
-        setTrainingStep((prev) => {
-          const suggested = Math.min(
-            state.suggested_step as 1 | 2 | 3 | 4 | 5,
-            5,
-          ) as 1 | 2 | 3 | 4 | 5;
-          return suggested > prev ? suggested : prev;
+        applyBackendPipelineState(state, {
+          ...pipelineRuntimeSetters,
         });
       })
       .catch(() => {
@@ -313,21 +198,21 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
 
         if (saved.phase === "discover") {
           setIsDiscovering(true);
-          pollProgress(
-            saved.job_id,
-            (tick) => {
+          pollDiscoveryJob({
+            jobId: saved.job_id,
+            signal: ctrl.signal,
+            onProgress: (tick) => {
               setProgress(Math.max(0, Math.min(100, tick.progress ?? 0)));
               setProgressLabel(tick.stage || "");
               if (tick.done && !tick.error) {
                 clearActiveJob();
                 if (tick.suggested_features) {
                   setFeatureSpec(tick.suggested_features);
-                  savePersisted({
-                    trainingStep: 2,
-                    targetVariable: targetVariableRef.current,
-                    targetMode: targetModeRef.current,
+                  persistDiscoveryOutcome({
                     featureSpec: tick.suggested_features,
-                    modelProvider: modelProviderRef.current,
+                    targetVariableRef,
+                    targetModeRef,
+                    modelProviderRef,
                   });
                 }
               }
@@ -336,16 +221,16 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
                 setError(tx.phase1Failed + ": " + tick.error);
               }
             },
-            ctrl.signal,
-          ).finally(() => { setIsDiscovering(false); setActiveCtrl(null); });
+          }).finally(() => { setIsDiscovering(false); setActiveCtrl(null); });
         } else {
           const isTraining = saved.phase === "extract_training";
           const setBusy = isTraining ? setExtractionBusy : setTestExtractionBusy;
           const setData = isTraining ? setTrainingDataX : setTestingDataX;
           setBusy(true);
-          pollProgress(
-            saved.job_id,
-            (tick: StatusPayload) => {
+          pollExtractJob({
+            jobId: saved.job_id,
+            signal: ctrl.signal,
+            onProgress: (tick: StatusPayload) => {
               setProgress(Math.max(0, Math.min(100, tick.progress ?? 0)));
               setProgressLabel(tick.stage || "");
               if (tick.done && tick.details?.status === "success") {
@@ -358,8 +243,7 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
                 setError(`${tx.extractFailed}: ${tick.error}`);
               }
             },
-            ctrl.signal,
-          ).finally(() => { setBusy(false); setActiveCtrl(null); });
+          }).finally(() => { setBusy(false); setActiveCtrl(null); });
         }
       })
       .catch(() => {
@@ -367,49 +251,8 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
       });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // --- Ollama health check on mount (with one retry after 5s) ---
-  useEffect(() => {
-    let cancelled = false;
-    const checkHealth = (retryOnFail: boolean) => {
-      fetchJson<{ ok: boolean; ollama: boolean }>(HEALTH_URL, { cache: "no-store" })
-        .then((data: { ok: boolean; ollama: boolean }) => {
-          if (!cancelled) setOllamaOk(data.ollama);
-        })
-        .catch(() => {
-          // Network error = backend not yet up; keep null (unknown) and retry once
-          if (!cancelled && retryOnFail) {
-            setTimeout(() => checkHealth(false), 5000);
-          }
-        });
-    };
-    checkHealth(true);
-    return () => { cancelled = true; };
-  }, []);
-
-  // --- Poll queue info while any phase is busy ---
   const anyBusy = isDiscovering || extractionBusy || trainingBusy || testExtractionBusy || predictBusy;
-  useEffect(() => {
-    if (!anyBusy) { setQueueBusy(false); setQueuedCount(0); return; }
-    let cancelled = false;
-    const poll = () => {
-      fetchJson<{ busy: boolean; queued: number }>(QUEUE_INFO_URL, {
-        cache: "no-store",
-        headers: sessionHeaders(),
-      })
-        .then((d: { busy: boolean; queued: number }) => {
-          if (!cancelled) { setQueueBusy(d.busy); setQueuedCount(d.queued); }
-        })
-        .catch(() => {
-          if (!cancelled) {
-            setQueueBusy(false);
-            setQueuedCount(0);
-          }
-        });
-    };
-    poll();
-    const id = setInterval(poll, 5000);
-    return () => { cancelled = true; clearInterval(id); };
-  }, [anyBusy]);
+  const { ollamaOk, queueBusy, queuedCount, recheckOllama } = usePipelineRuntime(anyBusy);
 
   // --- Persistence (lightweight — only metadata, no large datasets) ---
   function persist() {
@@ -431,13 +274,15 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
       setActiveCtrl(null);
     }
     clearActiveJob();
-    setExtractionBusy(false);
-    setTrainingBusy(false);
-    setTestExtractionBusy(false);
-    setPredictBusy(false);
-    setIsDiscovering(false);
-    setProgress(0);
-    setProgressLabel("");
+    clearActivePipelineRuntime({
+      setExtractionBusy,
+      setTrainingBusy,
+      setTestExtractionBusy,
+      setPredictBusy,
+      setIsDiscovering,
+      setProgress,
+      setProgressLabel,
+    });
   }
 
   /* ---------------------------------------------------------------- */
@@ -445,14 +290,14 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
   /* ---------------------------------------------------------------- */
   function updateTargetVariable(nextValue: string) {
     if (nextValue !== targetVariable && (featureSpec || trainingDataX || trainResult || testingDataX || predictions)) {
-      invalidateFromPhase(1);
+      invalidatePipelineFromPhase(pipelineStateSetters, 1);
     }
     setTargetVariable(nextValue);
   }
 
   function updateTargetMode(nextMode: TargetMode) {
     if (nextMode !== targetMode && (featureSpec || trainingDataX || trainResult || testingDataX || predictions)) {
-      invalidateFromPhase(1);
+      invalidatePipelineFromPhase(pipelineStateSetters, 1);
     }
     setTargetMode(nextMode);
   }
@@ -460,51 +305,45 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
   function updateFeatureSpec(nextSpec: FeatureSpec) {
     const changed = JSON.stringify(featureSpec ?? {}) !== JSON.stringify(nextSpec ?? {});
     if (changed && (trainingDataX || trainResult || testingDataX || predictions)) {
-      invalidateFromPhase(2);
+      invalidatePipelineFromPhase(pipelineStateSetters, 2);
     }
     setFeatureSpec(nextSpec);
   }
 
   async function handleDiscover(sampleFiles: File[], labelsFile?: File | null) {
-    invalidateFromPhase(1);
+    invalidatePipelineFromPhase(pipelineStateSetters, 1);
     setIsDiscovering(true);
     setError(null);
     setProgress(0);
     setProgressLabel("");
 
-    const formData = new FormData();
-    for (const f of sampleFiles) formData.append("files", f, f.name);
-    formData.append("target_variable", targetVariable);
-    formData.append("target_mode", targetMode);
-    formData.append("model", modelProvider);
-    if (labelsFile) formData.append("labels_file", labelsFile);
-
     try {
-      const res = await fetch(DISCOVER_URL, { method: "POST", body: formData, headers: sessionHeaders() });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || tx.featureDiscoveryFailed);
-      }
-      const data = await res.json();
+      const data = await submitDiscoveryRequest({
+        sampleFiles,
+        labelsFile,
+        targetVariable,
+        targetMode,
+        modelProvider,
+      });
       if (data.job_id) {
         saveActiveJob({ job_id: data.job_id, phase: "discover" });
         const ctrl = new AbortController();
         setActiveCtrl(ctrl);
-        await pollProgress(
-          data.job_id,
-          (s) => {
+        await pollDiscoveryJob({
+          jobId: data.job_id,
+          signal: ctrl.signal,
+          onProgress: (s) => {
             setProgress(Math.max(0, Math.min(100, s.progress ?? 0)));
             setProgressLabel(s.stage || "");
             if (s.done && !s.error) {
               clearActiveJob();
               if (s.suggested_features) {
                 setFeatureSpec(s.suggested_features);
-                savePersisted({
-                  trainingStep: 2,
-                  targetVariable: targetVariableRef.current,
-                  targetMode: targetModeRef.current,
+                persistDiscoveryOutcome({
                   featureSpec: s.suggested_features,
-                  modelProvider: modelProviderRef.current,
+                  targetVariableRef,
+                  targetModeRef,
+                  modelProviderRef,
                 });
               }
             }
@@ -513,8 +352,7 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
               setError(tx.phase1Failed + ": " + s.error);
             }
           },
-          ctrl.signal,
-        );
+        });
       } else if (data.suggested_features) {
         setFeatureSpec(data.suggested_features);
       }
@@ -529,28 +367,34 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
   /* ---------------------------------------------------------------- */
   /*  Generic extraction (Phase 2 + 4)                                 */
   /* ---------------------------------------------------------------- */
-  async function _runExtract(config: ExtractConfig) {
+  async function _runExtract(config: {
+    datasetType: "training" | "testing";
+    phaseLabel: string;
+    zipFile?: File;
+    labelsFile?: File | null;
+    zipPath?: string;
+    labelsPath?: string;
+  }) {
     const isTraining = config.datasetType === "training";
     const setBusy = isTraining ? setExtractionBusy : setTestExtractionBusy;
     const setData = isTraining ? setTrainingDataX : setTestingDataX;
 
-    invalidateFromPhase(isTraining ? 2 : 4);
+    invalidatePipelineFromPhase(pipelineStateSetters, isTraining ? 2 : 4);
     setBusy(true);
     setProgress(0);
     setProgressLabel(tx.startingExtraction);
     setError(null);
 
     try {
-      const res = await fetch(config.url, {
-        method: "POST",
-        body: config.body,
-        headers: { ...sessionHeaders(), ...(config.headers || {}) },
+      const data = await submitExtractRequest({
+        datasetType: config.datasetType,
+        modelProvider,
+        featureSpec,
+        zipFile: config.zipFile,
+        labelsFile: config.labelsFile,
+        zipPath: config.zipPath,
+        labelsPath: config.labelsPath,
       });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error(errData.error || tx.extractFailed);
-      }
-      const data = await res.json();
 
       if (data.job_id) {
         saveActiveJob({
@@ -559,9 +403,10 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
         });
         const ctrl = new AbortController();
         setActiveCtrl(ctrl);
-        await pollProgress(
-          data.job_id,
-          (s: StatusPayload) => {
+        await pollExtractJob({
+          jobId: data.job_id,
+          signal: ctrl.signal,
+          onProgress: (s: StatusPayload) => {
             setProgress(Math.max(0, Math.min(100, s.progress ?? 0)));
             setProgressLabel(s.stage || "");
             if (s.done && s.details?.status === "success") {
@@ -574,8 +419,7 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
               setError(`${config.phaseLabel} ${tx.phaseFailed}: ${s.error}`);
             }
           },
-          ctrl.signal,
-        );
+        });
       }
     } catch (e: unknown) {
       setError(`${config.phaseLabel} ${tx.phaseFailed}: ${e instanceof Error ? e.message : String(e)}`);
@@ -586,67 +430,39 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
 
   /* Phase 2: upload */
   async function handleExtractTraining(zipFile: File, labelsFile?: File | null) {
-    const formData = new FormData();
-    formData.append("file", zipFile);
-    formData.append("model", modelProvider);
-    formData.append("feature_spec", JSON.stringify(featureSpec));
-    formData.append("dataset_type", "training");
-    if (labelsFile) formData.append("labels_file", labelsFile);
-
     return _runExtract({
-      url: EXTRACT_URL,
-      body: formData,
       datasetType: "training",
       phaseLabel: tx.phase2,
+      zipFile,
+      labelsFile,
     });
   }
 
   /* Phase 2: server path */
   async function handleExtractTrainingLocal(zipPath: string, labelsPath?: string) {
     return _runExtract({
-      url: EXTRACT_LOCAL_URL,
-      body: JSON.stringify({
-        zip_path: zipPath,
-        labels_path: labelsPath || undefined,
-        model: modelProvider,
-        feature_spec: featureSpec,
-        dataset_type: "training",
-      }),
-      headers: { "Content-Type": "application/json" },
       datasetType: "training",
       phaseLabel: tx.phase2,
+      zipPath,
+      labelsPath,
     });
   }
 
   /* Phase 4: upload */
   async function handleExtractTesting(zipFile: File) {
-    const formData = new FormData();
-    formData.append("file", zipFile);
-    formData.append("model", modelProvider);
-    formData.append("feature_spec", JSON.stringify(featureSpec));
-    formData.append("dataset_type", "testing");
-
     return _runExtract({
-      url: EXTRACT_URL,
-      body: formData,
       datasetType: "testing",
       phaseLabel: tx.phase4,
+      zipFile,
     });
   }
 
   /* Phase 4: server path */
   async function handleExtractTestingLocal(zipPath: string) {
     return _runExtract({
-      url: EXTRACT_LOCAL_URL,
-      body: JSON.stringify({
-        zip_path: zipPath,
-        model: modelProvider,
-        feature_spec: featureSpec,
-        dataset_type: "testing",
-      }),
-      headers: { "Content-Type": "application/json" },
       datasetType: "testing",
       phaseLabel: tx.phase4,
+      zipPath,
     });
   }
 
@@ -666,20 +482,15 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
     setActiveCtrl(ctrl);
 
     try {
-      const res = await fetch(TRAIN_URL, {
-        method: "POST",
-        headers: { ...sessionHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ target_column: targetColumn, target_mode: targetMode }),
+      const { job_id } = await submitTrainRequest({
+        targetColumn,
+        targetMode,
         signal: ctrl.signal,
       });
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error((errData as { error?: string }).error || tx.trainingFailed);
-      }
-      const { job_id } = await res.json() as { job_id: string };
-      await pollProgress(
-        job_id,
-        (tick) => {
+      await pollTrainJob({
+        jobId: job_id,
+        signal: ctrl.signal,
+        onProgress: (tick) => {
           setProgress(Math.max(0, Math.min(100, tick.progress ?? 0)));
           setProgressLabel(tick.stage || tx.trainingInProgress);
           if (tick.done && !tick.error) {
@@ -689,8 +500,7 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
             setError(tx.phase3Failed + ": " + tick.error);
           }
         },
-        ctrl.signal,
-      );
+      });
     } catch (e: unknown) {
       if (!ctrl.signal.aborted) {
         setError(tx.phase3Failed + ": " + (e instanceof Error ? e.message : String(e)));
@@ -716,22 +526,14 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
     setActiveCtrl(ctrl);
 
     try {
-      let res: Response;
-      if (labelsFile) {
-        const formData = new FormData();
-        formData.append("labels_file", labelsFile);
-        res = await fetch(PREDICT_URL, { method: "POST", body: formData, headers: sessionHeaders(), signal: ctrl.signal });
-      } else {
-        res = await fetch(PREDICT_URL, { method: "POST", headers: sessionHeaders(), signal: ctrl.signal });
-      }
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({}));
-        throw new Error((errData as { error?: string }).error || tx.predictionFailed);
-      }
-      const { job_id } = await res.json() as { job_id: string };
-      await pollProgress(
-        job_id,
-        (tick) => {
+      const { job_id } = await submitPredictRequest({
+        labelsFile,
+        signal: ctrl.signal,
+      });
+      await pollPredictJob({
+        jobId: job_id,
+        signal: ctrl.signal,
+        onProgress: (tick) => {
           setProgress(Math.max(0, Math.min(100, tick.progress ?? 0)));
           setProgressLabel(tick.stage || tx.predictingInProgress);
           if (tick.done && !tick.error) {
@@ -743,8 +545,7 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
             setError(tx.phase5Failed + ": " + tick.error);
           }
         },
-        ctrl.signal,
-      );
+      });
     } catch (e: unknown) {
       if (!ctrl.signal.aborted) {
         setError(tx.phase5Failed + ": " + (e instanceof Error ? e.message : String(e)));
@@ -759,29 +560,8 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
   /*  Reset                                                            */
   /* ---------------------------------------------------------------- */
   function resetPipeline() {
-    setTrainingStep(1);
-    setTargetVariable("movie memorability score");
-    setTargetMode("regression");
-    setFeatureSpec(null);
-    setIsDiscovering(false);
-    setExtractionBusy(false);
-    setTrainingDataX(null);
-    setDatasetYColumns(null);
-    setTrainingBusy(false);
-    setTrainResult(null);
-    setTestExtractionBusy(false);
-    setTestingDataX(null);
-    setPredictBusy(false);
-    setPredictions(null);
-    setPredictionMetrics(null);
-    setProgress(0);
-    setProgressLabel("");
-    setError(null);
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-    } catch {
-      /* */
-    }
+    resetPipelineLocalState(pipelineRuntimeSetters);
+    clearPersisted();
     clearActiveJob();
     fetch(RESET_URL, { method: "POST", headers: sessionHeaders() }).catch(() => {});
   }
@@ -827,10 +607,6 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
     ollamaOk,
     queueBusy,
     queuedCount,
-    recheckOllama: () => {
-      fetchJson<{ ok: boolean; ollama: boolean }>(HEALTH_URL, { cache: "no-store" })
-        .then((data: { ok: boolean; ollama: boolean }) => setOllamaOk(data.ollama))
-        .catch(() => { /* keep current state */ });
-    },
+    recheckOllama,
   };
 }

@@ -5,7 +5,7 @@ import {
   downloadFeatureSpec,
   downloadRulesModel,
   downloadTrainingDataCSV,
-} from "@/lib/helpers";
+} from "@/lib/pipelineDownloads";
 import { cls } from "./shared";
 import type { TrainingTranslations } from "./translations";
 

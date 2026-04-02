@@ -623,29 +623,65 @@ React SPA s TypeScript, build systém Vite, styling TailwindCSS.
 
 ```
 frontend/src/
-├── App.tsx                         # Hlavní komponenta, routing train/predict mode
+├── App.tsx                         # Root shell aplikace, skládá header + TrainingView
 ├── hooks/
-│   ├── useTrainingPipeline.ts      # Custom hook — veškerý pipeline stav + handlery
-│   └── usePollProgress.ts          # Generic polling hook pro async joby
+│   ├── useTrainingPipeline.ts      # Hlavní orchestrace 5fázového pipeline stavu
+│   ├── usePollProgress.ts          # Generic polling helper pro async joby
+│   ├── usePipelineRuntime.ts       # Health check + queue polling
+│   ├── trainingPipelineRequests.ts # API requesty a job polling wrappery
+│   ├── trainingPipelineState.ts    # Invalidation / reset lokálního pipeline stavu
+│   ├── trainingPipelineRecovery.ts # Restore state + persist helpery po reloadu
+│   ├── trainingPipelineUtils.ts    # localStorage persistence + textové konstanty
+│   ├── useAppUi.ts                 # Theme / jazyk / guide preference
+│   └── useSessionTransfer.ts       # Export / import relace
 ├── components/
-│   ├── TrainingView.tsx            # 5-krokový wizard
-│   ├── PredictView.tsx             # Prediction-only mode
-│   └── ...                         # UI komponenty
+│   ├── AppHeader.tsx               # Horní lišta aplikace a globální akce
+│   ├── TrainingView.tsx            # Tenký wrapper nad 5 fázemi wizardu
+│   ├── training-view/
+│   │   ├── DiscoveryPhasePanel.tsx
+│   │   ├── TrainingExtractionPhasePanel.tsx
+│   │   ├── TrainingPhasePanel.tsx
+│   │   ├── TestingExtractionPhasePanel.tsx
+│   │   ├── PredictionPhasePanel.tsx
+│   │   ├── PredictionResults.tsx
+│   │   ├── TrainingResultsCard.tsx
+│   │   ├── FeatureSpecBox.tsx
+│   │   ├── DatasetTable.tsx
+│   │   ├── FileDropZone.tsx
+│   │   ├── ProgressBar.tsx
+│   │   ├── QueueBusyBanner.tsx
+│   │   ├── OllamaWarning.tsx
+│   │   ├── progressHooks.ts
+│   │   ├── errorHelpers.ts
+│   │   ├── style.ts
+│   │   ├── translations.ts
+│   │   └── shared.tsx             # Barrel re-export nad training-view moduly
+│   ├── Guide.tsx                  # Úvodní nápověda / onboarding
+│   └── ui/                        # Reusable UI primitives
 └── lib/
-    └── api.ts                      # API URL konstanty, typy, style mappings
+    ├── api.ts                      # API URL konstanty, typy, session header helper
+    ├── helpers.tsx                 # Obecné frontend utility (typy souborů, transcripty…)
+    └── pipelineDownloads.ts        # Export/download funkcionalita pipeline artefaktů
 ```
 
 ### 3.2 Custom Hook — `useTrainingPipeline`
 
 **Soubor:** `frontend/src/hooks/useTrainingPipeline.ts`
 
-Zapouzdřuje veškerý stav a logiku 5-fázového pipeline:
+Hook po refaktoru funguje jako tenká orchestrace nad menšími specializovanými moduly:
 
-- **15+ useState hooks** pro fáze 1-5 (busy flags, data, výsledky)
-- **7 handler funkcí** (discover, extract training/testing, train, predict, cancel, reset)
-- **Generic `_runExtract(config)`** — eliminuje duplikaci 4 téměř identických extraction handlerů
-- **localStorage persistence** — ukládá jen metadata (trainingStep, targetVariable, featureSpec, modelProvider), nikoliv velká data
-- **Phase 3 + 5 polling** — trénink i predikce používají `job_id` + `pollProgress(...)` (už nejsou synchronní)
+- drží reaktivní stav všech 5 fází (`useState` pro busy flagy, data, výsledky, progress)
+- deleguje API requesty a polling do `trainingPipelineRequests.ts`
+- deleguje health/queue runtime logiku do `usePipelineRuntime.ts`
+- deleguje reset/invalidation do `trainingPipelineState.ts`
+- deleguje restore/persist helpery do `trainingPipelineRecovery.ts` a `trainingPipelineUtils.ts`
+- používá `localStorage` jen pro lightweight metadata (step, target variable, mode, feature spec, model provider), nikoli pro velké datasety
+
+Tím je logika lépe testovatelná a odděluje:
+- stavový orchestration layer
+- network/request layer
+- persistence/recovery layer
+- runtime monitoring layer
 
 #### Předvýběr cílového sloupce
 
@@ -663,7 +699,37 @@ Polluje `GET /status/{jobId}` každých N ms, volá callback s aktuálním stave
 
 Při síťové chybě používá exponenciální backoff (od cca 600 ms do 5 s) a po úspěšném pollu delay resetuje.
 
-### 3.4 API komunikace a session identifikace
+Vyšší vrstvy (`trainingPipelineRequests.ts`) tento low-level polling obalují do pojmenovaných funkcí:
+- `pollDiscoveryJob(...)`
+- `pollExtractJob(...)`
+- `pollTrainJob(...)`
+- `pollPredictJob(...)`
+
+Tím frontend nepracuje přímo s raw polling helperem v každé fázi zvlášť.
+
+### 3.4 Frontend wizard komponenty
+
+Původní velký `TrainingView.tsx` byl rozdělen do menších komponent podle odpovědnosti:
+
+- `TrainingView.tsx`:
+  - phase stepper
+  - error banner
+  - queue banner
+  - model selector
+  - předávání props do jednotlivých phase panelů
+- `DiscoveryPhasePanel.tsx` až `PredictionPhasePanel.tsx`:
+  - každý soubor odpovídá jedné fázi wizardu
+- `PredictionResults.tsx` a `TrainingResultsCard.tsx`:
+  - výsledkové panely oddělené od vstupních formulářů
+- malé UI stavebnice (`FeatureSpecBox`, `DatasetTable`, `FileDropZone`, `ProgressBar`) jsou samostatné moduly
+
+Refaktor odstranil původní monolitický render strom a zlepšil:
+- čitelnost
+- možnost izolovaných úprav jednotlivých fází
+- opětovné použití komponent
+- orientaci v UI logice během dalšího vývoje
+
+### 3.5 API komunikace a session identifikace
 
 Vite dev server proxyuje API requesty na backend:
 ```
