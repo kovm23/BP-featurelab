@@ -1,43 +1,45 @@
-import React, { useState, useEffect, useRef } from "react";
-import { Button } from "@/components/ui/button";
+import React, { useEffect, useRef, useState } from "react";
 import {
-  UploadCloud,
-  Lightbulb,
-  PlayCircle,
-  Loader2,
-  Cpu,
-  Download,
+  AlertTriangle,
   CheckCircle2,
   ChevronRight,
-  AlertTriangle,
+  Cpu,
+  Download,
+  Lightbulb,
+  Loader2,
+  PlayCircle,
+  UploadCloud,
   X,
-  Plus,
-  Trash2,
-  Pencil,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { AVAILABLE_MODELS } from "@/lib/api";
 import type {
   FeatureSpec,
-  FeatureSpecValue,
-  TrainResult,
   PredictionItem,
   PredictionMetrics,
+  TrainResult,
 } from "@/lib/api";
-import { AVAILABLE_MODELS } from "@/lib/api";
+import { downloadFeatureSpec, downloadTrainingDataCSV } from "@/lib/helpers";
+import { PredictionResults } from "./training-view/PredictionResults";
 import {
-  downloadFeatureSpec,
-  downloadTrainingDataCSV,
-  downloadRulesModel,
-  downloadExperimentZip,
-} from "@/lib/helpers";
-
-/* ------------------------------------------------------------------ */
-/*  Typy                                                               */
-/* ------------------------------------------------------------------ */
+  cls,
+  DatasetTable,
+  enrichError,
+  FeatureSpecBox,
+  FileDropZone,
+  formatDurationShort,
+  ProgressBar,
+  QueueBusyBanner,
+  useElapsedTimer,
+  useEstimatedRemaining,
+  useProgressStall,
+} from "./training-view/shared";
+import { TrainingResultsCard } from "./training-view/TrainingResultsCard";
+import { getTrainingTranslations } from "./training-view/translations";
 
 export interface TrainingViewProps {
   deluxe: boolean;
   uiLanguage?: "cs" | "en";
-  /* Phase 1 */
   onDiscoverStart: (files: File[], labelsFile?: File | null) => void;
   isDiscovering: boolean;
   targetVariable: string;
@@ -46,27 +48,22 @@ export interface TrainingViewProps {
   setTargetMode: (v: "regression" | "classification") => void;
   featureSpec: FeatureSpec | null;
   setFeatureSpec: (spec: FeatureSpec) => void;
-  /* Phase 2 */
   onExtractTraining: (file: File, labelsFile?: File | null) => void;
   onExtractTrainingLocal: (zipPath: string, labelsPath?: string) => void;
   isExtracting: boolean;
   trainingDataX: Record<string, unknown>[] | null;
   datasetYColumns: string[] | null;
-  /* Phase 3 */
   onTrain: (targetColumn: string) => void;
   isTraining: boolean;
   trainResult: TrainResult | null;
-  /* Phase 4 */
   onExtractTesting: (file: File) => void;
   onExtractTestingLocal: (zipPath: string) => void;
   isExtractingTest: boolean;
   testingDataX: Record<string, unknown>[] | null;
-  /* Phase 5 */
   onPredict: (labelsFile?: File | null) => void;
   isPredicting: boolean;
   predictions: PredictionItem[] | null;
   predictionMetrics: PredictionMetrics | null;
-  /* Common */
   modelProvider: string;
   setModelProvider: (v: string) => void;
   step: number;
@@ -82,645 +79,105 @@ export interface TrainingViewProps {
   queuedCount?: number;
 }
 
-/* ------------------------------------------------------------------ */
-/*  Helpers                                                            */
-/* ------------------------------------------------------------------ */
-
-function cls(deluxe: boolean, light: string, dark: string) {
-  return deluxe ? dark : light;
-}
-
-function isClassificationMetrics(metrics: PredictionMetrics | null): boolean {
-  if (!metrics) return false;
-  return metrics.mode === "classification" || typeof metrics.accuracy === "number";
-}
-
-/* ------------------------------------------------------------------ */
-/*  Reusable: drop-zone + file picker                                  */
-/* ------------------------------------------------------------------ */
-
-function FileDropZone({
+function PhaseStepper({
   deluxe,
-  uiLanguage = "cs",
-  file,
-  onFile,
-  accept,
-  inputId,
-  label,
-  pickLabel,
-  selectedLabel,
-}: {
-  deluxe: boolean;
-  uiLanguage?: "cs" | "en";
-  file: File | null;
-  onFile: (f: File) => void;
-  accept: string;
-  inputId: string;
-  label: string;
-  pickLabel: string;
-  selectedLabel?: string;
-}) {
-  const selectedText = selectedLabel || (uiLanguage === "en" ? "Selected" : "Vybráno");
-  return (
-    <div
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={(e) => {
-        e.preventDefault();
-        if (e.dataTransfer.files?.[0]) onFile(e.dataTransfer.files[0]);
-      }}
-      className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors ${cls(
-        deluxe,
-        "border-slate-200 hover:border-blue-400/50 bg-slate-50/50",
-        "border-slate-700 hover:border-blue-500/50 bg-slate-900/50"
-      )}`}
-    >
-      <UploadCloud
-        className={`h-8 w-8 mx-auto mb-3 ${cls(
-          deluxe,
-          "text-slate-400",
-          "text-slate-500"
-        )}`}
-      />
-      <p
-        className={`text-sm font-medium mb-1 ${cls(
-          deluxe,
-          "text-slate-700",
-          "text-slate-300"
-        )}`}
-      >
-        {label}
-      </p>
-      <input
-        type="file"
-        id={inputId}
-        className="hidden"
-        onChange={(e) => {
-          if (e.target.files?.[0]) onFile(e.target.files[0]);
-        }}
-        accept={accept}
-      />
-      <label
-        htmlFor={inputId}
-        className="cursor-pointer text-blue-500 hover:text-blue-600 text-sm font-medium"
-      >
-        {pickLabel}
-      </label>
-      {file && (
-        <p className="mt-2 text-xs text-green-500 font-medium truncate">
-          {selectedText}: {file.name}
-        </p>
-      )}
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Reusable: progress bar                                             */
-/* ------------------------------------------------------------------ */
-
-function ProgressBar({
-  deluxe,
-  progress,
-  label,
-  etaText,
-}: {
-  deluxe: boolean;
-  progress: number;
-  label: string;
-  etaText?: string | null;
-}) {
-  const inProgress = progress > 0 && progress < 100;
-  const isDone = progress >= 100;
-  const fillColor = isDone
-    ? "bg-emerald-500"
-    : "bg-blue-500";
-
-  return (
-    <div className="mt-6 space-y-1.5">
-      <div className="flex justify-between items-center text-xs font-medium gap-2">
-        <span
-          className={`truncate ${cls(deluxe, "text-slate-600", "text-slate-300")}`}
-          title={label}
-        >
-          {label}
-        </span>
-        <span className={`shrink-0 tabular-nums ${cls(deluxe, "text-slate-500", "text-slate-400")}`}>
-          {progress}%
-        </span>
-      </div>
-      <div
-        className={`h-3 rounded-full overflow-hidden ${cls(
-          deluxe,
-          "bg-slate-100",
-          "bg-slate-800/60"
-        )}`}
-      >
-        <div
-          className={`h-full rounded-full transition-all duration-700 relative overflow-hidden ${fillColor}`}
-          style={{ width: `${Math.max(inProgress ? 3 : 0, progress)}%` }}
-        >
-          {inProgress && (
-            <div
-              className="absolute inset-y-0 w-1/3 bg-gradient-to-r from-transparent via-white/30 to-transparent"
-              style={{ animation: "progress-sweep 1.8s ease-in-out infinite" }}
-            />
-          )}
-        </div>
-      </div>
-      {etaText && (
-        <p className={`text-[11px] ${cls(deluxe, "text-slate-500", "text-slate-400")}`}>
-          {etaText}
-        </p>
-      )}
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Reusable: feature spec editor                                      */
-/* ------------------------------------------------------------------ */
-
-function FeatureSpecBox({
-  deluxe,
-  uiLanguage = "cs",
+  step,
+  phaseLabels,
+  onGoToStep,
+  anyBusy,
   featureSpec,
-  targetVariable,
-  editable = false,
-  onUpdate,
+  trainingDataX,
+  trainResult,
+  testingDataX,
+  predictions,
 }: {
   deluxe: boolean;
-  uiLanguage?: "cs" | "en";
-  featureSpec: FeatureSpec;
-  targetVariable: string;
-  editable?: boolean;
-  onUpdate?: (spec: FeatureSpec) => void;
+  step: number;
+  phaseLabels: Array<{ num: number; short: string }>;
+  onGoToStep?: (step: number) => void;
+  anyBusy: boolean;
+  featureSpec: FeatureSpec | null;
+  trainingDataX: Record<string, unknown>[] | null;
+  trainResult: TrainResult | null;
+  testingDataX: Record<string, unknown>[] | null;
+  predictions: PredictionItem[] | null;
 }) {
-  const [editingKey, setEditingKey] = useState<string | null>(null);
-  const [editName, setEditName] = useState("");
-  const [editMode, setEditMode] = useState<"range" | "categories">("range");
-  const [editMin, setEditMin] = useState(0);
-  const [editMax, setEditMax] = useState(10);
-  const [editCategories, setEditCategories] = useState("");
-  const [addingNew, setAddingNew] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newMode, setNewMode] = useState<"range" | "categories">("range");
-  const [newMin, setNewMin] = useState(0);
-  const [newMax, setNewMax] = useState(10);
-  const [newCategories, setNewCategories] = useState("");
-
-  const tx = uiLanguage === "en"
-    ? {
-      title: "Feature Definition Spec",
-      target: "Target",
-      editable: "Editable",
-      range: "Range",
-      categories: "Categories",
-      featureName: "Feature name",
-      newFeatureName: "New feature name (e.g. scene_brightness)",
-      save: "Save",
-      cancel: "Cancel",
-      edit: "Edit",
-      remove: "Remove",
-      addFeature: "Add feature",
-      add: "Add",
-      rangeSuffix: "range",
-    }
-    : {
-      title: "Feature Definition Spec",
-      target: "Cíl",
-      editable: "Editovatelné",
-      range: "Rozsah",
-      categories: "Kategorie",
-      featureName: "Název feature",
-      newFeatureName: "Název nové feature (např. scene_brightness)",
-      save: "Uložit",
-      cancel: "Zrušit",
-      edit: "Upravit",
-      remove: "Odebrat",
-      addFeature: "Přidat feature",
-      add: "Přidat",
-      rangeSuffix: "rozsah",
-    };
-
-  const formatSpecValue = (value: FeatureSpecValue | string): string => {
-    if (Array.isArray(value)) {
-      if (value.length === 2 && value.every((v) => typeof v === "number")) {
-        return `${value[0]}–${value[1]} (${tx.rangeSuffix})`;
-      }
-      return `[${value.map((v) => JSON.stringify(v)).join(", ")}]`;
-    }
-    return String(value);
-  };
-
-  const parseEditorState = (value: FeatureSpecValue | string) => {
-    if (Array.isArray(value)) {
-      if (value.length === 2 && value.every((v) => typeof v === "number")) {
-        setEditMode("range");
-        setEditMin(Number(value[0]));
-        setEditMax(Number(value[1]));
-        return;
-      }
-      if (value.every((v) => typeof v === "string")) {
-        setEditMode("categories");
-        setEditCategories(value.join(", "));
-        return;
-      }
-    }
-    setEditMode("categories");
-    setEditCategories(String(value));
-  };
-
-  const buildEditedValue = (): FeatureSpecValue => {
-    if (editMode === "range") {
-      return [Number(editMin), Number(editMax)];
-    }
-    return editCategories
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-  };
-
-  const buildNewValue = (): FeatureSpecValue => {
-    if (newMode === "range") {
-      return [Number(newMin), Number(newMax)];
-    }
-    return newCategories
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-  };
-
-  const startEdit = (key: string, value: FeatureSpecValue) => {
-    setEditingKey(key);
-    setEditName(key);
-    parseEditorState(value);
-  };
-
-  const saveEdit = () => {
-    if (!editingKey || !editName.trim() || !onUpdate) return;
-    const updated = { ...featureSpec };
-    if (editName !== editingKey) delete updated[editingKey];
-    updated[editName.trim()] = buildEditedValue();
-    onUpdate(updated);
-    setEditingKey(null);
-  };
-
-  const removeFeature = (key: string) => {
-    if (!onUpdate) return;
-    const updated = { ...featureSpec };
-    delete updated[key];
-    onUpdate(updated);
-  };
-
-  const addFeature = () => {
-    if (!newName.trim() || !onUpdate) return;
-    onUpdate({ ...featureSpec, [newName.trim()]: buildNewValue() });
-    setNewName("");
-    setNewMode("range");
-    setNewMin(0);
-    setNewMax(10);
-    setNewCategories("");
-    setAddingNew(false);
-  };
-
   return (
-    <div
-      className={`p-4 rounded-lg border ${cls(
-        deluxe,
-        "bg-blue-50 border-blue-100",
-        "bg-slate-900 border-slate-700"
-      )}`}
-    >
-      <div className="flex items-center justify-between mb-2">
-        <h3
-          className={`text-sm font-bold ${cls(
-            deluxe,
-            "text-blue-900",
-            "text-white"
-          )}`}
-        >
-          {tx.title} ({tx.target}: {targetVariable}):
-        </h3>
-        {editable && (
-          <span className={`text-[10px] px-1.5 py-0.5 rounded ${cls(deluxe, "bg-amber-100 text-amber-700", "bg-amber-900/40 text-amber-400")}`}>
-            {tx.editable}
-          </span>
-        )}
-      </div>
-      <ul
-        className={`text-xs space-y-1.5 ${cls(
-          deluxe,
-          "text-slate-700",
-          "text-slate-300"
-        )}`}
-      >
-        {Object.entries(featureSpec).map(([key, desc]) =>
-          editable && editingKey === key ? (
-            <li key={key} className="flex flex-col gap-1 p-2 rounded bg-black/5">
-              <input
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                className={`text-xs font-mono px-1.5 py-0.5 rounded border outline-none ${cls(deluxe, "bg-white border-slate-300", "bg-slate-800 border-slate-600 text-white")}`}
-                placeholder={tx.featureName}
-              />
-              <div className="flex gap-1 text-[10px]">
-                <button type="button" onClick={() => setEditMode("range")} className={`px-1.5 py-0.5 rounded ${editMode === "range" ? "bg-blue-500 text-white" : "bg-black/10"}`}>{tx.range}</button>
-                <button type="button" onClick={() => setEditMode("categories")} className={`px-1.5 py-0.5 rounded ${editMode === "categories" ? "bg-blue-500 text-white" : "bg-black/10"}`}>{tx.categories}</button>
-              </div>
-              {editMode === "range" && (
-                <div className="grid grid-cols-2 gap-1">
-                  <input type="number" value={editMin} onChange={(e) => setEditMin(Number(e.target.value))} className={`text-xs px-1.5 py-0.5 rounded border outline-none ${cls(deluxe, "bg-white border-slate-300", "bg-slate-800 border-slate-600 text-white")}`} placeholder="min" />
-                  <input type="number" value={editMax} onChange={(e) => setEditMax(Number(e.target.value))} className={`text-xs px-1.5 py-0.5 rounded border outline-none ${cls(deluxe, "bg-white border-slate-300", "bg-slate-800 border-slate-600 text-white")}`} placeholder="max" />
-                </div>
-              )}
-              {editMode === "categories" && (
-                <input
-                  value={editCategories}
-                  onChange={(e) => setEditCategories(e.target.value)}
-                  className={`text-xs px-1.5 py-0.5 rounded border outline-none ${cls(deluxe, "bg-white border-slate-300", "bg-slate-800 border-slate-600 text-white")}`}
-                  placeholder="cat_a, cat_b, cat_c"
-                />
-              )}
-              <div className="flex gap-1">
-                <button onClick={saveEdit} className="text-[10px] px-1.5 py-0.5 rounded bg-green-500 text-white hover:bg-green-600">{tx.save}</button>
-                <button onClick={() => setEditingKey(null)} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-400 text-white hover:bg-slate-500">{tx.cancel}</button>
-              </div>
-            </li>
-          ) : (
-            <li key={key} className="flex items-center gap-2 group">
-              <span className="font-mono bg-black/10 px-1 rounded">{key}</span>:{" "}
-              <span className="flex-1">{formatSpecValue(desc)}</span>
-              {editable && (
-                <span className="flex gap-0.5 opacity-60 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                  <button onClick={() => startEdit(key, desc)} title={tx.edit} className="p-0.5 rounded hover:bg-black/10">
-                    <Pencil className="h-3 w-3" />
-                  </button>
-                  <button onClick={() => removeFeature(key)} title={tx.remove} className="p-0.5 rounded hover:bg-red-100 text-red-500">
-                    <Trash2 className="h-3 w-3" />
-                  </button>
-                </span>
-              )}
-            </li>
-          )
-        )}
-      </ul>
+    <div className="flex items-center justify-center gap-1 mb-6 flex-wrap">
+      {phaseLabels.map((phase, index) => {
+        const stepReachable =
+          phase.num === 1 ? true :
+          phase.num === 2 ? !!featureSpec :
+          phase.num === 3 ? !!trainingDataX :
+          phase.num === 4 ? !!trainResult :
+          phase.num === 5 ? !!testingDataX :
+          false;
+        const isCompleted =
+          phase.num === 1 ? !!featureSpec :
+          phase.num === 2 ? !!trainingDataX :
+          phase.num === 3 ? !!trainResult :
+          phase.num === 4 ? !!testingDataX :
+          phase.num === 5 ? !!predictions :
+          false;
+        const isCurrent = step === phase.num;
+        const canClick = stepReachable && !isCurrent && onGoToStep && !anyBusy;
 
-      {editable && (
-        <div className="mt-2">
-          {addingNew ? (
-            <div className="flex flex-col gap-1 p-2 rounded bg-black/5">
-              <input
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                className={`text-xs font-mono px-1.5 py-0.5 rounded border outline-none ${cls(deluxe, "bg-white border-slate-300", "bg-slate-800 border-slate-600 text-white")}`}
-                placeholder={tx.newFeatureName}
-              />
-              <div className="flex gap-1 text-[10px]">
-                <button type="button" onClick={() => setNewMode("range")} className={`px-1.5 py-0.5 rounded ${newMode === "range" ? "bg-blue-500 text-white" : "bg-black/10"}`}>{tx.range}</button>
-                <button type="button" onClick={() => setNewMode("categories")} className={`px-1.5 py-0.5 rounded ${newMode === "categories" ? "bg-blue-500 text-white" : "bg-black/10"}`}>{tx.categories}</button>
-              </div>
-              {newMode === "range" ? (
-                <div className="grid grid-cols-2 gap-1">
-                  <input type="number" value={newMin} onChange={(e) => setNewMin(Number(e.target.value))} className={`text-xs px-1.5 py-0.5 rounded border outline-none ${cls(deluxe, "bg-white border-slate-300", "bg-slate-800 border-slate-600 text-white")}`} placeholder="min" />
-                  <input type="number" value={newMax} onChange={(e) => setNewMax(Number(e.target.value))} className={`text-xs px-1.5 py-0.5 rounded border outline-none ${cls(deluxe, "bg-white border-slate-300", "bg-slate-800 border-slate-600 text-white")}`} placeholder="max" />
-                </div>
-              ) : (
-                <input
-                  value={newCategories}
-                  onChange={(e) => setNewCategories(e.target.value)}
-                  className={`text-xs px-1.5 py-0.5 rounded border outline-none ${cls(deluxe, "bg-white border-slate-300", "bg-slate-800 border-slate-600 text-white")}`}
-                  placeholder="cat_a, cat_b, cat_c"
-                />
-              )}
-              <div className="flex gap-1">
-                <button onClick={addFeature} disabled={!newName.trim()} className="text-[10px] px-1.5 py-0.5 rounded bg-green-500 text-white hover:bg-green-600 disabled:opacity-50">{tx.add}</button>
-                <button onClick={() => setAddingNew(false)} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-400 text-white hover:bg-slate-500">{tx.cancel}</button>
-              </div>
-            </div>
-          ) : (
+        return (
+          <React.Fragment key={phase.num}>
+            {index > 0 && (
+              <ChevronRight className={`h-3.5 w-3.5 ${cls(deluxe, "text-slate-300", "text-slate-600")}`} />
+            )}
             <button
-              onClick={() => setAddingNew(true)}
-              className={`flex items-center gap-1 text-[10px] mt-1 px-2 py-0.5 rounded hover:bg-black/10 ${cls(deluxe, "text-blue-600", "text-blue-400")}`}
+              type="button"
+              disabled={!canClick}
+              onClick={() => canClick && onGoToStep?.(phase.num)}
+              className={`text-xs px-2 py-1 rounded-full font-medium transition-colors ${
+                isCurrent
+                  ? "bg-blue-500 text-white"
+                  : isCompleted
+                    ? cls(
+                        deluxe,
+                        "bg-green-100 text-green-700 hover:bg-green-200",
+                        "bg-green-900/40 text-green-400 hover:bg-green-900/60"
+                      ) + (canClick ? " cursor-pointer" : "")
+                    : cls(deluxe, "bg-slate-100 text-slate-400", "bg-slate-700 text-slate-500")
+              } disabled:cursor-default`}
             >
-              <Plus className="h-3 w-3" /> {tx.addFeature}
+              {isCompleted && <CheckCircle2 className="inline h-3 w-3 mr-0.5 -mt-0.5" />}
+              {phase.num}. {phase.short}
             </button>
-          )}
-        </div>
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
+function OllamaWarning({
+  deluxe,
+  tr,
+  recheckOllama,
+}: {
+  deluxe: boolean;
+  tr: ReturnType<typeof getTrainingTranslations>;
+  recheckOllama?: () => void;
+}) {
+  return (
+    <div className={`flex items-start gap-2 p-3 rounded-lg border ${cls(deluxe, "bg-amber-50 border-amber-300 text-amber-800", "bg-amber-900/30 border-amber-700 text-amber-300")}`}>
+      <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+      <div className="flex-1">
+        <p className="text-sm">
+          {tr.ollamaUnavailable} <code className="font-mono bg-black/10 px-1 rounded">ollama serve</code>
+        </p>
+      </div>
+      {recheckOllama && (
+        <button onClick={recheckOllama} className="text-xs underline opacity-70 hover:opacity-100 whitespace-nowrap">
+          {tr.checkAgain}
+        </button>
       )}
     </div>
   );
 }
-
-/* ------------------------------------------------------------------ */
-/*  Reusable: dataset_X table preview                                  */
-/* ------------------------------------------------------------------ */
-
-function DatasetTable({
-  deluxe,
-  data,
-  title,
-}: {
-  deluxe: boolean;
-  data: Record<string, unknown>[];
-  title: string;
-}) {
-  if (!data.length) return null;
-  const cols = Object.keys(data[0]);
-
-  return (
-    <div className={`rounded-lg border overflow-hidden ${cls(deluxe, "border-slate-200", "border-slate-700")}`}>
-      <p className={`text-xs font-bold px-3 py-2 ${cls(deluxe, "bg-slate-100 text-slate-700", "bg-slate-800 text-slate-300")}`}>
-        {title} ({data.length} řádků)
-      </p>
-      <div className="overflow-x-auto max-h-60">
-        <table className="w-full text-xs">
-          <thead>
-            <tr className={cls(deluxe, "bg-slate-50", "bg-slate-900")}>
-              {cols.map((c) => (
-                <th key={c} className={`px-2 py-1 text-left font-mono whitespace-nowrap ${cls(deluxe, "text-slate-600", "text-slate-400")}`}>
-                  {c}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {data.map((row, i) => (
-              <tr key={i} className={i % 2 === 0 ? cls(deluxe, "bg-white", "bg-slate-800/50") : cls(deluxe, "bg-slate-50/50", "bg-slate-900/50")}>
-                {cols.map((c) => (
-                  <td key={c} className={`px-2 py-1 whitespace-nowrap ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>
-                    {String(row[c] ?? "")}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/*  Hook: elapsed time counter (for phases without progress bar)      */
-/* ------------------------------------------------------------------ */
-
-function useElapsedTimer(active: boolean) {
-  const [secs, setSecs] = useState(0);
-  useEffect(() => {
-    if (!active) { setSecs(0); return; }
-    setSecs(0);
-    const id = setInterval(() => setSecs((s) => s + 1), 1000);
-    return () => clearInterval(id);
-  }, [active]);
-  return secs;
-}
-
-function formatDurationShort(totalSeconds: number) {
-  const seconds = Math.max(0, Math.round(totalSeconds));
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
-
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  if (minutes > 0) return `${minutes}m ${secs}s`;
-  return `${secs}s`;
-}
-
-function useEstimatedRemaining(progress: number, active: boolean) {
-  const [etaSeconds, setEtaSeconds] = useState<number | null>(null);
-  const startedAtRef = useRef<number | null>(null);
-  const recentRawRef = useRef<number[]>([]);
-  const smoothedEtaRef = useRef<number | null>(null);
-
-  const reset = () => {
-    startedAtRef.current = null;
-    recentRawRef.current = [];
-    smoothedEtaRef.current = null;
-    setEtaSeconds(null);
-  };
-
-  useEffect(() => {
-    if (!active) {
-      reset();
-      return;
-    }
-
-    if (startedAtRef.current === null) {
-      startedAtRef.current = Date.now();
-      recentRawRef.current = [];
-      smoothedEtaRef.current = null;
-    }
-
-    const recalc = () => {
-      if (startedAtRef.current === null || progress < 8 || progress >= 99) {
-        setEtaSeconds(null);
-        return;
-      }
-
-      const elapsedSeconds = (Date.now() - startedAtRef.current) / 1000;
-      if (elapsedSeconds < 8) {
-        setEtaSeconds(null);
-        return;
-      }
-
-      const remaining = (elapsedSeconds * (100 - progress)) / progress;
-      if (!Number.isFinite(remaining) || remaining < 0) {
-        setEtaSeconds(null);
-        return;
-      }
-
-      recentRawRef.current = [...recentRawRef.current, remaining].slice(-5);
-      const sorted = [...recentRawRef.current].sort((a, b) => a - b);
-      const medianRaw = sorted[Math.floor(sorted.length / 2)];
-
-      if (smoothedEtaRef.current == null) {
-        smoothedEtaRef.current = medianRaw;
-      } else {
-        const previous = smoothedEtaRef.current;
-        const alpha = medianRaw < previous ? 0.45 : 0.18;
-        const blended = previous + alpha * (medianRaw - previous);
-        const maxUpwardStep = Math.max(8, previous * 0.12);
-        smoothedEtaRef.current = blended > previous
-          ? Math.min(blended, previous + maxUpwardStep)
-          : blended;
-      }
-
-      setEtaSeconds(Math.round(smoothedEtaRef.current));
-    };
-
-    recalc();
-    const intervalId = setInterval(recalc, 1000);
-    return () => clearInterval(intervalId);
-  }, [progress, active]);
-
-  return etaSeconds;
-}
-
-/* ------------------------------------------------------------------ */
-/*  Hook: stall detection — true when progress is stuck > threshold   */
-/* ------------------------------------------------------------------ */
-
-function useProgressStall(progress: number, active: boolean, thresholdMs = 90_000) {
-  const [stalled, setStalled] = useState(false);
-  const lastRef = useRef({ val: -1, time: 0 });
-
-  useEffect(() => {
-    if (!active) { setStalled(false); return; }
-    if (progress !== lastRef.current.val) {
-      lastRef.current = { val: progress, time: Date.now() };
-      setStalled(false);
-      return;
-    }
-    const id = setInterval(() => {
-      if (Date.now() - lastRef.current.time > thresholdMs) setStalled(true);
-    }, 5000);
-    return () => clearInterval(id);
-  }, [progress, active, thresholdMs]);
-
-  return stalled;
-}
-
-/* ------------------------------------------------------------------ */
-/*  Helper: enrich backend error with actionable hint                  */
-/* ------------------------------------------------------------------ */
-
-function enrichError(raw: string): { message: string; hint?: string } {
-  if (raw.includes("No data remained after joining")) {
-    return {
-      message: raw,
-      hint: 'Zkontroluj, že názvy souborů v CSV (první sloupec bez přípony) odpovídají názvům médií v ZIPu. Např. soubor "video.mp4" → řádek CSV musí mít hodnotu "video".',
-    };
-  }
-  if (raw.includes("Column '") && raw.includes("not found")) {
-    return {
-      message: raw,
-      hint: "Dostupné sloupce jsou vypsány v chybě výše — zkopíruj přesný název.",
-    };
-  }
-  if (raw.includes("ZIP contains no media files")) {
-    return {
-      message: raw,
-      hint: "ZIP musí obsahovat videa (.mp4, .avi, .mov, .mkv) nebo obrázky (.jpg, .png, .webp, .gif).",
-    };
-  }
-  if (raw.includes("Phase 2") && raw.includes("must be completed")) {
-    return { message: raw, hint: "Vrať se na Fázi 2 a dokonči extrakci trénovacích dat." };
-  }
-  if (raw.includes("Model is not trained")) {
-    return { message: raw, hint: "Nejprve dokonči Fázi 3 (Trénink)." };
-  }
-  if (raw.includes("Missing dataset_Y")) {
-    return {
-      message: raw,
-      hint: "CSV s labels musí být součástí ZIPu nebo ho nahraj samostatně přes checkbox níže.",
-    };
-  }
-  return { message: raw };
-}
-
-/* ================================================================== */
-/*  HLAVNÍ KOMPONENTA                                                  */
-/* ================================================================== */
 
 export function TrainingView({
   deluxe,
@@ -763,217 +220,7 @@ export function TrainingView({
   queueBusy,
   queuedCount,
 }: TrainingViewProps) {
-  const tr = uiLanguage === "en"
-    ? {
-      phaseTitle1: "Phase 1: Feature Discovery",
-      phaseTitle2: "Phase 2: Training Feature Extraction",
-      phaseTitle3: "Phase 3: ML Model Training",
-      phaseTitle4: "Phase 4: Testing Feature Extraction",
-      phaseTitle5: "Phase 5: Prediction and Evaluation",
-      phaseDesc1: "Upload sample media and define the target variable. AI will propose a feature specification.",
-      phaseDesc2: "Review and edit the feature specification, then upload training ZIP with media and labels CSV.",
-      phaseDesc3: "Select target column from CSV and train the model on dataset_X + dataset_Y.",
-      phaseDesc4: "Upload test ZIP (different media than training). AI extracts features using the same specification.",
-      phaseDesc5: "Model predicts outputs for test objects. Regression returns score, classification returns label with confidence.",
-      targetType: "Target Variable Type",
-      regression: "Continuous (Regression)",
-      classification: "Categorical (Classification)",
-      processWith: "Process with:",
-      stepDiscovery: "Discovery",
-      stepExtraction: "Extraction",
-      stepTraining: "Training",
-      stepTestExtraction: "Test ext.",
-      stepPrediction: "Prediction",
-      startDiscovery: "Start Feature Discovery",
-      startExtraction: "Start Feature Extraction",
-      startTraining: "Start Model Training",
-      startTestExtraction: "Start Test Extraction",
-      startPrediction: "Start Prediction",
-      stop: "Stop",
-      continue2: "Continue to Phase 2",
-      continue3: "Continue to Phase 3",
-      continue4: "Continue to Phase 4",
-      continue5: "Continue to Phase 5",
-      discoveryDone: "Feature Discovery completed",
-      extractionDone: "Extraction completed",
-      predictionDone: "Prediction completed",
-      rows: "rows",
-      objects: "objects",
-      pickTargetColumn: "Select target column",
-      uploadSamples: "Upload sample media",
-      downloadPredCsv: "Predictions (CSV)",
-      rerunPrediction: "Run prediction again",
-      selected: "Selected",
-      discoveryAnalyzing: "AI is analyzing samples...",
-      discoveryNeedTarget: "Enter target variable first",
-      featureCountProposed: "features proposed",
-      downloadFeatureSpec: "Download feature spec (JSON)",
-      uploadAlreadyOnServer: "File is already on server (large dataset)",
-      uploadTrainingZip: "Upload .ZIP training dataset (media + labels CSV)",
-      pickTrainingZip: "Select training ZIP",
-      serverZipPath: "Path to ZIP file on server",
-      serverLabelsPath: "Path to labels CSV (optional)",
-      serverLabelsPathPlaceholder: "(optional, CSV is inside ZIP)",
-      uploadLabelsSeparately: "Upload labels separately (dataset_Y)",
-      labelsAutoloadHint: "If labels CSV is in ZIP, it will be loaded automatically. You can upload it separately here.",
-      ollamaUnavailable: "Ollama is unavailable (localhost:11434). Start it with:",
-      checkAgain: "Check again",
-      uploadTrainingFirst: "Upload training ZIP first",
-      extractingFeatures: "Extracting features...",
-      processingMayTakeLong: "Processing in progress - larger files or slower models can take 10+ minutes.",
-      downloadTrainingX: "Download training dataset X (CSV)",
-      targetColumnLabel: "Target column name (from CSV in ZIP):",
-      selectColumn: "-- select column --",
-      targetPlaceholder: "e.g. memorability_score",
-      trainingInProgressLabel: "Training model...",
-      trainingDone: "Training completed!",
-      rulesGenerated: "Generated rules",
-      featureImportanceTop: "Feature importance (top 5)",
-      rulesModelTitle: "Rule-based model:",
-      downloadRuleModel: "Rule model",
-      uploadTestingZip: "Upload testing ZIP dataset (different media than training)",
-      pickTestingZip: "Select testing ZIP",
-      uploadTestingFirst: "Upload testing ZIP first",
-      testingExtractionDone: "Testing extraction completed",
-      downloadTestingX: "Download testing dataset X (CSV)",
-      uploadTestingY: "Upload testing dataset_Y (for evaluation)",
-      uploadTestingYHint: "CSV with true target values. Used to compare predictions vs. ground truth.",
-      predicting: "Predicting...",
-      predictionInProgressLabel: "Predicting...",
-      evalTitle: "Model evaluation (predictions vs. ground truth):",
-      paired: "Matched",
-      rerunDiscoveryWarning: "Running Discovery again will invalidate extracted datasets, trained model, and old predictions.",
-      balancedAccuracy: "Balanced accuracy",
-      matthews: "Matthews corr.",
-      avgConfidence: "Avg confidence",
-      correctConfidence: "Correct avg conf.",
-      wrongConfidence: "Wrong avg conf.",
-      confusionMatrix: "Confusion matrix",
-      classBreakdown: "Per-class metrics",
-      predictionTableSummary: "Prediction table summary",
-      correctRows: "Correct",
-      wrongRows: "Incorrect",
-      unlabeledRows: "Without label",
-      rowStatus: "Status",
-      rowCorrect: "Correct",
-      rowWrong: "Incorrect",
-      rowUnlabeled: "No label",
-      predictionSource: "Prediction source",
-      predictionSourceClassification: "Ensemble (RuleKit + XGBoost)",
-      predictionSourceRegression: "Ensemble (RuleKit + XGBoost)",
-      etaRemaining: "Estimated remaining",
-      predictedAxis: "Predicted",
-      actualAxis: "Actual",
-      support: "Support",
-      hideFeatureColumns: "Hide feature columns",
-      showFeatureColumns: "Show feature columns",
-      downloadExperiment: "Download experiment (ZIP)",
-    }
-    : {
-      phaseTitle1: "Fáze 1: Objevování featur",
-      phaseTitle2: "Fáze 2: Extrakce trénovacích featur",
-      phaseTitle3: "Fáze 3: Trénink ML modelu",
-      phaseTitle4: "Fáze 4: Extrakce testovacích featur",
-      phaseTitle5: "Fáze 5: Predikce a vyhodnocení",
-      phaseDesc1: "Nahrajte ukázková média (ZIP nebo jednotlivé soubory) a zadejte cílovou proměnnou. AI navrhne specifikaci featur.",
-      phaseDesc2: "Zkontrolujte a upravte feature spec z Fáze 1. Poté nahrajte trénovací ZIP (média + CSV labels). AI extrahuje hodnoty featur pro každý soubor.",
-      phaseDesc3: "Vyberte sloupec s cílovou proměnnou z CSV. Model natrénuje pravidla a metriky z dataset_X + dataset_Y.",
-      phaseDesc4: "Nahrajte testovací ZIP (jiná média než trénovací). AI extrahuje featury podle stejné feature specifikace.",
-      phaseDesc5: "Model predikuje výstup pro každý testovací objekt. Regrese vrací score, klasifikace vrací label + confidence.",
-      targetType: "Typ cílové proměnné",
-      regression: "Spojitá (Regression)",
-      classification: "Kategorická (Classification)",
-      processWith: "Zpracovat pomocí:",
-      stepDiscovery: "Discovery",
-      stepExtraction: "Extrakce",
-      stepTraining: "Trénink",
-      stepTestExtraction: "Test extr.",
-      stepPrediction: "Predikce",
-      startDiscovery: "Spustit Feature Discovery",
-      startExtraction: "Spustit extrakci features",
-      startTraining: "Spustit trénink modelu",
-      startTestExtraction: "Spustit testovací extrakci",
-      startPrediction: "Spustit predikci",
-      stop: "Zastavit",
-      continue2: "Pokračovat na Fázi 2",
-      continue3: "Pokračovat na Fázi 3",
-      continue4: "Pokračovat na Fázi 4",
-      continue5: "Pokračovat na Fázi 5",
-      discoveryDone: "Feature Discovery dokončena",
-      extractionDone: "Extrakce dokončena",
-      predictionDone: "Predikce dokončena",
-      rows: "řádků",
-      objects: "objektů",
-      pickTargetColumn: "Vyberte cílový sloupec",
-      uploadSamples: "Nahrajte ukázková média",
-      downloadPredCsv: "Predikce (CSV)",
-      rerunPrediction: "Spustit predikci znovu",
-      selected: "Vybráno",
-      discoveryAnalyzing: "AI analyzuje vzorky...",
-      discoveryNeedTarget: "Zadejte cílovou proměnnou",
-      featureCountProposed: "featur navrženo",
-      downloadFeatureSpec: "Stáhnout feature spec (JSON)",
-      uploadAlreadyOnServer: "Soubor je již na serveru (velký dataset)",
-      uploadTrainingZip: "Nahrajte .ZIP trénovací dataset (média + CSV labels)",
-      pickTrainingZip: "Vybrat trénovací ZIP",
-      serverZipPath: "Cesta k ZIP souboru na serveru",
-      serverLabelsPath: "Cesta k CSV labels (volitelné)",
-      serverLabelsPathPlaceholder: "(volitelné, CSV je součástí ZIPu)",
-      uploadLabelsSeparately: "Nahrát labels zvlášť (dataset_Y)",
-      labelsAutoloadHint: "Pokud je CSV s labels v ZIPu, načte se automaticky. Zde ho lze nahrát zvlášť.",
-      ollamaUnavailable: "Ollama není dostupný (localhost:11434). Spusťte:",
-      checkAgain: "Zkontrolovat znovu",
-      uploadTrainingFirst: "Nejdříve nahrajte trénovací ZIP",
-      extractingFeatures: "Extrahuji featury...",
-      processingMayTakeLong: "Zpracování probíhá - větší soubory nebo pomalý model mohou trvat i 10+ minut.",
-      downloadTrainingX: "Stáhnout trénovací dataset X (CSV)",
-      targetColumnLabel: "Název sloupce s cílovou proměnnou (z CSV v ZIPu):",
-      selectColumn: "-- vyberte sloupec --",
-      targetPlaceholder: "např. memorability_score",
-      trainingInProgressLabel: "Trénuji model...",
-      trainingDone: "Trénink dokončen!",
-      rulesGenerated: "Vygenerováno pravidel",
-      featureImportanceTop: "Důležitost featur (top 5)",
-      rulesModelTitle: "Pravidlový model:",
-      downloadRuleModel: "Pravidlový model",
-      uploadTestingZip: "Nahrajte testovací ZIP dataset (jiná média než trénovací)",
-      pickTestingZip: "Vybrat testovací ZIP",
-      uploadTestingFirst: "Nejdříve nahrajte testovací ZIP",
-      testingExtractionDone: "Testovací extrakce dokončena",
-      downloadTestingX: "Stáhnout testovací dataset X (CSV)",
-      uploadTestingY: "Nahrát testing dataset_Y (pro vyhodnocení)",
-      uploadTestingYHint: "CSV se skutečnými hodnotami cílové proměnné. Slouží k porovnání predikcí s realitou.",
-      predicting: "Predikuji...",
-      predictionInProgressLabel: "Predikuji...",
-      evalTitle: "Vyhodnocení modelu (predikce vs. skutečnost):",
-      paired: "Spárováno",
-      rerunDiscoveryWarning: "Nové spuštění Discovery zneplatní extrahovaná data, natrénovaný model i staré predikce.",
-      balancedAccuracy: "Balanced accuracy",
-      matthews: "Matthews korelace",
-      avgConfidence: "Prům. confidence",
-      correctConfidence: "Správně prům.",
-      wrongConfidence: "Chybně prům.",
-      confusionMatrix: "Confusion matrix",
-      classBreakdown: "Metriky po třídách",
-      predictionTableSummary: "Souhrn tabulky predikcí",
-      correctRows: "Správně",
-      wrongRows: "Chybně",
-      unlabeledRows: "Bez labelu",
-      rowStatus: "Stav",
-      rowCorrect: "Správně",
-      rowWrong: "Chybně",
-      rowUnlabeled: "Bez labelu",
-      predictionSource: "Zdroj predikce",
-      predictionSourceClassification: "Ensemble (RuleKit + XGBoost)",
-      predictionSourceRegression: "Ensemble (RuleKit + XGBoost)",
-      etaRemaining: "Odhad zbývá",
-      predictedAxis: "Predikce",
-      actualAxis: "Skutečnost",
-      support: "Podpora",
-      hideFeatureColumns: "Skrýt feature sloupce",
-      showFeatureColumns: "Zobrazit feature sloupce",
-      downloadExperiment: "Stáhnout experiment (ZIP)",
-    };
+  const tr = getTrainingTranslations(uiLanguage);
 
   const phaseLabels = [
     { num: 1, short: tr.stepDiscovery },
@@ -982,38 +229,6 @@ export function TrainingView({
     { num: 4, short: tr.stepTestExtraction },
     { num: 5, short: tr.stepPrediction },
   ];
-
-  const [discoveryFiles, setDiscoveryFiles] = useState<File[]>([]);
-  const [trainZipFile, setTrainZipFile] = useState<File | null>(null);
-  const [testZipFile, setTestZipFile] = useState<File | null>(null);
-  const [useServerPathTrain, setUseServerPathTrain] = useState(false);
-  const [serverPathTrain, setServerPathTrain] = useState("");
-  const [serverLabelsPathTrain, setServerLabelsPathTrain] = useState("");
-  const [useServerPathTest, setUseServerPathTest] = useState(false);
-  const [serverPathTest, setServerPathTest] = useState("");
-  const [targetColumn, setTargetColumn] = useState("");
-  // Optional labels files
-  const [discoveryLabels, setDiscoveryLabels] = useState<File | null>(null);
-  const [useDiscoveryLabels, setUseDiscoveryLabels] = useState(false);
-  const [extractionLabels, setExtractionLabels] = useState<File | null>(null);
-  const [useExtractionLabels, setUseExtractionLabels] = useState(false);
-  const [testingLabels, setTestingLabels] = useState<File | null>(null);
-  const [useTestingLabels, setUseTestingLabels] = useState(false);
-  // Phase 5: re-run predikce + feature sloupce toggle
-  const [showPredictForm, setShowPredictForm] = useState(true);
-  const [showFeatureCols, setShowFeatureCols] = useState(false);
-
-  // Auto-select first target column when columns arrive
-  useEffect(() => {
-    if (datasetYColumns && datasetYColumns.length > 0 && !targetColumn) {
-      setTargetColumn(datasetYColumns[datasetYColumns.length - 1]);
-    }
-  }, [datasetYColumns]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Hide predict form when predictions arrive; show it again on re-run
-  useEffect(() => {
-    setShowPredictForm(!predictions);
-  }, [predictions]);
 
   const phaseTitle: Record<number, string> = {
     1: tr.phaseTitle1,
@@ -1024,34 +239,44 @@ export function TrainingView({
   };
 
   const phaseDesc: Record<number, string> = {
-     1: tr.phaseDesc1,
-     2: tr.phaseDesc2,
-     3: tr.phaseDesc3,
-     4: tr.phaseDesc4,
-     5: tr.phaseDesc5,
+    1: tr.phaseDesc1,
+    2: tr.phaseDesc2,
+    3: tr.phaseDesc3,
+    4: tr.phaseDesc4,
+    5: tr.phaseDesc5,
   };
+
+  const [discoveryFiles, setDiscoveryFiles] = useState<File[]>([]);
+  const [trainZipFile, setTrainZipFile] = useState<File | null>(null);
+  const [testZipFile, setTestZipFile] = useState<File | null>(null);
+  const [useServerPathTrain, setUseServerPathTrain] = useState(false);
+  const [serverPathTrain, setServerPathTrain] = useState("");
+  const [serverLabelsPathTrain, setServerLabelsPathTrain] = useState("");
+  const [useServerPathTest, setUseServerPathTest] = useState(false);
+  const [serverPathTest, setServerPathTest] = useState("");
+  const [targetColumn, setTargetColumn] = useState("");
+  const [discoveryLabels, setDiscoveryLabels] = useState<File | null>(null);
+  const [useDiscoveryLabels, setUseDiscoveryLabels] = useState(false);
+  const [extractionLabels, setExtractionLabels] = useState<File | null>(null);
+  const [useExtractionLabels, setUseExtractionLabels] = useState(false);
+  const [testingLabels, setTestingLabels] = useState<File | null>(null);
+  const [useTestingLabels, setUseTestingLabels] = useState(false);
+  const [showPredictForm, setShowPredictForm] = useState(true);
+  const [showFeatureCols, setShowFeatureCols] = useState(false);
+
+  useEffect(() => {
+    if (datasetYColumns && datasetYColumns.length > 0 && !targetColumn) {
+      setTargetColumn(datasetYColumns[datasetYColumns.length - 1]);
+    }
+  }, [datasetYColumns]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    setShowPredictForm(!predictions);
+  }, [predictions]);
 
   const anyBusy = isDiscovering || isExtracting || isTraining || isExtractingTest || isPredicting;
   const hasDownstreamProgress = !!trainingDataX || !!trainResult || !!testingDataX || !!predictions;
-  const hasLabelPredictions = !!predictions?.some((p) => p.predicted_label !== undefined);
-  const hasActualPredictionValues = !!predictions?.some((p) => p.actual_score !== undefined || p.actual_label !== undefined);
-  const classificationRowsSummary = hasLabelPredictions && predictions
-    ? predictions.reduce(
-        (acc, pred) => {
-          if (pred.actual_label == null) {
-            acc.unlabeled += 1;
-          } else if (pred.predicted_label === pred.actual_label) {
-            acc.correct += 1;
-          } else {
-            acc.incorrect += 1;
-          }
-          return acc;
-        },
-        { correct: 0, incorrect: 0, unlabeled: 0 },
-      )
-    : null;
 
-  // Elapsed timers for phases without a progress bar
   const trainSecs = useElapsedTimer(isTraining);
   const predictSecs = useElapsedTimer(isPredicting);
   const discoveryEta = useEstimatedRemaining(progress, isDiscovering);
@@ -1059,18 +284,18 @@ export function TrainingView({
   const trainEta = useEstimatedRemaining(progress, isTraining);
   const testExtractEta = useEstimatedRemaining(progress, isExtractingTest);
   const predictEta = useEstimatedRemaining(progress, isPredicting);
-
-  // Stall detection for long extractions
   const extractStalled = useProgressStall(progress, isExtracting);
   const testExtractStalled = useProgressStall(progress, isExtractingTest);
 
-  // Auto-scroll error banner into view
   const errorRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (error && errorRef.current) {
       errorRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
   }, [error]);
+
+  const renderEtaText = (eta: number | null) =>
+    eta != null ? `${tr.etaRemaining}: ~${formatDurationShort(eta)}` : null;
 
   return (
     <div
@@ -1080,125 +305,48 @@ export function TrainingView({
         "bg-slate-800/50 border-slate-700/50"
       )}`}
     >
-      {/* ---- ERROR BANNER ---- */}
       {error && (() => {
         const { message, hint } = enrichError(error);
         return (
-        <div ref={errorRef} className={`mb-4 flex items-start gap-2 p-3 rounded-lg border ${cls(deluxe, "bg-red-50 border-red-200 text-red-800", "bg-red-900/30 border-red-800/50 text-red-300")}`}>
-          <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-          <div className="flex-1">
-            <p className="text-sm">{message}</p>
-            {hint && <p className="text-xs mt-1 italic opacity-80">{hint}</p>}
+          <div ref={errorRef} className={`mb-4 flex items-start gap-2 p-3 rounded-lg border ${cls(deluxe, "bg-red-50 border-red-200 text-red-800", "bg-red-900/30 border-red-800/50 text-red-300")}`}>
+            <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm">{message}</p>
+              {hint && <p className="text-xs mt-1 italic opacity-80">{hint}</p>}
+            </div>
+            <button onClick={clearError} className="p-0.5 rounded hover:bg-red-100">
+              <X className="h-3.5 w-3.5" />
+            </button>
           </div>
-          <button onClick={clearError} className="p-0.5 rounded hover:bg-red-100">
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </div>
         );
       })()}
 
-      {/* ---- QUEUE BUSY BANNER ---- */}
-      {queueBusy && (queuedCount ?? 0) > 0 && (
-        <div className={`mb-4 flex items-start gap-2 p-3 rounded-lg border ${cls(deluxe, "bg-blue-50 border-blue-200 text-blue-800", "bg-blue-900/30 border-blue-800/50 text-blue-300")}`}>
-          <Loader2 className="h-4 w-4 mt-0.5 flex-shrink-0 animate-spin" />
-          <p className="text-sm">
-            Model je momentálně vytížený. Ve frontě čekají další požadavky ({queuedCount}), takže zpracování může trvat déle než obvykle.
-          </p>
-        </div>
-      )}
+      {queueBusy && <QueueBusyBanner deluxe={deluxe} queuedCount={queuedCount} tr={tr} />}
 
-      {/* ---- STEPPER ---- */}
-      <div className="flex items-center justify-center gap-1 mb-6 flex-wrap">
-        {phaseLabels.map((p, i) => {
-          // Can user navigate to this step? (precondition met)
-          const stepReachable =
-            p.num === 1 ? true :
-            p.num === 2 ? !!featureSpec :
-            p.num === 3 ? !!trainingDataX :
-            p.num === 4 ? !!trainResult :
-            p.num === 5 ? !!testingDataX :
-            false;
-          // Has this step been completed? (its output exists)
-          const isCompleted =
-            p.num === 1 ? !!featureSpec :
-            p.num === 2 ? !!trainingDataX :
-            p.num === 3 ? !!trainResult :
-            p.num === 4 ? !!testingDataX :
-            p.num === 5 ? !!predictions :
-            false;
-          const isCurrent = step === p.num;
-          const canClick = stepReachable && !isCurrent && onGoToStep && !anyBusy;
+      <PhaseStepper
+        deluxe={deluxe}
+        step={step}
+        phaseLabels={phaseLabels}
+        onGoToStep={onGoToStep}
+        anyBusy={anyBusy}
+        featureSpec={featureSpec}
+        trainingDataX={trainingDataX}
+        trainResult={trainResult}
+        testingDataX={testingDataX}
+        predictions={predictions}
+      />
 
-          return (
-            <React.Fragment key={p.num}>
-              {i > 0 && (
-                <ChevronRight
-                  className={`h-3.5 w-3.5 ${cls(
-                    deluxe,
-                    "text-slate-300",
-                    "text-slate-600"
-                  )}`}
-                />
-              )}
-              <button
-                type="button"
-                disabled={!canClick}
-                onClick={() => canClick && onGoToStep!(p.num)}
-                className={`text-xs px-2 py-1 rounded-full font-medium transition-colors ${
-                  isCurrent
-                    ? "bg-blue-500 text-white"
-                    : isCompleted
-                      ? cls(
-                          deluxe,
-                          "bg-green-100 text-green-700 hover:bg-green-200",
-                          "bg-green-900/40 text-green-400 hover:bg-green-900/60"
-                        ) + (canClick ? " cursor-pointer" : "")
-                      : cls(
-                          deluxe,
-                          "bg-slate-100 text-slate-400",
-                          "bg-slate-700 text-slate-500"
-                        )
-                } disabled:cursor-default`}
-              >
-                {isCompleted && <CheckCircle2 className="inline h-3 w-3 mr-0.5 -mt-0.5" />}
-                {p.num}. {p.short}
-              </button>
-            </React.Fragment>
-          );
-        })}
-      </div>
-
-      {/* ---- TITLE + DESC ---- */}
-      <h2
-        className={`text-xl font-bold mb-2 ${cls(
-          deluxe,
-          "text-slate-900",
-          "text-white"
-        )}`}
-      >
+      <h2 className={`text-xl font-bold mb-2 ${cls(deluxe, "text-slate-900", "text-white")}`}>
         {phaseTitle[step] ?? `Fáze ${step}`}
       </h2>
-      <p
-        className={`text-sm mb-6 ${cls(
-          deluxe,
-          "text-slate-500",
-          "text-slate-400"
-        )}`}
-      >
+      <p className={`text-sm mb-6 ${cls(deluxe, "text-slate-500", "text-slate-400")}`}>
         {phaseDesc[step] ?? ""}
       </p>
 
-      {/* ---- MODEL PICKER ---- */}
       {(step <= 2 || step === 4) && (
         <div className="flex justify-center items-center gap-2 mb-6">
-          <span
-            className={`flex items-center gap-1.5 text-xs font-medium ${cls(
-              deluxe,
-              "text-slate-500",
-              "text-slate-400"
-            )}`}
-          >
-              <Cpu className="h-3.5 w-3.5" /> {tr.processWith}
+          <span className={`flex items-center gap-1.5 text-xs font-medium ${cls(deluxe, "text-slate-500", "text-slate-400")}`}>
+            <Cpu className="h-3.5 w-3.5" /> {tr.processWith}
           </span>
           <select
             value={modelProvider}
@@ -1210,26 +358,19 @@ export function TrainingView({
               "bg-slate-800 text-white border-slate-600"
             )}`}
           >
-            {AVAILABLE_MODELS.map((m) => (
-              <option key={m.id} value={m.id}>{m.name}</option>
+            {AVAILABLE_MODELS.map((model) => (
+              <option key={model.id} value={model.id}>
+                {model.name}
+              </option>
             ))}
           </select>
         </div>
       )}
 
-      {/* ================================================================ */}
-      {/*  FÁZE 1: FEATURE DISCOVERY                                       */}
-      {/* ================================================================ */}
       {step === 1 && (
         <div className="space-y-4">
           <div>
-            <label
-              className={`block text-sm font-medium mb-1 ${cls(
-                deluxe,
-                "text-slate-700",
-                "text-slate-300"
-              )}`}
-            >
+            <label className={`block text-sm font-medium mb-1 ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>
               Co chceme predikovat? (Cílová proměnná)
             </label>
             <input
@@ -1246,13 +387,7 @@ export function TrainingView({
           </div>
 
           <div>
-            <label
-              className={`block text-sm font-medium mb-1 ${cls(
-                deluxe,
-                "text-slate-700",
-                "text-slate-300"
-              )}`}
-            >
+            <label className={`block text-sm font-medium mb-1 ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>
               {tr.targetType}
             </label>
             <div className="flex gap-2">
@@ -1308,24 +443,21 @@ export function TrainingView({
               multiple
               onChange={(e) => {
                 if (e.target.files?.length) {
-                  setDiscoveryFiles((prev) => [...prev, ...Array.from(e.target.files!)]);
+                  setDiscoveryFiles((prev) => [...prev, ...Array.from(e.target.files)]);
                 }
               }}
               accept=".zip,video/*,image/*,.mp4,.avi,.mov,.mkv,.png,.jpg,.jpeg"
             />
-            <label
-              htmlFor="discovery-upload"
-              className="cursor-pointer text-blue-500 hover:text-blue-600 text-sm font-medium"
-            >
+            <label htmlFor="discovery-upload" className="cursor-pointer text-blue-500 hover:text-blue-600 text-sm font-medium">
               {uiLanguage === "en" ? "Choose files from disk" : "Vybrat soubory z disku"}
             </label>
             {discoveryFiles.length > 0 && (
               <div className="mt-2 space-y-1">
-                {discoveryFiles.map((f, i) => (
-                  <div key={i} className="flex items-center justify-center gap-2 text-xs text-green-500 font-medium">
-                    <span className="truncate max-w-[30ch]">{f.name}</span>
+                {discoveryFiles.map((file, index) => (
+                  <div key={`${file.name}-${index}`} className="flex items-center justify-center gap-2 text-xs text-green-500 font-medium">
+                    <span className="truncate max-w-[30ch]">{file.name}</span>
                     <button
-                      onClick={() => setDiscoveryFiles((prev) => prev.filter((_, j) => j !== i))}
+                      onClick={() => setDiscoveryFiles((prev) => prev.filter((_, i) => i !== index))}
                       className="text-red-400 hover:text-red-600"
                       title={uiLanguage === "en" ? "Remove" : "Odebrat"}
                     >
@@ -1337,7 +469,6 @@ export function TrainingView({
             )}
           </div>
 
-          {/* Optional labels for discovery */}
           <div className={`p-3 rounded-lg border ${cls(deluxe, "bg-amber-50/50 border-amber-200", "bg-amber-900/20 border-amber-800/50")}`}>
             <label className="flex items-center gap-2 cursor-pointer">
               <input
@@ -1358,27 +489,17 @@ export function TrainingView({
                 <input
                   type="file"
                   accept=".csv"
-                  onChange={(e) => { if (e.target.files?.[0]) setDiscoveryLabels(e.target.files[0]); }}
+                  onChange={(e) => {
+                    if (e.target.files?.[0]) setDiscoveryLabels(e.target.files[0]);
+                  }}
                   className={`text-xs ${cls(deluxe, "text-slate-600", "text-slate-400")}`}
                 />
-                {discoveryLabels && (
-                  <p className="mt-1 text-xs text-green-500 font-medium">CSV: {discoveryLabels.name}</p>
-                )}
+                {discoveryLabels && <p className="mt-1 text-xs text-green-500 font-medium">CSV: {discoveryLabels.name}</p>}
               </div>
             )}
           </div>
 
-          {ollamaOk === false && (
-            <div className={`flex items-start gap-2 p-3 rounded-lg border ${cls(deluxe, "bg-amber-50 border-amber-300 text-amber-800", "bg-amber-900/30 border-amber-700 text-amber-300")}`}>
-              <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-              <div className="flex-1">
-                <p className="text-sm">{tr.ollamaUnavailable} <code className="font-mono bg-black/10 px-1 rounded">ollama serve</code></p>
-              </div>
-              {recheckOllama && (
-                <button onClick={recheckOllama} className="text-xs underline opacity-70 hover:opacity-100 whitespace-nowrap">{tr.checkAgain}</button>
-              )}
-            </div>
-          )}
+          {ollamaOk === false && <OllamaWarning deluxe={deluxe} tr={tr} recheckOllama={recheckOllama} />}
 
           {hasDownstreamProgress && !isDiscovering && (
             <div className={`flex items-start gap-2 p-3 rounded-lg border ${cls(deluxe, "bg-amber-50 border-amber-200 text-amber-800", "bg-amber-900/20 border-amber-800/50 text-amber-300")}`}>
@@ -1408,15 +529,9 @@ export function TrainingView({
             </Button>
           </div>
 
-          {/* Progress bar + cancel during discovery */}
           {isDiscovering && (
             <div className="space-y-2">
-              <ProgressBar
-                deluxe={deluxe}
-                progress={progress}
-                label={progressLabel || tr.discoveryAnalyzing}
-                etaText={discoveryEta != null ? `${tr.etaRemaining}: ~${formatDurationShort(discoveryEta)}` : null}
-              />
+              <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel || tr.discoveryAnalyzing} etaText={renderEtaText(discoveryEta)} />
               {onCancel && (
                 <div className="flex justify-center">
                   <Button variant="outline" size="sm" onClick={onCancel} className="text-xs">
@@ -1427,13 +542,15 @@ export function TrainingView({
             </div>
           )}
 
-          {/* Feature spec výsledek + pokračovat */}
           {featureSpec && !isDiscovering && (
             <div className={`flex items-center gap-2 p-2 rounded-lg ${cls(deluxe, "bg-green-50 text-green-700", "bg-green-900/30 text-green-400")}`}>
               <CheckCircle2 className="h-4 w-4" />
-              <span className="text-sm font-medium">{tr.discoveryDone} — {Object.keys(featureSpec).length} {tr.featureCountProposed}</span>
+              <span className="text-sm font-medium">
+                {tr.discoveryDone} — {Object.keys(featureSpec).length} {tr.featureCountProposed}
+              </span>
             </div>
           )}
+
           {featureSpec && (
             <>
               <FeatureSpecBox
@@ -1462,9 +579,6 @@ export function TrainingView({
         </div>
       )}
 
-      {/* ================================================================ */}
-      {/*  FÁZE 2: FEATURE EXTRACTION (TRAINING)                           */}
-      {/* ================================================================ */}
       {step === 2 && (
         <div className="space-y-4">
           {featureSpec && (
@@ -1478,7 +592,6 @@ export function TrainingView({
             />
           )}
 
-          {/* Toggle: upload vs server path */}
           <div className={`p-3 rounded-lg border ${cls(deluxe, "bg-slate-50 border-slate-200", "bg-slate-800/50 border-slate-700")}`}>
             <label className="flex items-center gap-2 cursor-pointer">
               <input
@@ -1507,9 +620,7 @@ export function TrainingView({
             />
           ) : (
             <div className="space-y-2">
-              <label className={`text-sm font-medium ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>
-                {tr.serverZipPath}
-              </label>
+              <label className={`text-sm font-medium ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>{tr.serverZipPath}</label>
               <input
                 type="text"
                 value={serverPathTrain}
@@ -1517,9 +628,7 @@ export function TrainingView({
                 placeholder="/home/kovm23/train.zip"
                 className={`w-full px-3 py-2 rounded border text-sm font-mono ${cls(deluxe, "bg-white border-slate-300 text-slate-800", "bg-slate-900 border-slate-600 text-slate-200")}`}
               />
-              <label className={`text-sm font-medium ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>
-                {tr.serverLabelsPath}
-              </label>
+              <label className={`text-sm font-medium ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>{tr.serverLabelsPath}</label>
               <input
                 type="text"
                 value={serverLabelsPathTrain}
@@ -1530,7 +639,6 @@ export function TrainingView({
             </div>
           )}
 
-          {/* Optional separate labels for extraction (only for upload mode) */}
           {!useServerPathTrain && (
             <div className={`p-3 rounded-lg border ${cls(deluxe, "bg-amber-50/50 border-amber-200", "bg-amber-900/20 border-amber-800/50")}`}>
               <label className="flex items-center gap-2 cursor-pointer">
@@ -1547,44 +655,32 @@ export function TrainingView({
                   {tr.uploadLabelsSeparately}
                 </span>
               </label>
-              <p className={`text-xs mt-1 ${cls(deluxe, "text-amber-600", "text-amber-400/70")}`}>
-                {tr.labelsAutoloadHint}
-              </p>
+              <p className={`text-xs mt-1 ${cls(deluxe, "text-amber-600", "text-amber-400/70")}`}>{tr.labelsAutoloadHint}</p>
               {useExtractionLabels && (
                 <div className="mt-2">
                   <input
                     type="file"
                     accept=".csv"
-                    onChange={(e) => { if (e.target.files?.[0]) setExtractionLabels(e.target.files[0]); }}
+                    onChange={(e) => {
+                      if (e.target.files?.[0]) setExtractionLabels(e.target.files[0]);
+                    }}
                     className={`text-xs ${cls(deluxe, "text-slate-600", "text-slate-400")}`}
                   />
-                  {extractionLabels && (
-                    <p className="mt-1 text-xs text-green-500 font-medium">CSV: {extractionLabels.name}</p>
-                  )}
+                  {extractionLabels && <p className="mt-1 text-xs text-green-500 font-medium">CSV: {extractionLabels.name}</p>}
                 </div>
               )}
             </div>
           )}
 
-          {ollamaOk === false && (
-            <div className={`flex items-start gap-2 p-3 rounded-lg border ${cls(deluxe, "bg-amber-50 border-amber-300 text-amber-800", "bg-amber-900/30 border-amber-700 text-amber-300")}`}>
-              <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-              <div className="flex-1">
-                <p className="text-sm">{tr.ollamaUnavailable} <code className="font-mono bg-black/10 px-1 rounded">ollama serve</code></p>
-              </div>
-              {recheckOllama && (
-                <button onClick={recheckOllama} className="text-xs underline opacity-70 hover:opacity-100 whitespace-nowrap">{tr.checkAgain}</button>
-              )}
-            </div>
-          )}
+          {ollamaOk === false && <OllamaWarning deluxe={deluxe} tr={tr} recheckOllama={recheckOllama} />}
 
           <div className="flex justify-center mt-6">
             <Button
               onClick={() => {
                 if (useServerPathTrain) {
                   onExtractTrainingLocal(serverPathTrain, serverLabelsPathTrain || undefined);
-                } else {
-                  trainZipFile && onExtractTraining(trainZipFile, useExtractionLabels ? extractionLabels : null);
+                } else if (trainZipFile) {
+                  onExtractTraining(trainZipFile, useExtractionLabels ? extractionLabels : null);
                 }
               }}
               disabled={(useServerPathTrain ? !serverPathTrain : !trainZipFile) || isExtracting}
@@ -1604,34 +700,29 @@ export function TrainingView({
 
           {isExtracting && (
             <div className="space-y-2">
-              <ProgressBar
-                deluxe={deluxe}
-                progress={progress}
-                label={progressLabel}
-                etaText={extractEta != null ? `${tr.etaRemaining}: ~${formatDurationShort(extractEta)}` : null}
-              />
+              <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel} etaText={renderEtaText(extractEta)} />
               {extractStalled && (
                 <p className={`text-xs ${cls(deluxe, "text-slate-500", "text-slate-400")}`}>
                   ℹ {tr.processingMayTakeLong}
                 </p>
               )}
-              <div className="flex gap-2">
-                {onCancel && (
-                  <Button variant="outline" size="sm" onClick={onCancel} className="text-xs">
-                    ✕ {tr.stop}
-                  </Button>
-                )}
-              </div>
+              {onCancel && (
+                <Button variant="outline" size="sm" onClick={onCancel} className="text-xs">
+                  ✕ {tr.stop}
+                </Button>
+              )}
             </div>
           )}
 
-          {/* Výsledek extrakce + pokračovat */}
           {trainingDataX && !isExtracting && (
             <div className={`flex items-center gap-2 p-2 rounded-lg ${cls(deluxe, "bg-green-50 text-green-700", "bg-green-900/30 text-green-400")}`}>
               <CheckCircle2 className="h-4 w-4" />
-              <span className="text-sm font-medium">{tr.extractionDone} — {trainingDataX.length} {tr.rows}</span>
+              <span className="text-sm font-medium">
+                {tr.extractionDone} — {trainingDataX.length} {tr.rows}
+              </span>
             </div>
           )}
+
           {trainingDataX && (
             <>
               <DatasetTable deluxe={deluxe} data={trainingDataX} title="Training Dataset X" />
@@ -1653,26 +744,14 @@ export function TrainingView({
         </div>
       )}
 
-      {/* ================================================================ */}
-      {/*  FÁZE 3: ML TRAINING (RULEKIT)                                   */}
-      {/* ================================================================ */}
       {step === 3 && (
         <div className="space-y-4">
           {featureSpec && (
-            <FeatureSpecBox
-              deluxe={deluxe}
-              uiLanguage={uiLanguage}
-              featureSpec={featureSpec}
-              targetVariable={targetVariable}
-            />
+            <FeatureSpecBox deluxe={deluxe} uiLanguage={uiLanguage} featureSpec={featureSpec} targetVariable={targetVariable} />
           )}
 
-          {/* Training dataset_X preview */}
-          {trainingDataX && (
-            <DatasetTable deluxe={deluxe} data={trainingDataX} title="Training Dataset X" />
-          )}
+          {trainingDataX && <DatasetTable deluxe={deluxe} data={trainingDataX} title="Training Dataset X" />}
 
-          {/* Target column selector */}
           <div>
             <label className={`block text-sm font-medium mb-1 ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>
               {tr.targetColumnLabel}
@@ -1688,8 +767,10 @@ export function TrainingView({
                 )}`}
               >
                 <option value="">{tr.selectColumn}</option>
-                {datasetYColumns.map((col) => (
-                  <option key={col} value={col}>{col}</option>
+                {datasetYColumns.map((column) => (
+                  <option key={column} value={column}>
+                    {column}
+                  </option>
                 ))}
               </select>
             ) : (
@@ -1708,11 +789,7 @@ export function TrainingView({
           </div>
 
           <div className="flex justify-center mt-6">
-            <Button
-              onClick={() => onTrain(targetColumn)}
-              disabled={!targetColumn || isTraining}
-              title={!targetColumn ? tr.pickTargetColumn : undefined}
-            >
+            <Button onClick={() => onTrain(targetColumn)} disabled={!targetColumn || isTraining} title={!targetColumn ? tr.pickTargetColumn : undefined}>
               {isTraining ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" /> {tr.trainingInProgressLabel} ({trainSecs}s)
@@ -1725,15 +802,9 @@ export function TrainingView({
             </Button>
           </div>
 
-          {/* Progress bar during training */}
           {isTraining && (
             <div className="space-y-2 mt-4">
-              <ProgressBar
-                deluxe={deluxe}
-                progress={progress}
-                label={progressLabel || tr.trainingInProgressLabel}
-                etaText={trainEta != null ? `${tr.etaRemaining}: ~${formatDurationShort(trainEta)}` : null}
-              />
+              <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel || tr.trainingInProgressLabel} etaText={renderEtaText(trainEta)} />
               {onCancel && (
                 <div className="flex justify-center">
                   <Button variant="outline" size="sm" onClick={onCancel} className="text-xs">
@@ -1744,168 +815,16 @@ export function TrainingView({
             </div>
           )}
 
-          {/* Train results */}
-          {trainResult && trainResult.status === "success" && (
-            <div className={`rounded-xl p-4 space-y-3 border ${cls(deluxe, "bg-green-50 border-green-100", "bg-green-900/20 border-green-800/50")}`}>
-              <div className={`flex items-center gap-2 ${cls(deluxe, "text-green-800", "text-green-400")}`}>
-                <CheckCircle2 className="h-4 w-4" />
-                <p className="text-sm font-bold">{tr.trainingDone}</p>
-              </div>
-              <div className={`text-xs space-y-0.5 ${cls(deluxe, "text-green-700", "text-green-400/80")}`}>
-                {trainResult.target_mode === "classification" ? (
-                  <>
-                    <p>Train Accuracy: <strong>{trainResult.train_accuracy != null ? Number(trainResult.train_accuracy).toFixed(4) : "—"}</strong></p>
-                    {trainResult.train_balanced_accuracy != null && (
-                      <p>{tr.balancedAccuracy}: <strong>{Number(trainResult.train_balanced_accuracy).toFixed(4)}</strong></p>
-                    )}
-                    <p>Train F1 macro: <strong>{trainResult.train_f1_macro != null ? Number(trainResult.train_f1_macro).toFixed(4) : "—"}</strong></p>
-                    {trainResult.train_mcc != null && (
-                      <p>{tr.matthews}: <strong>{Number(trainResult.train_mcc).toFixed(4)}</strong></p>
-                    )}
-                    {trainResult.cv_accuracy != null && (
-                      <p>
-                        Cross-val Accuracy ({trainResult.cv_folds ?? 5}-fold):{" "}
-                        <strong>{Number(trainResult.cv_accuracy).toFixed(4)}</strong>
-                      </p>
-                    )}
-                    {trainResult.cv_balanced_accuracy != null && (
-                      <p>{tr.balancedAccuracy} CV: <strong>{Number(trainResult.cv_balanced_accuracy).toFixed(4)}</strong></p>
-                    )}
-                    {trainResult.cv_f1_macro != null && (
-                      <p>Cross-val F1 macro: <strong>{Number(trainResult.cv_f1_macro).toFixed(4)}</strong></p>
-                    )}
-                    {trainResult.cv_precision_macro != null && (
-                      <p>Cross-val Precision: <strong>{Number(trainResult.cv_precision_macro).toFixed(4)}</strong></p>
-                    )}
-                    {trainResult.cv_recall_macro != null && (
-                      <p>Cross-val Recall: <strong>{Number(trainResult.cv_recall_macro).toFixed(4)}</strong></p>
-                    )}
-                    {trainResult.cv_mcc != null && (
-                      <p>{tr.matthews} CV: <strong>{Number(trainResult.cv_mcc).toFixed(4)}</strong></p>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <p>Ensemble MSE: <strong>{trainResult.mse != null ? Number(trainResult.mse).toFixed(4) : "—"}</strong></p>
-                    {trainResult.rulekit_mse != null && (
-                      <p>RuleKit MSE: <strong>{Number(trainResult.rulekit_mse).toFixed(4)}</strong></p>
-                    )}
-                    {trainResult.xgb_mse != null && (
-                      <p>XGBoost MSE: <strong>{Number(trainResult.xgb_mse).toFixed(4)}</strong></p>
-                    )}
-                    {trainResult.cv_mse != null && (
-                      <p>
-                        Cross-val MSE ({trainResult.cv_folds ?? 5}-fold):{" "}
-                        <strong>{Number(trainResult.cv_mse).toFixed(4)}</strong>
-                        {trainResult.cv_std != null && (
-                          <span className="opacity-70"> ± {Number(trainResult.cv_std).toFixed(4)}</span>
-                        )}
-                        {" "}
-                        <span className={trainResult.cv_mse < (trainResult.mse ?? 0) * 2 ? "text-green-500" : "text-amber-500"}>
-                          {trainResult.cv_mse < (trainResult.mse ?? 0) * 2 ? "✓ model zobecňuje" : "⚠ možné přetrénování"}
-                        </span>
-                      </p>
-                    )}
-                    {trainResult.cv_mae != null && (
-                      <p>Cross-val MAE: <strong>{Number(trainResult.cv_mae).toFixed(4)}</strong></p>
-                    )}
-                  </>
-                )}
-                {trainResult.warnings?.map((w, i) => (
-                  <p key={i} className="text-amber-600">⚠ {w}</p>
-                ))}
-                <p>{tr.rulesGenerated}: <strong>{trainResult.rules_count}</strong></p>
-              </div>
-
-              {/* Feature importance (top 5, collapsible) */}
-              {((trainResult.feature_importance?.xgboost && Object.keys(trainResult.feature_importance.xgboost).length > 0)
-                || (trainResult.feature_importance?.rulekit && Object.keys(trainResult.feature_importance.rulekit).length > 0)) && (
-                <details className={`text-xs rounded border p-2 ${cls(deluxe, "border-slate-200", "border-slate-700")}`}>
-                  <summary className={`cursor-pointer font-medium ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>
-                    {tr.featureImportanceTop}
-                  </summary>
-                  <ul className="mt-1.5 space-y-1">
-                    {Object.entries(
-                      (trainResult.feature_importance?.xgboost && Object.keys(trainResult.feature_importance.xgboost).length > 0)
-                        ? trainResult.feature_importance.xgboost
-                        : (trainResult.feature_importance?.rulekit ?? {})
-                    )
-                      .sort(([, a], [, b]) => b - a)
-                      .slice(0, 5)
-                      .map(([feat, score]) => (
-                        <li key={feat} className={`flex items-center gap-2 ${cls(deluxe, "text-slate-600", "text-slate-400")}`}>
-                          <span className="font-mono flex-1">{feat}</span>
-                          <div className={`h-1.5 rounded-full bg-blue-400`} style={{ width: `${Math.round(score * 100)}px`, minWidth: "4px", maxWidth: "120px" }} />
-                          <span className="w-10 text-right">{(score * 100).toFixed(1)}%</span>
-                        </li>
-                      ))}
-                  </ul>
-                </details>
-              )}
-
-              {trainResult.rules && trainResult.rules.length > 0 && (
-                <div className={`p-3 rounded border text-left ${cls(deluxe, "bg-slate-100 border-slate-300", "bg-slate-800 border-slate-700")}`}>
-                  <p className="font-bold mb-2 text-xs">{tr.rulesModelTitle}</p>
-                  <div className={`max-h-40 overflow-y-auto text-xs font-mono space-y-1 ${cls(deluxe, "text-slate-600", "text-slate-300")}`}>
-                    {trainResult.rules.map((rule, idx) => (
-                      <div key={idx} className="whitespace-pre-wrap break-words">
-                        {idx + 1}. {rule}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Downloads */}
-              <div className="grid grid-cols-2 gap-2 mt-3">
-                <button
-                  onClick={() => { if (trainResult.feature_spec) downloadFeatureSpec(trainResult.feature_spec); }}
-                  className="px-2 py-1 bg-zinc-600 text-white rounded text-xs hover:bg-zinc-700 flex items-center justify-center gap-1"
-                >
-                  <Download className="w-3 h-3" /> Feature Spec
-                </button>
-                <button
-                  onClick={() => { if (trainResult.training_data_X) downloadTrainingDataCSV(trainResult.training_data_X); }}
-                  className="px-2 py-1 bg-zinc-600 text-white rounded text-xs hover:bg-zinc-700 flex items-center justify-center gap-1"
-                >
-                  <Download className="w-3 h-3" /> Training Data (X)
-                </button>
-                <button
-                  onClick={() => { if (trainResult.rules) downloadRulesModel(trainResult.rules, trainResult.mse); }}
-                  className="col-span-2 px-2 py-1 bg-zinc-600 text-white rounded text-xs hover:bg-zinc-700 flex items-center justify-center gap-1"
-                >
-                  <Download className="w-3 h-3" /> {tr.downloadRuleModel}
-                </button>
-              </div>
-
-              {/* Continue button */}
-              {onGoToStep && (
-                <div className="flex justify-center mt-4">
-                  <Button onClick={() => onGoToStep(4)}>
-                    <ChevronRight className="mr-2 h-4 w-4" /> {tr.continue4}
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
+          {trainResult && <TrainingResultsCard deluxe={deluxe} trainResult={trainResult} tr={tr} onGoToStep={onGoToStep} />}
         </div>
       )}
 
-      {/* ================================================================ */}
-      {/*  FÁZE 4: TEST DATA FEATURE EXTRACTION                            */}
-      {/* ================================================================ */}
       {step === 4 && (
         <div className="space-y-4">
           {featureSpec && (
-            <FeatureSpecBox
-              deluxe={deluxe}
-              uiLanguage={uiLanguage}
-              featureSpec={featureSpec}
-              targetVariable={targetVariable}
-            />
+            <FeatureSpecBox deluxe={deluxe} uiLanguage={uiLanguage} featureSpec={featureSpec} targetVariable={targetVariable} />
           )}
 
-          {/* Toggle: upload vs server path */}
           <div className={`p-3 rounded-lg border ${cls(deluxe, "bg-slate-50 border-slate-200", "bg-slate-800/50 border-slate-700")}`}>
             <label className="flex items-center gap-2 cursor-pointer">
               <input
@@ -1934,9 +853,7 @@ export function TrainingView({
             />
           ) : (
             <div className="space-y-2">
-              <label className={`text-sm font-medium ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>
-                {tr.serverZipPath}
-              </label>
+              <label className={`text-sm font-medium ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>{tr.serverZipPath}</label>
               <input
                 type="text"
                 value={serverPathTest}
@@ -1947,25 +864,15 @@ export function TrainingView({
             </div>
           )}
 
-          {ollamaOk === false && (
-            <div className={`flex items-start gap-2 p-3 rounded-lg border ${cls(deluxe, "bg-amber-50 border-amber-300 text-amber-800", "bg-amber-900/30 border-amber-700 text-amber-300")}`}>
-              <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-              <div className="flex-1">
-                <p className="text-sm">{tr.ollamaUnavailable} <code className="font-mono bg-black/10 px-1 rounded">ollama serve</code></p>
-              </div>
-              {recheckOllama && (
-                <button onClick={recheckOllama} className="text-xs underline opacity-70 hover:opacity-100 whitespace-nowrap">{tr.checkAgain}</button>
-              )}
-            </div>
-          )}
+          {ollamaOk === false && <OllamaWarning deluxe={deluxe} tr={tr} recheckOllama={recheckOllama} />}
 
           <div className="flex justify-center mt-6">
             <Button
               onClick={() => {
                 if (useServerPathTest) {
                   onExtractTestingLocal(serverPathTest);
-                } else {
-                  testZipFile && onExtractTesting(testZipFile);
+                } else if (testZipFile) {
+                  onExtractTesting(testZipFile);
                 }
               }}
               disabled={(useServerPathTest ? !serverPathTest : !testZipFile) || isExtractingTest}
@@ -1985,40 +892,37 @@ export function TrainingView({
 
           {isExtractingTest && (
             <div className="space-y-2">
-              <ProgressBar
-                deluxe={deluxe}
-                progress={progress}
-                label={progressLabel}
-                etaText={testExtractEta != null ? `${tr.etaRemaining}: ~${formatDurationShort(testExtractEta)}` : null}
-              />
+              <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel} etaText={renderEtaText(testExtractEta)} />
               {testExtractStalled && (
                 <p className={`text-xs ${cls(deluxe, "text-slate-500", "text-slate-400")}`}>
                   ℹ {tr.processingMayTakeLong}
                 </p>
               )}
-              <div className="flex gap-2">
-                {onCancel && (
-                  <Button variant="outline" size="sm" onClick={onCancel} className="text-xs">
-                    ✕ {tr.stop}
-                  </Button>
-                )}
-              </div>
+              {onCancel && (
+                <Button variant="outline" size="sm" onClick={onCancel} className="text-xs">
+                  ✕ {tr.stop}
+                </Button>
+              )}
             </div>
           )}
 
-          {/* Výsledek extrakce + pokračovat */}
           {testingDataX && !isExtractingTest && (
             <div className={`flex items-center gap-2 p-2 rounded-lg ${cls(deluxe, "bg-green-50 text-green-700", "bg-green-900/30 text-green-400")}`}>
               <CheckCircle2 className="h-4 w-4" />
-              <span className="text-sm font-medium">{tr.testingExtractionDone} — {testingDataX.length} {tr.rows}</span>
+              <span className="text-sm font-medium">
+                {tr.testingExtractionDone} — {testingDataX.length} {tr.rows}
+              </span>
             </div>
           )}
+
           {testingDataX && (
             <>
               <DatasetTable deluxe={deluxe} data={testingDataX} title="Testing Dataset X" />
               <div className="flex justify-center mt-2">
                 <button
-                  onClick={() => downloadTrainingDataCSV(testingDataX, `testing_dataset_X_${new Date().toISOString().slice(0, 10)}.csv`)}
+                  onClick={() =>
+                    downloadTrainingDataCSV(testingDataX, `testing_dataset_X_${new Date().toISOString().slice(0, 10)}.csv`)
+                  }
                   className="px-3 py-1.5 bg-slate-600 text-white rounded text-xs hover:bg-slate-700 flex items-center gap-1"
                 >
                   <Download className="w-3 h-3" /> {tr.downloadTestingX}
@@ -2034,17 +938,10 @@ export function TrainingView({
         </div>
       )}
 
-      {/* ================================================================ */}
-      {/*  FÁZE 5: PREDIKCE                                                */}
-      {/* ================================================================ */}
       {step === 5 && (
         <div className="space-y-4">
-          {/* Testing dataset_X preview */}
-          {testingDataX && (
-            <DatasetTable deluxe={deluxe} data={testingDataX} title="Testing Dataset X" />
-          )}
+          {testingDataX && <DatasetTable deluxe={deluxe} data={testingDataX} title="Testing Dataset X" />}
 
-          {/* Optional testing_Y labels */}
           {showPredictForm && (
             <div className={`p-3 rounded-lg border ${cls(deluxe, "bg-amber-50/50 border-amber-200", "bg-amber-900/20 border-amber-800/50")}`}>
               <label className="flex items-center gap-2 cursor-pointer">
@@ -2069,24 +966,20 @@ export function TrainingView({
                   <input
                     type="file"
                     accept=".csv"
-                    onChange={(e) => { if (e.target.files?.[0]) setTestingLabels(e.target.files[0]); }}
+                    onChange={(e) => {
+                      if (e.target.files?.[0]) setTestingLabels(e.target.files[0]);
+                    }}
                     className={`text-xs ${cls(deluxe, "text-slate-600", "text-slate-400")}`}
                   />
-                  {testingLabels && (
-                    <p className="mt-1 text-xs text-green-500 font-medium">CSV: {testingLabels.name}</p>
-                  )}
+                  {testingLabels && <p className="mt-1 text-xs text-green-500 font-medium">CSV: {testingLabels.name}</p>}
                 </div>
               )}
             </div>
           )}
 
-          {/* Predict button */}
           {showPredictForm && (
             <div className="flex justify-center mt-6">
-              <Button
-                onClick={() => onPredict(useTestingLabels ? testingLabels : null)}
-                disabled={isPredicting}
-              >
+              <Button onClick={() => onPredict(useTestingLabels ? testingLabels : null)} disabled={isPredicting}>
                 {isPredicting ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" /> {tr.predicting} ({predictSecs}s)
@@ -2100,15 +993,9 @@ export function TrainingView({
             </div>
           )}
 
-          {/* Progress bar during prediction */}
           {isPredicting && (
             <div className="space-y-2 mt-4">
-              <ProgressBar
-                deluxe={deluxe}
-                progress={progress}
-                label={progressLabel || tr.predictionInProgressLabel}
-                etaText={predictEta != null ? `${tr.etaRemaining}: ~${formatDurationShort(predictEta)}` : null}
-              />
+              <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel || tr.predictionInProgressLabel} etaText={renderEtaText(predictEta)} />
               {onCancel && (
                 <div className="flex justify-center">
                   <Button variant="outline" size="sm" onClick={onCancel} className="text-xs">
@@ -2119,391 +1006,20 @@ export function TrainingView({
             </div>
           )}
 
-          {/* Predictions table */}
           {predictions && predictions.length > 0 && (
-            <div className={`rounded-xl p-4 space-y-3 border ${cls(deluxe, "bg-green-50 border-green-100", "bg-green-900/20 border-green-800/50")}`}>
-              <div className={`flex items-center gap-2 ${cls(deluxe, "text-green-800", "text-green-400")}`}>
-                <CheckCircle2 className="h-4 w-4" />
-                <p className="text-sm font-bold">
-                  {tr.predictionDone} ({predictions.length} {tr.objects})
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <span className={`text-[11px] px-2 py-1 rounded-full border ${cls(deluxe, "bg-white border-slate-200 text-slate-600", "bg-slate-900/40 border-slate-700 text-slate-300")}`}>
-                  {tr.predictionSource}: {isClassificationMetrics(predictionMetrics) ? tr.predictionSourceClassification : tr.predictionSourceRegression}
-                </span>
-              </div>
-
-              {/* Metrics panel */}
-              {predictionMetrics && (
-                <div className={`p-3 rounded-lg border ${cls(deluxe, "bg-blue-50 border-blue-200", "bg-blue-900/20 border-blue-800/50")}`}>
-                  <p className={`text-xs font-bold mb-2 ${cls(deluxe, "text-blue-900", "text-blue-300")}`}>
-                    {tr.evalTitle}
-                  </p>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                    {(() => {
-                      const isCls = isClassificationMetrics(predictionMetrics);
-                      const matchPct = predictionMetrics.total_count > 0
-                        ? Math.round((predictionMetrics.matched_count / predictionMetrics.total_count) * 100)
-                        : 0;
-
-                      if (isCls) {
-                        const acc = predictionMetrics.accuracy ?? 0;
-                        const balAcc = predictionMetrics.balanced_accuracy ?? 0;
-                        const f1 = predictionMetrics.f1_macro ?? 0;
-                        const prec = predictionMetrics.precision_macro ?? 0;
-                        const rec = predictionMetrics.recall_macro ?? 0;
-                        const mcc = predictionMetrics.mcc ?? 0;
-                        return (
-                          <>
-                            <div className="text-center">
-                              <p className={`text-lg font-bold ${cls(deluxe, "text-blue-700", "text-blue-400")}`}>{acc.toFixed(4)}</p>
-                              <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>Accuracy</p>
-                            </div>
-                            <div className="text-center">
-                              <p className={`text-lg font-bold ${cls(deluxe, "text-blue-700", "text-blue-400")}`}>{balAcc.toFixed(4)}</p>
-                              <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>{tr.balancedAccuracy}</p>
-                            </div>
-                            <div className="text-center">
-                              <p className={`text-lg font-bold ${cls(deluxe, "text-blue-700", "text-blue-400")}`}>{f1.toFixed(4)}</p>
-                              <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>F1 macro</p>
-                            </div>
-                            <div className="text-center">
-                              <p className={`text-lg font-bold ${cls(deluxe, "text-blue-700", "text-blue-400")}`}>{prec.toFixed(4)}</p>
-                              <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>Precision macro</p>
-                            </div>
-                            <div className="text-center">
-                              <p className={`text-lg font-bold ${rec > 0.6 ? "text-green-600" : rec > 0.3 ? "text-yellow-600" : "text-red-500"}`}>{rec.toFixed(4)}</p>
-                              <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>Recall macro</p>
-                            </div>
-                            <div className="text-center">
-                              <p className={`text-lg font-bold ${mcc > 0.5 ? "text-green-600" : mcc > 0.2 ? "text-yellow-600" : "text-red-500"}`}>{mcc.toFixed(4)}</p>
-                              <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>{tr.matthews}</p>
-                            </div>
-                            <div className="text-center col-span-2 sm:col-span-4">
-                              <p className={`text-sm ${cls(deluxe, "text-blue-700", "text-blue-400")}`}>
-                                {tr.paired}: {predictionMetrics.matched_count}/{predictionMetrics.total_count} ({matchPct}%)
-                              </p>
-                            </div>
-                          </>
-                        );
-                      }
-
-                      const mse = typeof predictionMetrics.mse === "number" ? predictionMetrics.mse : 0;
-                      const mae = typeof predictionMetrics.mae === "number" ? predictionMetrics.mae : 0;
-                      const corr = predictionMetrics.correlation ?? null;
-                      const corrColor = corr !== null && corr > 0.5 ? "text-green-600" : corr !== null && corr > 0 ? "text-yellow-600" : "text-red-500";
-                      return (
-                        <>
-                          <div className="text-center">
-                            <p className={`text-lg font-bold ${cls(deluxe, "text-blue-700", "text-blue-400")}`}>{mse.toFixed(4)}</p>
-                            <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>MSE (nižší = lepší)</p>
-                          </div>
-                          <div className="text-center">
-                            <p className={`text-lg font-bold ${cls(deluxe, "text-blue-700", "text-blue-400")}`}>{mae.toFixed(4)}</p>
-                            <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>MAE (nižší = lepší)</p>
-                          </div>
-                          <div className="text-center">
-                            <p className={`text-lg font-bold ${corrColor}`}>
-                              {corr !== null ? corr.toFixed(4) : "N/A"}
-                            </p>
-                            <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>Korelace (vyšší = lepší)</p>
-                          </div>
-                          <div className="text-center">
-                            <p className={`text-lg font-bold ${matchPct === 100 ? "text-green-600" : matchPct > 50 ? "text-yellow-600" : "text-red-500"}`}>{matchPct}%</p>
-                            <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>
-                              {tr.paired} ({predictionMetrics.matched_count}/{predictionMetrics.total_count})
-                            </p>
-                          </div>
-                        </>
-                      );
-                    })()}
-                  </div>
-
-                  {isClassificationMetrics(predictionMetrics) && (
-                    <div className="mt-3 space-y-3">
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <div className={`rounded-md p-2 border ${cls(deluxe, "bg-white/70 border-blue-100", "bg-slate-900/40 border-slate-700")}`}>
-                          <p className="text-[10px] opacity-70">{tr.avgConfidence}</p>
-                          <p className="text-sm font-semibold">
-                            {predictionMetrics.avg_confidence != null ? Number(predictionMetrics.avg_confidence).toFixed(4) : "—"}
-                          </p>
-                        </div>
-                        <div className={`rounded-md p-2 border ${cls(deluxe, "bg-white/70 border-blue-100", "bg-slate-900/40 border-slate-700")}`}>
-                          <p className="text-[10px] opacity-70">{tr.correctConfidence}</p>
-                          <p className="text-sm font-semibold text-green-600">
-                            {predictionMetrics.correct_confidence_avg != null ? Number(predictionMetrics.correct_confidence_avg).toFixed(4) : "—"}
-                          </p>
-                        </div>
-                        <div className={`rounded-md p-2 border ${cls(deluxe, "bg-white/70 border-blue-100", "bg-slate-900/40 border-slate-700")}`}>
-                          <p className="text-[10px] opacity-70">{tr.wrongConfidence}</p>
-                          <p className="text-sm font-semibold text-amber-600">
-                            {predictionMetrics.incorrect_confidence_avg != null ? Number(predictionMetrics.incorrect_confidence_avg).toFixed(4) : "—"}
-                          </p>
-                        </div>
-                      </div>
-
-                      {predictionMetrics.class_metrics && predictionMetrics.class_metrics.length > 0 && (
-                        <details className={`rounded-md border p-2 ${cls(deluxe, "bg-white/70 border-blue-100", "bg-slate-900/40 border-slate-700")}`}>
-                          <summary className="cursor-pointer text-xs font-semibold">{tr.classBreakdown}</summary>
-                          <div className="mt-2 overflow-x-auto">
-                            <table className="w-full text-xs">
-                              <thead>
-                                <tr className={cls(deluxe, "text-slate-600", "text-slate-400")}>
-                                  <th className="px-2 py-1 text-left">Label</th>
-                                  <th className="px-2 py-1 text-left">Precision</th>
-                                  <th className="px-2 py-1 text-left">Recall</th>
-                                  <th className="px-2 py-1 text-left">F1</th>
-                                  <th className="px-2 py-1 text-left">{tr.support}</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {predictionMetrics.class_metrics.map((metric) => (
-                                  <tr key={metric.label} className={cls(deluxe, "border-t border-slate-200", "border-t border-slate-700")}>
-                                    <td className="px-2 py-1 font-medium">{metric.label}</td>
-                                    <td className="px-2 py-1">{metric.precision.toFixed(4)}</td>
-                                    <td className="px-2 py-1">{metric.recall.toFixed(4)}</td>
-                                    <td className="px-2 py-1">{metric.f1.toFixed(4)}</td>
-                                    <td className="px-2 py-1">{metric.support}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </details>
-                      )}
-
-                      {predictionMetrics.labels && predictionMetrics.confusion_matrix && predictionMetrics.labels.length > 0 && (
-                        <details className={`rounded-md border p-2 ${cls(deluxe, "bg-white/70 border-blue-100", "bg-slate-900/40 border-slate-700")}`}>
-                          <summary className="cursor-pointer text-xs font-semibold">{tr.confusionMatrix}</summary>
-                          <div className="mt-2 overflow-x-auto">
-                            <p className={`mb-2 text-[10px] ${cls(deluxe, "text-slate-500", "text-slate-400")}`}>
-                              {tr.actualAxis} × {tr.predictedAxis}
-                            </p>
-                            {(() => {
-                              const matrix = predictionMetrics.confusion_matrix ?? [];
-                              const labels = predictionMetrics.labels ?? [];
-                              const maxCell = Math.max(1, ...matrix.flat());
-                              return (
-                                <table className="text-xs border-collapse">
-                                  <thead>
-                                    <tr>
-                                      <th className="px-2 py-1"></th>
-                                      {labels.map((label) => (
-                                        <th key={label} className="px-2 py-1 font-mono whitespace-nowrap">{label}</th>
-                                      ))}
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    {matrix.map((row, rowIdx) => (
-                                      <tr key={labels[rowIdx] ?? rowIdx}>
-                                        <th className="px-2 py-1 text-left font-mono whitespace-nowrap">{labels[rowIdx]}</th>
-                                        {row.map((cell, colIdx) => {
-                                          const intensity = Math.max(0.08, Number(cell) / maxCell);
-                                          const isDiagonal = rowIdx === colIdx;
-                                          return (
-                                            <td
-                                              key={`${rowIdx}-${colIdx}`}
-                                              className="px-2 py-1 text-center font-semibold"
-                                              style={{
-                                                backgroundColor: isDiagonal
-                                                  ? `rgba(34, 197, 94, ${intensity})`
-                                                  : `rgba(59, 130, 246, ${intensity})`,
-                                              }}
-                                            >
-                                              {cell}
-                                            </td>
-                                          );
-                                        })}
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              );
-                            })()}
-                          </div>
-                        </details>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Predictions table */}
-              {classificationRowsSummary && (
-                <div className="flex flex-wrap gap-2">
-                  <span className={`text-[11px] px-2 py-1 rounded-full border ${cls(deluxe, "bg-white border-slate-200 text-slate-600", "bg-slate-900/40 border-slate-700 text-slate-300")}`}>
-                    {tr.predictionTableSummary}
-                  </span>
-                  <span className={`text-[11px] px-2 py-1 rounded-full border ${cls(deluxe, "bg-emerald-50 border-emerald-200 text-emerald-700", "bg-emerald-900/30 border-emerald-700/60 text-emerald-300")}`}>
-                    {tr.correctRows}: {classificationRowsSummary.correct}
-                  </span>
-                  <span className={`text-[11px] px-2 py-1 rounded-full border ${cls(deluxe, "bg-rose-50 border-rose-200 text-rose-700", "bg-rose-900/30 border-rose-700/60 text-rose-300")}`}>
-                    {tr.wrongRows}: {classificationRowsSummary.incorrect}
-                  </span>
-                  {classificationRowsSummary.unlabeled > 0 && (
-                    <span className={`text-[11px] px-2 py-1 rounded-full border ${cls(deluxe, "bg-amber-50 border-amber-200 text-amber-700", "bg-amber-900/30 border-amber-700/60 text-amber-300")}`}>
-                      {tr.unlabeledRows}: {classificationRowsSummary.unlabeled}
-                    </span>
-                  )}
-                </div>
-              )}
-              {featureSpec && Object.keys(featureSpec).length > 0 && (
-                <button
-                  onClick={() => setShowFeatureCols((v) => !v)}
-                  className={`text-xs underline opacity-60 hover:opacity-100 ${cls(deluxe, "text-slate-500", "text-slate-400")}`}
-                >
-                  {showFeatureCols ? tr.hideFeatureColumns : `${tr.showFeatureColumns} (${Object.keys(featureSpec).length})`}
-                </button>
-              )}
-              <div className={`rounded-lg border overflow-hidden ${cls(deluxe, "border-slate-200", "border-slate-700")}`}>
-                <div className="overflow-x-auto max-h-80">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className={cls(deluxe, "bg-slate-50", "bg-slate-900")}>
-                        <th className="px-2 py-1 text-left font-mono">media_name</th>
-                        {hasLabelPredictions ? (
-                          <>
-                            <th className="px-2 py-1 text-left font-mono">{tr.rowStatus}</th>
-                            <th className="px-2 py-1 text-left font-mono">predicted_label</th>
-                            <th className="px-2 py-1 text-left font-mono">confidence</th>
-                          </>
-                        ) : (
-                          <th className="px-2 py-1 text-left font-mono">predicted_score</th>
-                        )}
-                        {hasActualPredictionValues && (
-                          <th className="px-2 py-1 text-left font-mono">
-                            {predictions.some((p) => p.actual_label !== undefined) ? "actual_label" : "actual_score"}
-                          </th>
-                        )}
-                        <th className="px-2 py-1 text-left font-mono">rule_applied</th>
-                        {showFeatureCols && featureSpec && Object.keys(featureSpec).map((f) => (
-                          <th key={f} className="px-2 py-1 text-left font-mono">{f}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {predictions.map((pred, i) => {
-                        const isClassifiedRow = hasLabelPredictions;
-                        const hasActualLabel = pred.actual_label != null;
-                        const isCorrect = hasActualLabel && pred.predicted_label === pred.actual_label;
-                        const isWrong = hasActualLabel && pred.predicted_label !== pred.actual_label;
-                        const baseRow = i % 2 === 0 ? cls(deluxe, "bg-white", "bg-slate-800/50") : cls(deluxe, "bg-slate-50/50", "bg-slate-900/50");
-                        const classRowTone = !isClassifiedRow
-                          ? ""
-                          : isCorrect
-                            ? cls(deluxe, "bg-emerald-50/70", "bg-emerald-950/30")
-                            : isWrong
-                              ? cls(deluxe, "bg-rose-50/70", "bg-rose-950/30")
-                              : cls(deluxe, "bg-amber-50/60", "bg-amber-950/20");
-                        const statusPill = isCorrect
-                          ? cls(deluxe, "bg-emerald-100 text-emerald-700", "bg-emerald-900/40 text-emerald-300")
-                          : isWrong
-                            ? cls(deluxe, "bg-rose-100 text-rose-700", "bg-rose-900/40 text-rose-300")
-                            : cls(deluxe, "bg-amber-100 text-amber-700", "bg-amber-900/40 text-amber-300");
-                        return (
-                        <tr key={i} className={classRowTone || baseRow}>
-                          <td className="px-2 py-1 whitespace-nowrap font-medium">{pred.media_name}</td>
-                          {hasLabelPredictions ? (
-                            <>
-                              <td className="px-2 py-1 whitespace-nowrap">
-                                <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusPill}`}>
-                                  {isCorrect ? tr.rowCorrect : isWrong ? tr.rowWrong : tr.rowUnlabeled}
-                                </span>
-                              </td>
-                              <td className="px-2 py-1 whitespace-nowrap font-bold text-blue-600">{pred.predicted_label ?? "—"}</td>
-                              <td className="px-2 py-1 whitespace-nowrap font-bold text-indigo-600">{pred.confidence != null ? Number(pred.confidence).toFixed(4) : "—"}</td>
-                            </>
-                          ) : (
-                            <td className="px-2 py-1 whitespace-nowrap font-bold text-blue-600">{pred.predicted_score}</td>
-                          )}
-                          {hasActualPredictionValues && (
-                            <td className={`px-2 py-1 whitespace-nowrap font-bold ${hasLabelPredictions ? (isCorrect ? "text-emerald-600" : isWrong ? "text-rose-600" : "text-amber-600") : "text-green-600"}`}>
-                              {pred.actual_label ?? (pred.actual_score !== undefined ? pred.actual_score : "—")}
-                            </td>
-                          )}
-                          <td className="px-2 py-1 whitespace-nowrap font-mono text-[10px]">{pred.rule_applied}</td>
-                          {showFeatureCols && featureSpec && Object.keys(featureSpec).map((f) => (
-                            <td key={f} className="px-2 py-1 whitespace-nowrap">
-                              {String(pred.extracted_features[f] ?? "")}
-                            </td>
-                          ))}
-                        </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Download */}
-              <div className="flex justify-center gap-2 flex-wrap">
-                <button
-                  onClick={() => {
-                    // Escape cell to prevent CSV injection (Excel/Sheets formula execution)
-                    const esc = (v: unknown) => {
-                      const s = String(v ?? "");
-                      if (/^[=+@\-]/.test(s)) return `"'${s.replace(/"/g, '""')}"`;
-                      if (s.includes(",") || s.includes('"') || s.includes("\n")) return `"${s.replace(/"/g, '""')}"`;
-                      return s;
-                    };
-                    const hasLabelPred = predictions.some((p) => p.predicted_label !== undefined);
-                    const hasActual = predictions.some((p) => p.actual_score !== undefined || p.actual_label !== undefined);
-                    const actualColName = predictions.some((p) => p.actual_label !== undefined) ? "actual_label" : "actual_score";
-                    const headers = [
-                      "media_name",
-                      ...(hasLabelPred ? ["predicted_label", "confidence"] : ["predicted_score"]),
-                      ...(hasActual ? [actualColName] : []),
-                      "rule_applied",
-                      ...(featureSpec ? Object.keys(featureSpec) : []),
-                    ];
-                    const csv = [
-                      headers.join(","),
-                      ...predictions.map((p) => [
-                        esc(p.media_name),
-                        ...(hasLabelPred ? [esc(p.predicted_label), esc(p.confidence)] : [esc(p.predicted_score)]),
-                        ...(hasActual ? [esc(p.actual_label ?? (p.actual_score !== undefined ? p.actual_score : ""))] : []),
-                        esc(p.rule_applied),
-                        ...(featureSpec ? Object.keys(featureSpec).map((f) => esc(p.extracted_features[f])) : []),
-                      ].join(","))
-                    ].join("\n");
-                    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = `predictions_${new Date().toISOString().slice(0, 10)}.csv`;
-                    a.click();
-                    URL.revokeObjectURL(url);
-                  }}
-                  className="px-3 py-1.5 bg-slate-500 text-white rounded text-xs hover:bg-slate-600 flex items-center gap-1"
-                >
-                  <Download className="w-3 h-3" /> {tr.downloadPredCsv}
-                </button>
-                <button
-                  onClick={() => downloadExperimentZip({
-                    featureSpec: featureSpec ?? undefined,
-                    trainingDataX: trainResult?.training_data_X ?? undefined,
-                    testingDataX: testingDataX ?? undefined,
-                    rules: trainResult?.rules ?? undefined,
-                    mse: trainResult?.mse ?? undefined,
-                    predictions: predictions as unknown as Record<string, unknown>[],
-                    metrics: predictionMetrics as unknown as Record<string, unknown> ?? undefined,
-                  })}
-                  className="px-3 py-1.5 bg-slate-700 text-white rounded text-xs hover:bg-slate-800 flex items-center gap-1"
-                >
-                  <Download className="w-3 h-3" /> {tr.downloadExperiment}
-                </button>
-              </div>
-
-              {/* Re-run prediction */}
-              {!isPredicting && (
-                <div className="flex justify-center mt-2">
-                  <Button variant="outline" size="sm" onClick={() => setShowPredictForm(true)}>
-                    <PlayCircle className="mr-2 h-3 w-3" /> {tr.rerunPrediction}
-                  </Button>
-                </div>
-              )}
-            </div>
+            <PredictionResults
+              deluxe={deluxe}
+              tr={tr}
+              predictions={predictions}
+              predictionMetrics={predictionMetrics}
+              featureSpec={featureSpec}
+              trainResult={trainResult}
+              testingDataX={testingDataX}
+              isPredicting={isPredicting}
+              showFeatureCols={showFeatureCols}
+              onToggleFeatureCols={() => setShowFeatureCols((value) => !value)}
+              onRerunPrediction={() => setShowPredictForm(true)}
+            />
           )}
         </div>
       )}
