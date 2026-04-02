@@ -1,6 +1,7 @@
 """CSV/labels loading utilities – shared across routes."""
 import logging
 import os
+import re
 
 import pandas as pd
 from werkzeug.utils import secure_filename
@@ -41,3 +42,26 @@ def load_labels_from_path(path: str) -> pd.DataFrame | None:
     except Exception as e:
         logger.warning("Cannot load labels CSV from %s: %s", path, e)
         return None
+
+
+def normalize_media_name(value: object) -> str:
+    """Normalize media identifiers for tolerant joins.
+
+    Examples:
+    - ``video.mp4`` -> ``video``
+    - ``folder/sub/Video 01.MOV`` -> ``video 01``
+    - ``" sample.png "`` -> ``sample``
+    """
+    if value is None:
+        return ""
+
+    text = str(value).strip().strip('"').strip("'")
+    if not text:
+        return ""
+
+    text = text.replace("\\", "/")
+    text = text.rsplit("/", 1)[-1]
+    stem, ext = os.path.splitext(text)
+    text = stem if ext else text
+    text = re.sub(r"\s+", " ", text).strip()
+    return text.casefold()

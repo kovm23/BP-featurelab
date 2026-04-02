@@ -31,6 +31,7 @@ from sklearn.metrics import (
 from sklearn.model_selection import KFold, StratifiedKFold
 from sklearn.preprocessing import LabelEncoder
 from xgboost import XGBClassifier, XGBRegressor
+from utils.csv_utils import normalize_media_name
 
 logger = logging.getLogger(__name__)
 
@@ -345,12 +346,22 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
     join_col = df_gt.columns[0]
     df_gt = df_gt.rename(columns={join_col: "media_name"})
 
-    pipeline.training_X["media_name"] = (
-        pipeline.training_X["media_name"].astype(str).str.strip()
-    )
+    df_x = pipeline.training_X.copy()
+    df_x["media_name"] = df_x["media_name"].astype(str).str.strip()
     df_gt["media_name"] = df_gt["media_name"].astype(str).str.strip()
 
-    df_merged = pd.merge(pipeline.training_X, df_gt, on="media_name", how="inner")
+    df_x["_media_join_key"] = df_x["media_name"].apply(normalize_media_name)
+    df_gt["_media_join_key"] = df_gt["media_name"].apply(normalize_media_name)
+
+    df_merged = pd.merge(
+        df_x,
+        df_gt,
+        on="_media_join_key",
+        how="inner",
+        suffixes=("_x", "_y"),
+    )
+    if "media_name_x" in df_merged.columns:
+        df_merged["media_name"] = df_merged["media_name_x"]
 
     if df_merged.empty:
         raise Exception(
@@ -635,7 +646,7 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
             target_col = _resolve_eval_target_column(testing_Y_df, pipeline.target_variable)
             if target_col:
                 for _, row in testing_Y_df.iterrows():
-                    actual_values[str(row["media_name"]).strip()] = str(row[target_col])
+                    actual_values[normalize_media_name(row["media_name"])] = str(row[target_col])
 
         results = []
         pred_list: list[str] = []
@@ -650,6 +661,7 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
                 _cb(pct, f"Sestavuji výsledky ({row_num + 1}/{total_items})...")
 
             media_name = str(row.get("media_name", f"object_{i}"))
+            media_key = normalize_media_name(media_name)
             cls_idx = int(y_pred_encoded[row_num])
             pred_label = label_classes[cls_idx] if 0 <= cls_idx < len(label_classes) else str(cls_idx)
             confidence = None
@@ -666,10 +678,10 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
                 },
             }
 
-            if media_name in actual_values:
-                item["actual_label"] = actual_values[media_name]
+            if media_key in actual_values:
+                item["actual_label"] = actual_values[media_key]
                 pred_list.append(pred_label)
-                actual_list.append(actual_values[media_name])
+                actual_list.append(actual_values[media_key])
 
             results.append(item)
 
@@ -765,7 +777,7 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
         target_col = _resolve_eval_target_column(testing_Y_df, pipeline.target_variable)
         if target_col:
             for _, row in testing_Y_df.iterrows():
-                actual_values[str(row["media_name"]).strip()] = float(row[target_col])
+                actual_values[normalize_media_name(row["media_name"])] = float(row[target_col])
 
     results = []
     pred_list: list[float] = []
@@ -780,6 +792,7 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
             _cb(pct, f"Sestavuji výsledky ({row_num + 1}/{total_items})...")
         pred_score = float(predictions[row_num])
         media_name = str(row.get("media_name", f"object_{i}"))
+        media_key = normalize_media_name(media_name)
         rule = _find_covering_rule(row, pipeline.rules) if pipeline.rules else "Default rule"
 
         item = {
@@ -791,10 +804,10 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
             },
         }
 
-        if media_name in actual_values:
-            item["actual_score"] = round(actual_values[media_name], 4)
+        if media_key in actual_values:
+            item["actual_score"] = round(actual_values[media_key], 4)
             pred_list.append(pred_score)
-            actual_list.append(actual_values[media_name])
+            actual_list.append(actual_values[media_key])
 
         results.append(item)
 
