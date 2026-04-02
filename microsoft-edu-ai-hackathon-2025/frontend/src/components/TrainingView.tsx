@@ -182,10 +182,12 @@ function ProgressBar({
   deluxe,
   progress,
   label,
+  etaText,
 }: {
   deluxe: boolean;
   progress: number;
   label: string;
+  etaText?: string | null;
 }) {
   const inProgress = progress > 0 && progress < 100;
   const isDone = progress >= 100;
@@ -225,6 +227,11 @@ function ProgressBar({
           )}
         </div>
       </div>
+      {etaText && (
+        <p className={`text-[11px] ${cls(deluxe, "text-slate-500", "text-slate-400")}`}>
+          {etaText}
+        </p>
+      )}
     </div>
   );
 }
@@ -568,6 +575,87 @@ function useElapsedTimer(active: boolean) {
   return secs;
 }
 
+function formatDurationShort(totalSeconds: number) {
+  const seconds = Math.max(0, Math.round(totalSeconds));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${secs}s`;
+  return `${secs}s`;
+}
+
+function useEstimatedRemaining(progress: number, active: boolean) {
+  const [etaSeconds, setEtaSeconds] = useState<number | null>(null);
+  const startedAtRef = useRef<number | null>(null);
+  const recentRawRef = useRef<number[]>([]);
+  const smoothedEtaRef = useRef<number | null>(null);
+
+  const reset = () => {
+    startedAtRef.current = null;
+    recentRawRef.current = [];
+    smoothedEtaRef.current = null;
+    setEtaSeconds(null);
+  };
+
+  useEffect(() => {
+    if (!active) {
+      reset();
+      return;
+    }
+
+    if (startedAtRef.current === null) {
+      startedAtRef.current = Date.now();
+      recentRawRef.current = [];
+      smoothedEtaRef.current = null;
+    }
+
+    const recalc = () => {
+      if (startedAtRef.current === null || progress < 8 || progress >= 99) {
+        setEtaSeconds(null);
+        return;
+      }
+
+      const elapsedSeconds = (Date.now() - startedAtRef.current) / 1000;
+      if (elapsedSeconds < 8) {
+        setEtaSeconds(null);
+        return;
+      }
+
+      const remaining = (elapsedSeconds * (100 - progress)) / progress;
+      if (!Number.isFinite(remaining) || remaining < 0) {
+        setEtaSeconds(null);
+        return;
+      }
+
+      recentRawRef.current = [...recentRawRef.current, remaining].slice(-5);
+      const sorted = [...recentRawRef.current].sort((a, b) => a - b);
+      const medianRaw = sorted[Math.floor(sorted.length / 2)];
+
+      if (smoothedEtaRef.current == null) {
+        smoothedEtaRef.current = medianRaw;
+      } else {
+        const previous = smoothedEtaRef.current;
+        const alpha = medianRaw < previous ? 0.45 : 0.18;
+        const blended = previous + alpha * (medianRaw - previous);
+        const maxUpwardStep = Math.max(8, previous * 0.12);
+        smoothedEtaRef.current = blended > previous
+          ? Math.min(blended, previous + maxUpwardStep)
+          : blended;
+      }
+
+      setEtaSeconds(Math.round(smoothedEtaRef.current));
+    };
+
+    recalc();
+    const intervalId = setInterval(recalc, 1000);
+    return () => clearInterval(intervalId);
+  }, [progress, active]);
+
+  return etaSeconds;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Hook: stall detection — true when progress is stuck > threshold   */
 /* ------------------------------------------------------------------ */
@@ -770,6 +858,7 @@ export function TrainingView({
       rowCorrect: "Correct",
       rowWrong: "Incorrect",
       rowUnlabeled: "No label",
+      etaRemaining: "Estimated remaining",
       predictedAxis: "Predicted",
       actualAxis: "Actual",
       support: "Support",
@@ -871,6 +960,7 @@ export function TrainingView({
       rowCorrect: "Správně",
       rowWrong: "Chybně",
       rowUnlabeled: "Bez labelu",
+      etaRemaining: "Odhad zbývá",
       predictedAxis: "Predikce",
       actualAxis: "Skutečnost",
       support: "Podpora",
@@ -958,6 +1048,11 @@ export function TrainingView({
   // Elapsed timers for phases without a progress bar
   const trainSecs = useElapsedTimer(isTraining);
   const predictSecs = useElapsedTimer(isPredicting);
+  const discoveryEta = useEstimatedRemaining(progress, isDiscovering);
+  const extractEta = useEstimatedRemaining(progress, isExtracting);
+  const trainEta = useEstimatedRemaining(progress, isTraining);
+  const testExtractEta = useEstimatedRemaining(progress, isExtractingTest);
+  const predictEta = useEstimatedRemaining(progress, isPredicting);
 
   // Stall detection for long extractions
   const extractStalled = useProgressStall(progress, isExtracting);
@@ -1310,7 +1405,12 @@ export function TrainingView({
           {/* Progress bar + cancel during discovery */}
           {isDiscovering && (
             <div className="space-y-2">
-              <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel || tr.discoveryAnalyzing} />
+              <ProgressBar
+                deluxe={deluxe}
+                progress={progress}
+                label={progressLabel || tr.discoveryAnalyzing}
+                etaText={discoveryEta != null ? `${tr.etaRemaining}: ~${formatDurationShort(discoveryEta)}` : null}
+              />
               {onCancel && (
                 <div className="flex justify-center">
                   <Button variant="outline" size="sm" onClick={onCancel} className="text-xs">
@@ -1498,7 +1598,12 @@ export function TrainingView({
 
           {isExtracting && (
             <div className="space-y-2">
-              <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel} />
+              <ProgressBar
+                deluxe={deluxe}
+                progress={progress}
+                label={progressLabel}
+                etaText={extractEta != null ? `${tr.etaRemaining}: ~${formatDurationShort(extractEta)}` : null}
+              />
               {extractStalled && (
                 <p className={`text-xs ${cls(deluxe, "text-slate-500", "text-slate-400")}`}>
                   ℹ {tr.processingMayTakeLong}
@@ -1617,7 +1722,12 @@ export function TrainingView({
           {/* Progress bar during training */}
           {isTraining && (
             <div className="space-y-2 mt-4">
-              <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel || tr.trainingInProgressLabel} />
+              <ProgressBar
+                deluxe={deluxe}
+                progress={progress}
+                label={progressLabel || tr.trainingInProgressLabel}
+                etaText={trainEta != null ? `${tr.etaRemaining}: ~${formatDurationShort(trainEta)}` : null}
+              />
               {onCancel && (
                 <div className="flex justify-center">
                   <Button variant="outline" size="sm" onClick={onCancel} className="text-xs">
@@ -1869,7 +1979,12 @@ export function TrainingView({
 
           {isExtractingTest && (
             <div className="space-y-2">
-              <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel} />
+              <ProgressBar
+                deluxe={deluxe}
+                progress={progress}
+                label={progressLabel}
+                etaText={testExtractEta != null ? `${tr.etaRemaining}: ~${formatDurationShort(testExtractEta)}` : null}
+              />
               {testExtractStalled && (
                 <p className={`text-xs ${cls(deluxe, "text-slate-500", "text-slate-400")}`}>
                   ℹ {tr.processingMayTakeLong}
@@ -1982,7 +2097,12 @@ export function TrainingView({
           {/* Progress bar during prediction */}
           {isPredicting && (
             <div className="space-y-2 mt-4">
-              <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel || tr.predictionInProgressLabel} />
+              <ProgressBar
+                deluxe={deluxe}
+                progress={progress}
+                label={progressLabel || tr.predictionInProgressLabel}
+                etaText={predictEta != null ? `${tr.etaRemaining}: ~${formatDurationShort(predictEta)}` : null}
+              />
               {onCancel && (
                 <div className="flex justify-center">
                   <Button variant="outline" size="sm" onClick={onCancel} className="text-xs">
