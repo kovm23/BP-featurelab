@@ -17,7 +17,7 @@ Tato sekce doplňuje historický popis níže o aktuální chování aplikace:
 - Fáze 3 a Fáze 5 jsou asynchronní (`/train`, `/predict` vrací `job_id` a frontend polluje `/status/{job_id}`).
 - Pipeline podporuje `target_mode`:
   - `regression`: RuleKit + XGBoost ensemble, metriky `mse`, `mae`, `correlation`.
-  - `classification`: classification-aware XGBoost, metriky `accuracy`, `balanced_accuracy`, `f1_macro`, `precision_macro`, `recall_macro`, `mcc`, `confusion_matrix`.
+- `classification`: RuleKit classifier s interpretovatelnými pravidly, metriky `accuracy`, `balanced_accuracy`, `f1_macro`, `precision_macro`, `recall_macro`, `mcc`, `confusion_matrix`.
 - Predikce ve classification režimu vrací `predicted_label`, `confidence`, volitelně `actual_label`.
 - Predikce v regression režimu vrací `predicted_score`, volitelně `actual_score`.
 - Při `target_mode=classification` se cílová proměnná validuje jako skutečně kategorická. Sloupec s vysokou kardinalitou / téměř spojitou numerickou škálou je odmítnut s chybou a doporučením přepnout na regresi.
@@ -440,16 +440,16 @@ Při `target_mode = classification` backend nejdřív validuje, že zvolený tar
 - pokud má vysokou kardinalitu i jako string a většina tříd je singleton nebo téměř singleton, je považován za identifier-like sloupec a backend ho odmítne
 
 Model pro klasifikaci:
-- `XGBClassifier`
-- class-weighted fitting (`sample_weight`) pro lepší chování na nevyvážených třídách
-- binární objective pro 2 třídy, multiclass objective pro 3+ tříd
+- `RuleClassifier` z RuleKitu
+- vrací interpretovatelná pravidla i v klasifikačním režimu
+- pokud je k dispozici `predict_proba`, frontend zobrazuje i confidence
 - `StratifiedKFold` místo obyčejného `KFold`, aby foldy zachovávaly rozložení tříd
 
 Metriky klasifikace:
 - train: `accuracy`, `balanced_accuracy`, `f1_macro`, `mcc`
 - cross-validation: `cv_accuracy`, `cv_balanced_accuracy`, `cv_f1_macro`, `cv_precision_macro`, `cv_recall_macro`, `cv_mcc`
 
-V klasifikační větvi se nepoužívá `MSE`, `MAE` ani regresní ensemble s RuleKit.
+V klasifikační větvi se nepoužívá `MSE`, `MAE` ani regresní ensemble s XGBoost.
 
 #### Async progress fáze (aktuální implementace)
 
@@ -507,8 +507,8 @@ Fallback: pokud `xgb_model` neexistuje (legacy modely), použije se jen RuleKit.
 
 Pokud je pipeline v režimu klasifikace:
 1. provede se preprocessing features stejně jako při tréninku
-2. použije se `XGBClassifier`
-3. vrací se `predicted_label` a `confidence`
+2. použije se `RuleClassifier`
+3. vrací se `predicted_label`, volitelně `confidence` a také použité pravidlo, pokud se podaří dohledat pokrývající rule
 4. pokud jsou k dispozici ground-truth labels, musí CSV obsahovat stejný target sloupec jako při tréninku; jinak backend vrátí chybu místo tichého fallbacku na jiný sloupec
 5. pokud jsou k dispozici ground-truth labels, počítají se klasifikační metriky:
    - `accuracy`

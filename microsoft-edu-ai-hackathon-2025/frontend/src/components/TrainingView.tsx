@@ -740,7 +740,7 @@ export function TrainingView({
       trainingInProgressLabel: "Training model...",
       trainingDone: "Training completed!",
       rulesGenerated: "Generated rules",
-      featureImportanceTop: "Feature importance (XGBoost - top 5)",
+      featureImportanceTop: "Feature importance (top 5)",
       rulesModelTitle: "Rule-based model:",
       downloadRuleModel: "Rule model",
       uploadTestingZip: "Upload testing ZIP dataset (different media than training)",
@@ -841,7 +841,7 @@ export function TrainingView({
       trainingInProgressLabel: "Trénuji model...",
       trainingDone: "Trénink dokončen!",
       rulesGenerated: "Vygenerováno pravidel",
-      featureImportanceTop: "Důležitost featur (XGBoost - top 5)",
+      featureImportanceTop: "Důležitost featur (top 5)",
       rulesModelTitle: "Pravidlový model:",
       downloadRuleModel: "Pravidlový model",
       uploadTestingZip: "Nahrajte testovací ZIP dataset (jiná média než trénovací)",
@@ -1001,7 +1001,7 @@ export function TrainingView({
         <div className={`mb-4 flex items-start gap-2 p-3 rounded-lg border ${cls(deluxe, "bg-blue-50 border-blue-200 text-blue-800", "bg-blue-900/30 border-blue-800/50 text-blue-300")}`}>
           <Loader2 className="h-4 w-4 mt-0.5 flex-shrink-0 animate-spin" />
           <p className="text-sm">
-            Systém zpracovává požadavky jiných uživatelů ({queuedCount} ve frontě). Vaše úloha poběží, jakmile se uvolní kapacita — může to trvat déle než obvykle.
+            Model je momentálně vytížený. Ve frontě čekají další požadavky ({queuedCount}), takže zpracování může trvat déle než obvykle.
           </p>
         </div>
       )}
@@ -1702,13 +1702,18 @@ export function TrainingView({
               </div>
 
               {/* Feature importance (top 5, collapsible) */}
-              {trainResult.feature_importance?.xgboost && Object.keys(trainResult.feature_importance.xgboost).length > 0 && (
+              {((trainResult.feature_importance?.xgboost && Object.keys(trainResult.feature_importance.xgboost).length > 0)
+                || (trainResult.feature_importance?.rulekit && Object.keys(trainResult.feature_importance.rulekit).length > 0)) && (
                 <details className={`text-xs rounded border p-2 ${cls(deluxe, "border-slate-200", "border-slate-700")}`}>
                   <summary className={`cursor-pointer font-medium ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>
                     {tr.featureImportanceTop}
                   </summary>
                   <ul className="mt-1.5 space-y-1">
-                    {Object.entries(trainResult.feature_importance.xgboost)
+                    {Object.entries(
+                      (trainResult.feature_importance?.xgboost && Object.keys(trainResult.feature_importance.xgboost).length > 0)
+                        ? trainResult.feature_importance.xgboost
+                        : (trainResult.feature_importance?.rulekit ?? {})
+                    )
                       .sort(([, a], [, b]) => b - a)
                       .slice(0, 5)
                       .map(([feat, score]) => (

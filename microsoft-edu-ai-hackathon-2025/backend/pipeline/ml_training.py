@@ -15,6 +15,7 @@ import re
 
 import numpy as np
 import pandas as pd
+from rulekit.classification import RuleClassifier
 from rulekit.regression import RuleRegressor
 from sklearn.metrics import (
     accuracy_score,
@@ -29,8 +30,7 @@ from sklearn.metrics import (
     recall_score,
 )
 from sklearn.model_selection import KFold, StratifiedKFold
-from sklearn.preprocessing import LabelEncoder
-from xgboost import XGBClassifier, XGBRegressor
+from xgboost import XGBRegressor
 from utils.csv_utils import normalize_media_name
 
 logger = logging.getLogger(__name__)
@@ -182,10 +182,10 @@ def _run_cross_validation(X: pd.DataFrame, y: pd.Series, n_splits: int = 5) -> d
 
 
 def _run_cross_validation_classification(
-    X: pd.DataFrame, y_encoded: np.ndarray, n_splits: int = 5
+    X: pd.DataFrame, y_labels: pd.Series, n_splits: int = 5
 ) -> dict:
-    """Run K-fold CV for classification with XGBoost classifier."""
-    class_counts = np.bincount(y_encoded)
+    """Run stratified CV for classification with RuleKit classifier."""
+    class_counts = y_labels.value_counts()
     positive_counts = class_counts[class_counts > 0]
     max_splits = min(n_splits, len(X), int(positive_counts.min())) if len(positive_counts) else 0
     if max_splits < 2:
@@ -208,12 +208,12 @@ def _run_cross_validation_classification(
     fold_rec = []
     fold_mcc = []
 
-    for train_idx, val_idx in kf.split(X, y_encoded):
+    for train_idx, val_idx in kf.split(X, y_labels):
         X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
-        y_train, y_val = y_encoded[train_idx], y_encoded[val_idx]
+        y_train, y_val = y_labels.iloc[train_idx], y_labels.iloc[val_idx]
 
-        clf = _build_classification_model(len(np.unique(y_encoded)))
-        clf.fit(X_train, y_train, sample_weight=_classification_sample_weights(y_train))
+        clf = RuleClassifier()
+        clf.fit(X_train, y_train)
         y_pred = clf.predict(X_val)
 
         fold_acc.append(float(accuracy_score(y_val, y_pred)))
@@ -232,36 +232,6 @@ def _run_cross_validation_classification(
         "cv_mcc": round(float(np.mean(fold_mcc)), 6),
         "n_folds": max_splits,
     }
-
-
-def _classification_sample_weights(y_encoded: np.ndarray) -> np.ndarray:
-    """Inverse-frequency weights for imbalanced classification."""
-    classes, counts = np.unique(y_encoded, return_counts=True)
-    total = counts.sum()
-    n_classes = len(classes)
-    weight_map = {
-        int(cls): float(total / (n_classes * count))
-        for cls, count in zip(classes, counts)
-        if count > 0
-    }
-    return np.array([weight_map[int(cls)] for cls in y_encoded], dtype=float)
-
-
-def _build_classification_model(n_classes: int) -> XGBClassifier:
-    params = {
-        "n_estimators": 180,
-        "max_depth": 5,
-        "learning_rate": 0.08,
-        "subsample": 0.9,
-        "colsample_bytree": 0.9,
-        "random_state": 42,
-        "verbosity": 0,
-        "eval_metric": "logloss" if n_classes <= 2 else "mlogloss",
-        "objective": "binary:logistic" if n_classes <= 2 else "multi:softprob",
-    }
-    if n_classes > 2:
-        params["num_class"] = n_classes
-    return XGBClassifier(**params)
 
 
 def _resolve_eval_target_column(testing_Y_df: pd.DataFrame, target_variable: str) -> str | None:
@@ -404,35 +374,33 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
     if target_mode == "classification":
         y = _validate_classification_target(y_raw)
         X = X.loc[y.index]
-        le = LabelEncoder()
-        y_encoded = le.fit_transform(y)
 
-        _cb(25, "Trénuji XGBoost klasifikátor...")
-        xgb_model = _build_classification_model(len(le.classes_))
-        xgb_model.fit(X, y_encoded, sample_weight=_classification_sample_weights(y_encoded))
-        xgb_pred = xgb_model.predict(X)
+        _cb(25, "Trénuji RuleKit klasifikátor...")
+        rulekit_model = RuleClassifier()
+        rulekit_model.fit(X, y)
+        y_pred = rulekit_model.predict(X)
 
-        train_accuracy = round(float(accuracy_score(y_encoded, xgb_pred)), 6)
-        train_balanced_accuracy = round(float(balanced_accuracy_score(y_encoded, xgb_pred)), 6)
-        train_f1_macro = round(float(f1_score(y_encoded, xgb_pred, average="macro", zero_division=0)), 6)
-        train_mcc = round(float(matthews_corrcoef(y_encoded, xgb_pred)), 6)
+        train_accuracy = round(float(accuracy_score(y, y_pred)), 6)
+        train_balanced_accuracy = round(float(balanced_accuracy_score(y, y_pred)), 6)
+        train_f1_macro = round(float(f1_score(y, y_pred, average="macro", zero_division=0)), 6)
+        train_mcc = round(float(matthews_corrcoef(y, y_pred)), 6)
 
         _cb(80, "K-fold validace klasifikace...")
-        cv_results = _run_cross_validation_classification(X, y_encoded)
+        cv_results = _run_cross_validation_classification(X, y)
         if cv_results.get("note"):
             warnings.append(cv_results["note"])
 
-        xgb_importance = {}
-        if hasattr(xgb_model, "feature_importances_"):
-            for fname, imp in zip(X.columns, xgb_model.feature_importances_):
-                if imp > 0.001:
-                    xgb_importance[fname] = round(float(imp), 4)
-            xgb_importance = dict(sorted(xgb_importance.items(), key=lambda x: -x[1]))
+        rules = (
+            [str(rule) for rule in rulekit_model.model.rules]
+            if hasattr(rulekit_model, "model")
+            else []
+        )
+        rulekit_importance = _count_rule_features(rules, list(X.columns))
 
-        pipeline.model = None
-        pipeline.xgb_model = xgb_model
+        pipeline.model = rulekit_model
+        pipeline.xgb_model = None
         pipeline.scaler = None
-        pipeline.rules = []
+        pipeline.rules = rules
         pipeline.mse = None
         pipeline.rulekit_mse = None
         pipeline.xgb_mse = None
@@ -451,13 +419,13 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
         pipeline.cv_mcc = cv_results.get("cv_mcc")
         pipeline.cv_folds = cv_results.get("n_folds")
         pipeline.warnings = warnings
-        pipeline.feature_importance = {"xgboost": xgb_importance, "rulekit": {}}
+        pipeline.feature_importance = {"xgboost": {}, "rulekit": rulekit_importance}
         pipeline.is_trained = True
         pipeline.target_variable = target_column
         pipeline._training_columns = list(X.columns)
         pipeline._scaler_mean = []
         pipeline._scaler_scale = []
-        pipeline._label_classes = [str(c) for c in le.classes_]
+        pipeline._label_classes = [str(c) for c in getattr(rulekit_model, "label_unique_values", list(pd.unique(y)))]
 
         pipeline.save_state()
         _cb(98, "Ukládám model...")
@@ -476,12 +444,12 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
             "cv_recall_macro": cv_results.get("cv_recall_macro"),
             "cv_mcc": cv_results.get("cv_mcc"),
             "cv_folds": cv_results.get("n_folds"),
-            "rules_count": 0,
-            "rules": [],
+            "rules_count": len(rules),
+            "rules": rules,
             "feature_spec": pipeline.feature_spec,
             "feature_importance": {
-                "xgboost": xgb_importance,
-                "rulekit": {},
+                "xgboost": {},
+                "rulekit": rulekit_importance,
             },
             "warnings": warnings,
             "training_data_X": json.loads(pipeline.training_X.to_json(orient="records")),
@@ -627,16 +595,24 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
     target_mode = getattr(pipeline, "target_mode", "regression")
 
     if target_mode == "classification":
-        _cb(25, "XGBoost klasifikační predikce...")
-        if not hasattr(pipeline, "xgb_model") or pipeline.xgb_model is None:
+        _cb(25, "RuleKit klasifikační predikce...")
+        classifier = getattr(pipeline, "model", None)
+        legacy_xgb = False
+        if classifier is None and getattr(pipeline, "xgb_model", None) is not None:
+            classifier = pipeline.xgb_model
+            legacy_xgb = True
+        if classifier is None:
             raise Exception("Classification model is missing. Train Phase 3 again.")
 
-        y_pred_encoded = pipeline.xgb_model.predict(X_test)
-        y_pred_proba = None
-        if hasattr(pipeline.xgb_model, "predict_proba"):
-            y_pred_proba = pipeline.xgb_model.predict_proba(X_test)
-
+        y_pred = classifier.predict(X_test)
+        y_pred_proba = classifier.predict_proba(X_test) if hasattr(classifier, "predict_proba") else None
         label_classes = getattr(pipeline, "_label_classes", []) or []
+        coverage_matrix = None
+        if not legacy_xgb and hasattr(classifier, "get_coverage_matrix") and pipeline.rules:
+            try:
+                coverage_matrix = classifier.get_coverage_matrix(X_test)
+            except Exception:
+                coverage_matrix = None
 
         actual_values: dict[str, str] = {}
         if testing_Y_df is not None:
@@ -662,17 +638,31 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
 
             media_name = str(row.get("media_name", f"object_{i}"))
             media_key = normalize_media_name(media_name)
-            cls_idx = int(y_pred_encoded[row_num])
-            pred_label = label_classes[cls_idx] if 0 <= cls_idx < len(label_classes) else str(cls_idx)
+            raw_pred = y_pred[row_num]
+            if legacy_xgb:
+                try:
+                    cls_idx = int(raw_pred)
+                    pred_label = label_classes[cls_idx] if 0 <= cls_idx < len(label_classes) else str(raw_pred)
+                except (ValueError, TypeError):
+                    pred_label = str(raw_pred)
+            else:
+                pred_label = str(raw_pred)
             confidence = None
             if y_pred_proba is not None:
                 confidence = float(np.max(y_pred_proba[row_num]))
+            rule_applied = "RuleKit classification (no single rule match)"
+            if coverage_matrix is not None and row_num < len(coverage_matrix):
+                covered = np.where(np.asarray(coverage_matrix[row_num]).astype(int) > 0)[0]
+                if len(covered) > 0 and covered[0] < len(pipeline.rules):
+                    rule_applied = pipeline.rules[int(covered[0])]
+            elif legacy_xgb:
+                rule_applied = "Legacy XGBoost classification model"
 
             item = {
                 "media_name": media_name,
                 "predicted_label": pred_label,
                 "confidence": round(confidence, 4) if confidence is not None else None,
-                "rule_applied": "XGBoost classification (no single rule match)",
+                "rule_applied": rule_applied,
                 "extracted_features": {
                     k: row[k] for k in pipeline.feature_spec if k in row
                 },
