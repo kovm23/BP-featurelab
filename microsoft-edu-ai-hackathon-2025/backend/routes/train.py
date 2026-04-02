@@ -33,6 +33,10 @@ def api_train():
     if not target_col:
         return jsonify({"error": "Missing target_column (name of the target column in the CSV)."}), 400
 
+    pipeline.invalidate_from_phase(3)
+    pipeline.target_mode = target_mode
+    pipeline.save_state()
+
     job_id = str(uuid.uuid4())
     set_job(job_id, {"progress": 0, "stage": "Spouštím trénink...", "done": False})
 

@@ -26,36 +26,10 @@ def api_reset():
                 logger.warning("Failed to remove %s: %s", f, e)
 
     # Reset pipeline in-memory state (must match model.py __init__)
-    pipeline.feature_spec = {}
+    pipeline.invalidate_from_phase(1)
     pipeline.target_variable = ""
     pipeline.target_mode = "regression"
-    pipeline.training_X = None
-    pipeline.training_Y = None
-    pipeline.training_Y_df = None
-    pipeline.training_Y_column = ""
-    pipeline.model = None
-    pipeline.xgb_model = None
-    pipeline.scaler = None
-    pipeline.rules = []
-    pipeline.mse = None
-    pipeline.rulekit_mse = None
-    pipeline.xgb_mse = None
-    pipeline.cv_mse = None
-    pipeline.cv_std = None
-    pipeline.cv_mae = None
-    pipeline.feature_importance = {}
-    pipeline.is_trained = False
-    pipeline.train_accuracy = None
-    pipeline.train_f1_macro = None
-    pipeline.cv_accuracy = None
-    pipeline.cv_f1_macro = None
-    pipeline._label_classes = []
-    pipeline.testing_X = None
-    pipeline._training_columns = []
-    pipeline._scaler_mean = []
-    pipeline._scaler_scale = []
     pipeline.save_state()
 
     logger.info("Reset: removed checkpoints %s", removed)
     return jsonify({"ok": True, "removed_checkpoints": removed})
-

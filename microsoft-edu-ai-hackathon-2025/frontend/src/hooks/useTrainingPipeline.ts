@@ -196,6 +196,27 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
   const [queueBusy, setQueueBusy] = useState(false);
   const [queuedCount, setQueuedCount] = useState(0);
 
+  function invalidateFromPhase(startPhase: 1 | 2 | 3 | 4 | 5) {
+    if (startPhase <= 1) {
+      setFeatureSpec(null);
+    }
+    if (startPhase <= 2) {
+      setTrainingDataX(null);
+      setDatasetYColumns(null);
+    }
+    if (startPhase <= 3) {
+      setTrainResult(null);
+    }
+    if (startPhase <= 4) {
+      setTestingDataX(null);
+    }
+    if (startPhase <= 5) {
+      setPredictions(null);
+      setPredictionMetrics(null);
+    }
+    setTrainingStep((prev) => (prev > startPhase ? startPhase : prev));
+  }
+
   // Refs for values captured in async polling callbacks (prevents stale closures)
   const modelProviderRef = useRef(modelProvider);
   const targetVariableRef = useRef(targetVariable);
@@ -203,6 +224,16 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
   useEffect(() => { modelProviderRef.current = modelProvider; }, [modelProvider]);
   useEffect(() => { targetVariableRef.current = targetVariable; }, [targetVariable]);
   useEffect(() => { targetModeRef.current = targetMode; }, [targetMode]);
+
+  useEffect(() => {
+    savePersisted({
+      trainingStep,
+      targetVariable,
+      targetMode,
+      featureSpec,
+      modelProvider,
+    });
+  }, [trainingStep, targetVariable, targetMode, featureSpec, modelProvider]);
 
   // --- Restore from backend on mount ---
   const restoredRef = useRef(false);
@@ -412,10 +443,34 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
   /* ---------------------------------------------------------------- */
   /*  Phase 1: Discovery                                               */
   /* ---------------------------------------------------------------- */
+  function updateTargetVariable(nextValue: string) {
+    if (nextValue !== targetVariable && (featureSpec || trainingDataX || trainResult || testingDataX || predictions)) {
+      invalidateFromPhase(1);
+    }
+    setTargetVariable(nextValue);
+  }
+
+  function updateTargetMode(nextMode: TargetMode) {
+    if (nextMode !== targetMode && (featureSpec || trainingDataX || trainResult || testingDataX || predictions)) {
+      invalidateFromPhase(1);
+    }
+    setTargetMode(nextMode);
+  }
+
+  function updateFeatureSpec(nextSpec: FeatureSpec) {
+    const changed = JSON.stringify(featureSpec ?? {}) !== JSON.stringify(nextSpec ?? {});
+    if (changed && (trainingDataX || trainResult || testingDataX || predictions)) {
+      invalidateFromPhase(2);
+    }
+    setFeatureSpec(nextSpec);
+  }
+
   async function handleDiscover(sampleFiles: File[], labelsFile?: File | null) {
+    invalidateFromPhase(1);
     setIsDiscovering(true);
-    setFeatureSpec(null);
     setError(null);
+    setProgress(0);
+    setProgressLabel("");
 
     const formData = new FormData();
     for (const f of sampleFiles) formData.append("files", f, f.name);
@@ -479,14 +534,11 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
     const setBusy = isTraining ? setExtractionBusy : setTestExtractionBusy;
     const setData = isTraining ? setTrainingDataX : setTestingDataX;
 
+    invalidateFromPhase(isTraining ? 2 : 4);
     setBusy(true);
-    setData(null);
     setProgress(0);
     setProgressLabel(tx.startingExtraction);
     setError(null);
-    // Clear stale downstream results so user doesn't see old data after re-extraction
-    if (isTraining) setTrainResult(null);
-    else { setPredictions(null); setPredictionMetrics(null); }
 
     try {
       const res = await fetch(config.url, {
@@ -604,6 +656,8 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
   async function handleTrain(targetColumn: string) {
     setTrainingBusy(true);
     setTrainResult(null);
+    setPredictions(null);
+    setPredictionMetrics(null);
     setError(null);
     setProgress(0);
     setProgressLabel(tx.startingTraining);
@@ -736,9 +790,9 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
     // Navigation
     trainingStep, setTrainingStep,
     // Phase 1
-    targetVariable, setTargetVariable,
-    targetMode, setTargetMode,
-    featureSpec, setFeatureSpec,
+    targetVariable, setTargetVariable: updateTargetVariable,
+    targetMode, setTargetMode: updateTargetMode,
+    featureSpec, setFeatureSpec: updateFeatureSpec,
     isDiscovering,
     handleDiscover,
     // Phase 2

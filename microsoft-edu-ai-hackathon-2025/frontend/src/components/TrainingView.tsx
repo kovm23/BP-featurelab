@@ -754,6 +754,17 @@ export function TrainingView({
       predictionInProgressLabel: "Predicting...",
       evalTitle: "Model evaluation (predictions vs. ground truth):",
       paired: "Matched",
+      rerunDiscoveryWarning: "Running Discovery again will invalidate extracted datasets, trained model, and old predictions.",
+      balancedAccuracy: "Balanced accuracy",
+      matthews: "Matthews corr.",
+      avgConfidence: "Avg confidence",
+      correctConfidence: "Correct avg conf.",
+      wrongConfidence: "Wrong avg conf.",
+      confusionMatrix: "Confusion matrix",
+      classBreakdown: "Per-class metrics",
+      predictedAxis: "Predicted",
+      actualAxis: "Actual",
+      support: "Support",
       hideFeatureColumns: "Hide feature columns",
       showFeatureColumns: "Show feature columns",
       downloadExperiment: "Download experiment (ZIP)",
@@ -836,6 +847,17 @@ export function TrainingView({
       predictionInProgressLabel: "Predikuji...",
       evalTitle: "Vyhodnocení modelu (predikce vs. skutečnost):",
       paired: "Spárováno",
+      rerunDiscoveryWarning: "Nové spuštění Discovery zneplatní extrahovaná data, natrénovaný model i staré predikce.",
+      balancedAccuracy: "Balanced accuracy",
+      matthews: "Matthews korelace",
+      avgConfidence: "Prům. confidence",
+      correctConfidence: "Správně prům.",
+      wrongConfidence: "Chybně prům.",
+      confusionMatrix: "Confusion matrix",
+      classBreakdown: "Metriky po třídách",
+      predictedAxis: "Predikce",
+      actualAxis: "Skutečnost",
+      support: "Podpora",
       hideFeatureColumns: "Skrýt feature sloupce",
       showFeatureColumns: "Zobrazit feature sloupce",
       downloadExperiment: "Stáhnout experiment (ZIP)",
@@ -898,6 +920,7 @@ export function TrainingView({
   };
 
   const anyBusy = isDiscovering || isExtracting || isTraining || isExtractingTest || isPredicting;
+  const hasDownstreamProgress = !!trainingDataX || !!trainResult || !!testingDataX || !!predictions;
 
   // Elapsed timers for phases without a progress bar
   const trainSecs = useElapsedTimer(isTraining);
@@ -1220,6 +1243,13 @@ export function TrainingView({
               {recheckOllama && (
                 <button onClick={recheckOllama} className="text-xs underline opacity-70 hover:opacity-100 whitespace-nowrap">{tr.checkAgain}</button>
               )}
+            </div>
+          )}
+
+          {hasDownstreamProgress && !isDiscovering && (
+            <div className={`flex items-start gap-2 p-3 rounded-lg border ${cls(deluxe, "bg-amber-50 border-amber-200 text-amber-800", "bg-amber-900/20 border-amber-800/50 text-amber-300")}`}>
+              <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+              <p className="text-sm">{tr.rerunDiscoveryWarning}</p>
             </div>
           )}
 
@@ -1576,12 +1606,21 @@ export function TrainingView({
                 {trainResult.target_mode === "classification" ? (
                   <>
                     <p>Train Accuracy: <strong>{trainResult.train_accuracy != null ? Number(trainResult.train_accuracy).toFixed(4) : "—"}</strong></p>
+                    {trainResult.train_balanced_accuracy != null && (
+                      <p>{tr.balancedAccuracy}: <strong>{Number(trainResult.train_balanced_accuracy).toFixed(4)}</strong></p>
+                    )}
                     <p>Train F1 macro: <strong>{trainResult.train_f1_macro != null ? Number(trainResult.train_f1_macro).toFixed(4) : "—"}</strong></p>
+                    {trainResult.train_mcc != null && (
+                      <p>{tr.matthews}: <strong>{Number(trainResult.train_mcc).toFixed(4)}</strong></p>
+                    )}
                     {trainResult.cv_accuracy != null && (
                       <p>
                         Cross-val Accuracy ({trainResult.cv_folds ?? 5}-fold):{" "}
                         <strong>{Number(trainResult.cv_accuracy).toFixed(4)}</strong>
                       </p>
+                    )}
+                    {trainResult.cv_balanced_accuracy != null && (
+                      <p>{tr.balancedAccuracy} CV: <strong>{Number(trainResult.cv_balanced_accuracy).toFixed(4)}</strong></p>
                     )}
                     {trainResult.cv_f1_macro != null && (
                       <p>Cross-val F1 macro: <strong>{Number(trainResult.cv_f1_macro).toFixed(4)}</strong></p>
@@ -1591,6 +1630,9 @@ export function TrainingView({
                     )}
                     {trainResult.cv_recall_macro != null && (
                       <p>Cross-val Recall: <strong>{Number(trainResult.cv_recall_macro).toFixed(4)}</strong></p>
+                    )}
+                    {trainResult.cv_mcc != null && (
+                      <p>{tr.matthews} CV: <strong>{Number(trainResult.cv_mcc).toFixed(4)}</strong></p>
                     )}
                   </>
                 ) : (
@@ -1929,7 +1971,7 @@ export function TrainingView({
                   <p className={`text-xs font-bold mb-2 ${cls(deluxe, "text-blue-900", "text-blue-300")}`}>
                     {tr.evalTitle}
                   </p>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                     {(() => {
                       const isCls = isClassificationMetrics(predictionMetrics);
                       const matchPct = predictionMetrics.total_count > 0
@@ -1938,14 +1980,20 @@ export function TrainingView({
 
                       if (isCls) {
                         const acc = predictionMetrics.accuracy ?? 0;
+                        const balAcc = predictionMetrics.balanced_accuracy ?? 0;
                         const f1 = predictionMetrics.f1_macro ?? 0;
                         const prec = predictionMetrics.precision_macro ?? 0;
                         const rec = predictionMetrics.recall_macro ?? 0;
+                        const mcc = predictionMetrics.mcc ?? 0;
                         return (
                           <>
                             <div className="text-center">
                               <p className={`text-lg font-bold ${cls(deluxe, "text-blue-700", "text-blue-400")}`}>{acc.toFixed(4)}</p>
                               <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>Accuracy</p>
+                            </div>
+                            <div className="text-center">
+                              <p className={`text-lg font-bold ${cls(deluxe, "text-blue-700", "text-blue-400")}`}>{balAcc.toFixed(4)}</p>
+                              <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>{tr.balancedAccuracy}</p>
                             </div>
                             <div className="text-center">
                               <p className={`text-lg font-bold ${cls(deluxe, "text-blue-700", "text-blue-400")}`}>{f1.toFixed(4)}</p>
@@ -1958,6 +2006,10 @@ export function TrainingView({
                             <div className="text-center">
                               <p className={`text-lg font-bold ${rec > 0.6 ? "text-green-600" : rec > 0.3 ? "text-yellow-600" : "text-red-500"}`}>{rec.toFixed(4)}</p>
                               <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>Recall macro</p>
+                            </div>
+                            <div className="text-center">
+                              <p className={`text-lg font-bold ${mcc > 0.5 ? "text-green-600" : mcc > 0.2 ? "text-yellow-600" : "text-red-500"}`}>{mcc.toFixed(4)}</p>
+                              <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>{tr.matthews}</p>
                             </div>
                             <div className="text-center col-span-2 sm:col-span-4">
                               <p className={`text-sm ${cls(deluxe, "text-blue-700", "text-blue-400")}`}>
@@ -1998,6 +2050,113 @@ export function TrainingView({
                       );
                     })()}
                   </div>
+
+                  {isClassificationMetrics(predictionMetrics) && (
+                    <div className="mt-3 space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div className={`rounded-md p-2 border ${cls(deluxe, "bg-white/70 border-blue-100", "bg-slate-900/40 border-slate-700")}`}>
+                          <p className="text-[10px] opacity-70">{tr.avgConfidence}</p>
+                          <p className="text-sm font-semibold">
+                            {predictionMetrics.avg_confidence != null ? Number(predictionMetrics.avg_confidence).toFixed(4) : "—"}
+                          </p>
+                        </div>
+                        <div className={`rounded-md p-2 border ${cls(deluxe, "bg-white/70 border-blue-100", "bg-slate-900/40 border-slate-700")}`}>
+                          <p className="text-[10px] opacity-70">{tr.correctConfidence}</p>
+                          <p className="text-sm font-semibold text-green-600">
+                            {predictionMetrics.correct_confidence_avg != null ? Number(predictionMetrics.correct_confidence_avg).toFixed(4) : "—"}
+                          </p>
+                        </div>
+                        <div className={`rounded-md p-2 border ${cls(deluxe, "bg-white/70 border-blue-100", "bg-slate-900/40 border-slate-700")}`}>
+                          <p className="text-[10px] opacity-70">{tr.wrongConfidence}</p>
+                          <p className="text-sm font-semibold text-amber-600">
+                            {predictionMetrics.incorrect_confidence_avg != null ? Number(predictionMetrics.incorrect_confidence_avg).toFixed(4) : "—"}
+                          </p>
+                        </div>
+                      </div>
+
+                      {predictionMetrics.class_metrics && predictionMetrics.class_metrics.length > 0 && (
+                        <details className={`rounded-md border p-2 ${cls(deluxe, "bg-white/70 border-blue-100", "bg-slate-900/40 border-slate-700")}`}>
+                          <summary className="cursor-pointer text-xs font-semibold">{tr.classBreakdown}</summary>
+                          <div className="mt-2 overflow-x-auto">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className={cls(deluxe, "text-slate-600", "text-slate-400")}>
+                                  <th className="px-2 py-1 text-left">Label</th>
+                                  <th className="px-2 py-1 text-left">Precision</th>
+                                  <th className="px-2 py-1 text-left">Recall</th>
+                                  <th className="px-2 py-1 text-left">F1</th>
+                                  <th className="px-2 py-1 text-left">{tr.support}</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {predictionMetrics.class_metrics.map((metric) => (
+                                  <tr key={metric.label} className={cls(deluxe, "border-t border-slate-200", "border-t border-slate-700")}>
+                                    <td className="px-2 py-1 font-medium">{metric.label}</td>
+                                    <td className="px-2 py-1">{metric.precision.toFixed(4)}</td>
+                                    <td className="px-2 py-1">{metric.recall.toFixed(4)}</td>
+                                    <td className="px-2 py-1">{metric.f1.toFixed(4)}</td>
+                                    <td className="px-2 py-1">{metric.support}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </details>
+                      )}
+
+                      {predictionMetrics.labels && predictionMetrics.confusion_matrix && predictionMetrics.labels.length > 0 && (
+                        <details className={`rounded-md border p-2 ${cls(deluxe, "bg-white/70 border-blue-100", "bg-slate-900/40 border-slate-700")}`}>
+                          <summary className="cursor-pointer text-xs font-semibold">{tr.confusionMatrix}</summary>
+                          <div className="mt-2 overflow-x-auto">
+                            <p className={`mb-2 text-[10px] ${cls(deluxe, "text-slate-500", "text-slate-400")}`}>
+                              {tr.actualAxis} × {tr.predictedAxis}
+                            </p>
+                            {(() => {
+                              const matrix = predictionMetrics.confusion_matrix ?? [];
+                              const labels = predictionMetrics.labels ?? [];
+                              const maxCell = Math.max(1, ...matrix.flat());
+                              return (
+                                <table className="text-xs border-collapse">
+                                  <thead>
+                                    <tr>
+                                      <th className="px-2 py-1"></th>
+                                      {labels.map((label) => (
+                                        <th key={label} className="px-2 py-1 font-mono whitespace-nowrap">{label}</th>
+                                      ))}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {matrix.map((row, rowIdx) => (
+                                      <tr key={labels[rowIdx] ?? rowIdx}>
+                                        <th className="px-2 py-1 text-left font-mono whitespace-nowrap">{labels[rowIdx]}</th>
+                                        {row.map((cell, colIdx) => {
+                                          const intensity = Math.max(0.08, Number(cell) / maxCell);
+                                          const isDiagonal = rowIdx === colIdx;
+                                          return (
+                                            <td
+                                              key={`${rowIdx}-${colIdx}`}
+                                              className="px-2 py-1 text-center font-semibold"
+                                              style={{
+                                                backgroundColor: isDiagonal
+                                                  ? `rgba(34, 197, 94, ${intensity})`
+                                                  : `rgba(59, 130, 246, ${intensity})`,
+                                              }}
+                                            >
+                                              {cell}
+                                            </td>
+                                          );
+                                        })}
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              );
+                            })()}
+                          </div>
+                        </details>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 

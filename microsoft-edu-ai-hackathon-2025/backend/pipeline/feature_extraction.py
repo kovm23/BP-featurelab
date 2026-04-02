@@ -15,6 +15,7 @@ import pandas as pd
 
 from pipeline.feature_validation import validate_row
 from services.processing import process_single_media
+from utils.target_context import build_labels_context
 import jobs as job_registry
 
 logger = logging.getLogger(__name__)
@@ -142,18 +143,10 @@ def extract_features_async(
         n_passes = max(1, EXTRACTION_PASSES)
 
         # Build labels context for calibration
-        labels_context = ""
-        if labels_df is not None:
-            numeric_cols = labels_df.select_dtypes(include="number").columns
-            if len(numeric_cols) > 0:
-                target_col = numeric_cols[-1]
-                col_data = labels_df[target_col]
-                labels_context = (
-                    f"Context: The target variable '{target_col}' has range "
-                    f"[{col_data.min()}, {col_data.max()}], "
-                    f"mean={col_data.mean():.3f}, std={col_data.std():.3f}. "
-                    f"Use this to calibrate your estimates."
-                )
+        target_mode = getattr(pipeline, "target_mode", "regression")
+        labels_context = build_labels_context(labels_df, pipeline.target_variable, target_mode).strip()
+        if labels_context:
+            labels_context = labels_context.replace("\n\n", "\n").strip()
 
         prompt = _build_extraction_prompt(feature_spec, labels_context)
 

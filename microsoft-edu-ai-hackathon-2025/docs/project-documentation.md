@@ -10,16 +10,17 @@ Media Feature Lab je webová aplikace pro automatickou klasifikaci/regresi multi
 4. **Feature Extraction (testing)** — Extrakce features z testovacích médií
 5. **Prediction** — Ensemble predikce s evaluačními metrikami
 
-### Stav implementace (aktualizace 2026-03-31)
+### Stav implementace (aktualizace 2026-04-02)
 
 Tato sekce doplňuje historický popis níže o aktuální chování aplikace:
 
 - Fáze 3 a Fáze 5 jsou asynchronní (`/train`, `/predict` vrací `job_id` a frontend polluje `/status/{job_id}`).
 - Pipeline podporuje `target_mode`:
   - `regression`: RuleKit + XGBoost ensemble, metriky `mse`, `mae`, `correlation`.
-  - `classification`: XGBoost classifier, metriky `accuracy`, `f1_macro`, `precision_macro`, `recall_macro`, `confusion_matrix`.
+  - `classification`: classification-aware XGBoost, metriky `accuracy`, `balanced_accuracy`, `f1_macro`, `precision_macro`, `recall_macro`, `mcc`, `confusion_matrix`.
 - Predikce ve classification režimu vrací `predicted_label`, `confidence`, volitelně `actual_label`.
 - Predikce v regression režimu vrací `predicted_score`, volitelně `actual_score`.
+- Při `target_mode=classification` se cílová proměnná validuje jako skutečně kategorická. Sloupec s vysokou kardinalitou / téměř spojitou numerickou škálou je odmítnut s chybou a doporučením přepnout na regresi.
 - Škálování features bylo odstraněno dle požadavku (pipeline běží bez `StandardScaler`).
 - Frontend používá lokalizaci CZ/EN s automatickou detekcí jazyka prohlížeče při prvním načtení a perzistencí volby (`localStorage`, key `mflLang`).
 - EN lokalizace je napojena i na klíčové texty 5fázového wizardu (phase titles/descriptions, hlavní CTA tlačítka, continue/stop akce, completion badges).
@@ -114,8 +115,8 @@ Každý uživatel (prohlížeč) dostane vlastní instanci `MachineLearningPipel
 | `target_variable` | `str` | Název cílové proměnné |
 | `training_X` | `DataFrame \| None` | Extrahované features z trénovacích dat |
 | `training_Y_df` | `DataFrame \| None` | Labels CSV (ground truth) |
-| `model` | `RuleRegressor \| None` | Natrénovaný RuleKit model |
-| `xgb_model` | `XGBRegressor \| None` | Natrénovaný XGBoost model |
+| `model` | `RuleRegressor \| None` | Natrénovaný RuleKit model (jen regrese) |
+| `xgb_model` | `XGBRegressor \| XGBClassifier \| None` | Natrénovaný XGBoost model |
 | `scaler` | `StandardScaler \| None` | Feature scaler (in-memory) |
 | `rules` | `list[str]` | Extrahovaná pravidla z RuleKit |
 | `mse` | `float \| None` | Ensemble MSE na trénovacích datech |
@@ -166,7 +167,7 @@ Be objective and specific. Output a concise bullet-point list of observations.
 
 #### Krok 2: Syntéza feature specifikace
 
-LLM obdrží všechny pozorování + informace o target variable (rozsah, průměr, std) a navrhne 5-8 features:
+LLM obdrží všechny pozorování + informace o target variable a navrhne 5-8 features:
 
 ```
 You are a machine learning feature engineer.
@@ -175,7 +176,7 @@ Your goal is to predict: '{target_variable}'.
 Below are observations from N media sample(s):
 [observations]
 
-[labels context — min, max, mean, std, sample values]
+[labels context]
 
 Based on these observations, define EXACTLY 5 to 8 measurable features that:
 - Can be extracted from ANY media clip of this type
@@ -190,6 +191,10 @@ or a categorical domain ["value_a", "value_b", ...].
 ```
 
 **Parametry:** Temperature 0.3 (nízká kreativita pro deterministický výstup)
+
+**Labels context podle target mode:**
+- `regression`: min/max/mean/std + ukázkové hodnoty
+- `classification`: počet tříd, distribuce tříd a ukázkové labely
 
 **JSON extrakce:** `json.JSONDecoder().raw_decode()` — najde první validní JSON objekt v odpovědi. Filtruje meta klíče (`summary`, `classification`, `reasoning`). Hard cap na 8 features.
 
@@ -246,8 +251,9 @@ Then extract EXACTLY these features:
   - scene_type: one of ["indoor", "outdoor", "mixed"]
   ...
 
-Context: The target variable 'memorability_score' has range [0.1, 0.95],
-mean=0.534, std=0.182. Use this to calibrate your estimates.
+Context: The target variable can be either:
+- regression: numeric range + mean/std for calibration
+- classification: class labels + class distribution for separation cues
 
 Output format: First your brief observation (2-3 sentences),
 then on a new line output ONLY a valid JSON object with the exact keys.
@@ -363,6 +369,8 @@ Průběžný checkpoint: `checkpoints/extract_{dataset_type}.json`. Pokud extrak
 
 **Route:** `backend/routes/train.py` (`POST /train`) běží asynchronně a vrací `job_id`.
 
+Train route respektuje `target_mode` zvolený na začátku pipeline a spouští odpovídající validační a modelovací větev.
+
 #### Preprocessing
 
 `_preprocess_features(df, training_columns=None)`:
@@ -382,7 +390,7 @@ Průběžný checkpoint: `checkpoints/extract_{dataset_type}.json`. Pokud extrak
 - Transform na testovacích datech: `scaler.transform(X_test)`
 - Parametry (`mean_`, `scale_`) se ukládají do `pipeline_state.json` pro rekonstrukci
 
-#### Ensemble: RuleKit + XGBoost
+#### Regrese: Ensemble RuleKit + XGBoost
 
 Systém trénuje dva modely paralelně:
 
@@ -405,7 +413,7 @@ ensemble = 0.4 × RuleKit + 0.6 × XGBoost
 
 Váhy reflektují vyšší přesnost XGBoost při zachování interpretability z RuleKit.
 
-#### K-Fold Cross-Validation
+#### Regrese: K-Fold Cross-Validation
 
 Po natrénování na celých datech se spustí K-fold CV (k = min(5, počet vzorků)):
 
@@ -422,6 +430,25 @@ Dvě perspektivy:
 - **RuleKit:** Frekvence features v pravidlech (kolikrát se feature objeví v rule conditions)
 
 Vrací se v API response pro vizualizaci ve frontend.
+
+#### Klasifikace: validace cíle a model
+
+Při `target_mode = classification` backend nejdřív validuje, že zvolený target sloupec opravdu vypadá jako kategorická proměnná:
+- musí obsahovat alespoň 2 různé třídy
+- nesmí být prázdný po odfiltrování chybějících hodnot
+- pokud je téměř celý numerický a má vysokou kardinalitu, je považován za pravděpodobně spojitou proměnnou a backend vrátí chybu s doporučením přepnout na regresi
+
+Model pro klasifikaci:
+- `XGBClassifier`
+- class-weighted fitting (`sample_weight`) pro lepší chování na nevyvážených třídách
+- binární objective pro 2 třídy, multiclass objective pro 3+ tříd
+- `StratifiedKFold` místo obyčejného `KFold`, aby foldy zachovávaly rozložení tříd
+
+Metriky klasifikace:
+- train: `accuracy`, `balanced_accuracy`, `f1_macro`, `mcc`
+- cross-validation: `cv_accuracy`, `cv_balanced_accuracy`, `cv_f1_macro`, `cv_precision_macro`, `cv_recall_macro`, `cv_mcc`
+
+V klasifikační větvi se nepoužívá `MSE`, `MAE` ani regresní ensemble s RuleKit.
 
 #### Async progress fáze (aktuální implementace)
 
@@ -474,6 +501,25 @@ Vrací se v API response pro vizualizaci ve frontend.
 5. Pokud jsou k dispozici actual labels: MSE, MAE, Pearson correlation
 
 Fallback: pokud `xgb_model` neexistuje (legacy modely), použije se jen RuleKit.
+
+#### Klasifikační predikce
+
+Pokud je pipeline v režimu klasifikace:
+1. provede se preprocessing features stejně jako při tréninku
+2. použije se `XGBClassifier`
+3. vrací se `predicted_label` a `confidence`
+4. pokud jsou k dispozici ground-truth labels, počítají se klasifikační metriky:
+   - `accuracy`
+   - `balanced_accuracy`
+   - `f1_macro`
+   - `precision_macro`
+   - `recall_macro`
+   - `mcc`
+   - `confusion_matrix`
+   - per-class metriky (`precision`, `recall`, `f1`, `support`)
+   - průměrná confidence, confidence pro správné a chybné predikce
+
+V klasifikační větvi se nepočítá `MSE` ani `MAE`.
 
 #### Async progress fáze (aktuální implementace)
 

@@ -32,7 +32,10 @@ def api_discover():
     target_mode = (request.form.get("target_mode", "regression") or "regression").strip().lower()
     if target_mode not in ("regression", "classification"):
         target_mode = "regression"
+    pipeline.invalidate_from_phase(1)
     pipeline.target_mode = target_mode
+    pipeline.target_variable = target_var
+    pipeline.save_state()
     model_name = request.form.get("model", "qwen2.5vl:7b")
     labels_df = load_labels_from_request(request, UPLOAD_FOLDER)
 

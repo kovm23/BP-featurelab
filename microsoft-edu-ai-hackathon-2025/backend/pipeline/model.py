@@ -54,9 +54,13 @@ class MachineLearningPipeline:
         self.feature_importance: dict = {}
         self.is_trained: bool = False
         self.train_accuracy: float | None = None
+        self.train_balanced_accuracy: float | None = None
         self.train_f1_macro: float | None = None
+        self.train_mcc: float | None = None
         self.cv_accuracy: float | None = None
+        self.cv_balanced_accuracy: float | None = None
         self.cv_f1_macro: float | None = None
+        self.cv_mcc: float | None = None
         self._label_classes: list[str] = []
         # Phase 4 outputs
         self.testing_X: pd.DataFrame | None = None
@@ -64,6 +68,111 @@ class MachineLearningPipeline:
         self._training_columns: list[str] = []
         self._scaler_mean: list[float] = []
         self._scaler_scale: list[float] = []
+
+    def invalidate_from_phase(self, start_phase: int) -> None:
+        """Clear outputs invalidated by re-running *start_phase*.
+
+        Phase mapping:
+        1 = discovery
+        2 = training extraction
+        3 = training
+        4 = testing extraction
+        5 = prediction (not persisted, kept for API symmetry)
+        """
+        if start_phase <= 1:
+            self.feature_spec = {}
+            self.training_X = None
+            self.training_Y = None
+            self.training_Y_df = None
+            self.training_Y_column = ""
+            self.model = None
+            self.xgb_model = None
+            self.scaler = None
+            self.rules = []
+            self.mse = None
+            self.rulekit_mse = None
+            self.xgb_mse = None
+            self.cv_mse = None
+            self.cv_std = None
+            self.cv_mae = None
+            self.feature_importance = {}
+            self.is_trained = False
+            self.train_accuracy = None
+            self.train_balanced_accuracy = None
+            self.train_f1_macro = None
+            self.train_mcc = None
+            self.cv_accuracy = None
+            self.cv_balanced_accuracy = None
+            self.cv_f1_macro = None
+            self.cv_mcc = None
+            self._label_classes = []
+            self._training_columns = []
+            self._scaler_mean = []
+            self._scaler_scale = []
+            self.testing_X = None
+            return
+
+        if start_phase == 2:
+            self.training_X = None
+            self.training_Y = None
+            self.training_Y_df = None
+            self.training_Y_column = ""
+            self.model = None
+            self.xgb_model = None
+            self.scaler = None
+            self.rules = []
+            self.mse = None
+            self.rulekit_mse = None
+            self.xgb_mse = None
+            self.cv_mse = None
+            self.cv_std = None
+            self.cv_mae = None
+            self.feature_importance = {}
+            self.is_trained = False
+            self.train_accuracy = None
+            self.train_balanced_accuracy = None
+            self.train_f1_macro = None
+            self.train_mcc = None
+            self.cv_accuracy = None
+            self.cv_balanced_accuracy = None
+            self.cv_f1_macro = None
+            self.cv_mcc = None
+            self._label_classes = []
+            self._training_columns = []
+            self._scaler_mean = []
+            self._scaler_scale = []
+            self.testing_X = None
+            return
+
+        if start_phase == 3:
+            self.model = None
+            self.xgb_model = None
+            self.scaler = None
+            self.rules = []
+            self.mse = None
+            self.rulekit_mse = None
+            self.xgb_mse = None
+            self.cv_mse = None
+            self.cv_std = None
+            self.cv_mae = None
+            self.feature_importance = {}
+            self.is_trained = False
+            self.train_accuracy = None
+            self.train_balanced_accuracy = None
+            self.train_f1_macro = None
+            self.train_mcc = None
+            self.cv_accuracy = None
+            self.cv_balanced_accuracy = None
+            self.cv_f1_macro = None
+            self.cv_mcc = None
+            self._label_classes = []
+            self._training_columns = []
+            self._scaler_mean = []
+            self._scaler_scale = []
+            return
+
+        if start_phase == 4:
+            self.testing_X = None
 
     # ------------------------------------------------------------------
     # Persistence
@@ -88,9 +197,13 @@ class MachineLearningPipeline:
                 "feature_importance": self.feature_importance,
                 "is_trained": self.is_trained,
                 "train_accuracy": self.train_accuracy,
+                "train_balanced_accuracy": self.train_balanced_accuracy,
                 "train_f1_macro": self.train_f1_macro,
+                "train_mcc": self.train_mcc,
                 "cv_accuracy": self.cv_accuracy,
+                "cv_balanced_accuracy": self.cv_balanced_accuracy,
                 "cv_f1_macro": self.cv_f1_macro,
+                "cv_mcc": self.cv_mcc,
                 "_label_classes": self._label_classes,
                 "_training_columns": self._training_columns,
                 "_scaler_mean": self._scaler_mean,
@@ -156,9 +269,13 @@ class MachineLearningPipeline:
             self.feature_importance = state.get("feature_importance", {})
             self.is_trained = state.get("is_trained", False)
             self.train_accuracy = state.get("train_accuracy")
+            self.train_balanced_accuracy = state.get("train_balanced_accuracy")
             self.train_f1_macro = state.get("train_f1_macro")
+            self.train_mcc = state.get("train_mcc")
             self.cv_accuracy = state.get("cv_accuracy")
+            self.cv_balanced_accuracy = state.get("cv_balanced_accuracy")
             self.cv_f1_macro = state.get("cv_f1_macro")
+            self.cv_mcc = state.get("cv_mcc")
             self._label_classes = state.get("_label_classes", [])
             self._training_columns = state.get("_training_columns", [])
             self._scaler_mean = state.get("_scaler_mean", [])
@@ -199,9 +316,13 @@ class MachineLearningPipeline:
             self.mse = state.get("mse")
             self.is_trained = state.get("is_trained", False)
             self.train_accuracy = state.get("train_accuracy")
+            self.train_balanced_accuracy = state.get("train_balanced_accuracy")
             self.train_f1_macro = state.get("train_f1_macro")
+            self.train_mcc = state.get("train_mcc")
             self.cv_accuracy = state.get("cv_accuracy")
+            self.cv_balanced_accuracy = state.get("cv_balanced_accuracy")
             self.cv_f1_macro = state.get("cv_f1_macro")
+            self.cv_mcc = state.get("cv_mcc")
             self._label_classes = state.get("_label_classes", [])
             self.testing_X = state.get("testing_X")
             self._training_columns = state.get("_training_columns", [])

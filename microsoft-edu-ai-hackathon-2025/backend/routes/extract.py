@@ -32,6 +32,8 @@ def _start_extraction(pipeline, media_files, feature_spec, model_name,
                        dataset_type, csv_path, labels_df, extract_path,
                        cleanup_paths=None):
     """Common helper: create a job and run extraction in a background thread."""
+    pipeline.invalidate_from_phase(2 if dataset_type == "training" else 4)
+    pipeline.save_state()
     job_id = str(uuid.uuid4())
     job_registry.set(job_id, {"progress": 0, "stage": "Starting extraction...", "done": False})
 

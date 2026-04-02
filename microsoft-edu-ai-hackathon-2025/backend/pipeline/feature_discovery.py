@@ -9,6 +9,7 @@ import pandas as pd
 from pipeline.feature_schema import normalize_feature_spec
 from services.openai_service import local_client, _tracked_ollama_lock
 from services.processing import process_single_media
+from utils.target_context import build_labels_context
 
 logger = logging.getLogger(__name__)
 
@@ -38,29 +39,7 @@ def discover_features(
     pipeline.target_variable = target_variable
     target_mode = getattr(pipeline, "target_mode", "regression")
 
-    labels_context = ""
-    if labels_df is not None:
-        target_col = None
-        for c in labels_df.columns:
-            if c.lower().replace(" ", "_") == target_variable.lower().replace(" ", "_"):
-                target_col = c
-                break
-        if target_col is None:
-            numeric_cols = labels_df.select_dtypes(include="number").columns
-            if len(numeric_cols) > 0:
-                target_col = numeric_cols[-1]
-
-        if target_col is not None:
-            col_data = labels_df[target_col]
-            labels_context = (
-                f"\n\nYou also have access to the target variable '{target_col}' "
-                f"from the training labels:\n"
-                f"- Min: {col_data.min()}, Max: {col_data.max()}, "
-                f"Mean: {col_data.mean():.4f}, Std: {col_data.std():.4f}\n"
-                f"- Sample values: {list(col_data.head(10).values)}\n"
-                f"Use this information to suggest features that would correlate "
-                f"well with these target values.\n"
-            )
+    labels_context = build_labels_context(labels_df, target_variable, target_mode)
 
     # Step 1: analyse each sample independently to gather observations
     observations = []

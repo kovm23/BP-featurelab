@@ -123,11 +123,15 @@ export interface TrainResult {
   cv_std?: number;
   cv_mae?: number;
   train_accuracy?: number;
+  train_balanced_accuracy?: number;
   train_f1_macro?: number;
+  train_mcc?: number;
   cv_accuracy?: number;
+  cv_balanced_accuracy?: number;
   cv_f1_macro?: number;
   cv_precision_macro?: number;
   cv_recall_macro?: number;
+  cv_mcc?: number;
   cv_folds?: number;
   rules_count?: number;
   rules?: string[];
@@ -173,11 +177,23 @@ export interface PredictionMetrics {
   mae?: number;
   correlation?: number | null;
   accuracy?: number;
+  balanced_accuracy?: number;
   f1_macro?: number;
   precision_macro?: number;
   recall_macro?: number;
+  mcc?: number;
   labels?: string[];
   confusion_matrix?: number[][];
+  class_metrics?: Array<{
+    label: string;
+    precision: number;
+    recall: number;
+    f1: number;
+    support: number;
+  }>;
+  avg_confidence?: number | null;
+  correct_confidence_avg?: number | null;
+  incorrect_confidence_avg?: number | null;
   matched_count: number;
   total_count: number;
 }

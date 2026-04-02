@@ -18,14 +18,17 @@ import pandas as pd
 from rulekit.regression import RuleRegressor
 from sklearn.metrics import (
     accuracy_score,
+    balanced_accuracy_score,
     confusion_matrix,
     f1_score,
+    matthews_corrcoef,
     mean_absolute_error,
     mean_squared_error,
     precision_score,
+    precision_recall_fscore_support,
     recall_score,
 )
-from sklearn.model_selection import KFold
+from sklearn.model_selection import KFold, StratifiedKFold
 from sklearn.preprocessing import LabelEncoder
 from xgboost import XGBClassifier, XGBRegressor
 
@@ -181,51 +184,111 @@ def _run_cross_validation_classification(
     X: pd.DataFrame, y_encoded: np.ndarray, n_splits: int = 5
 ) -> dict:
     """Run K-fold CV for classification with XGBoost classifier."""
-    n_splits = min(n_splits, len(X))
-    if n_splits < 2:
+    class_counts = np.bincount(y_encoded)
+    positive_counts = class_counts[class_counts > 0]
+    max_splits = min(n_splits, len(X), int(positive_counts.min())) if len(positive_counts) else 0
+    if max_splits < 2:
         return {
             "cv_accuracy": None,
+            "cv_balanced_accuracy": None,
             "cv_f1_macro": None,
             "cv_precision_macro": None,
             "cv_recall_macro": None,
-            "n_folds": n_splits,
-            "note": "Too few samples for CV",
+            "cv_mcc": None,
+            "n_folds": max_splits,
+            "note": "Too few samples per class for stratified CV",
         }
 
-    kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+    kf = StratifiedKFold(n_splits=max_splits, shuffle=True, random_state=42)
     fold_acc = []
+    fold_bal_acc = []
     fold_f1 = []
     fold_prec = []
     fold_rec = []
+    fold_mcc = []
 
-    for train_idx, val_idx in kf.split(X):
+    for train_idx, val_idx in kf.split(X, y_encoded):
         X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
         y_train, y_val = y_encoded[train_idx], y_encoded[val_idx]
 
-        clf = XGBClassifier(
-            n_estimators=120,
-            max_depth=4,
-            learning_rate=0.1,
-            random_state=42,
-            verbosity=0,
-            eval_metric="mlogloss",
-            objective="multi:softprob",
-        )
-        clf.fit(X_train, y_train)
+        clf = _build_classification_model(len(np.unique(y_encoded)))
+        clf.fit(X_train, y_train, sample_weight=_classification_sample_weights(y_train))
         y_pred = clf.predict(X_val)
 
         fold_acc.append(float(accuracy_score(y_val, y_pred)))
+        fold_bal_acc.append(float(balanced_accuracy_score(y_val, y_pred)))
         fold_f1.append(float(f1_score(y_val, y_pred, average="macro", zero_division=0)))
         fold_prec.append(float(precision_score(y_val, y_pred, average="macro", zero_division=0)))
         fold_rec.append(float(recall_score(y_val, y_pred, average="macro", zero_division=0)))
+        fold_mcc.append(float(matthews_corrcoef(y_val, y_pred)))
 
     return {
         "cv_accuracy": round(float(np.mean(fold_acc)), 6),
+        "cv_balanced_accuracy": round(float(np.mean(fold_bal_acc)), 6),
         "cv_f1_macro": round(float(np.mean(fold_f1)), 6),
         "cv_precision_macro": round(float(np.mean(fold_prec)), 6),
         "cv_recall_macro": round(float(np.mean(fold_rec)), 6),
-        "n_folds": n_splits,
+        "cv_mcc": round(float(np.mean(fold_mcc)), 6),
+        "n_folds": max_splits,
     }
+
+
+def _classification_sample_weights(y_encoded: np.ndarray) -> np.ndarray:
+    """Inverse-frequency weights for imbalanced classification."""
+    classes, counts = np.unique(y_encoded, return_counts=True)
+    total = counts.sum()
+    n_classes = len(classes)
+    weight_map = {
+        int(cls): float(total / (n_classes * count))
+        for cls, count in zip(classes, counts)
+        if count > 0
+    }
+    return np.array([weight_map[int(cls)] for cls in y_encoded], dtype=float)
+
+
+def _build_classification_model(n_classes: int) -> XGBClassifier:
+    params = {
+        "n_estimators": 180,
+        "max_depth": 5,
+        "learning_rate": 0.08,
+        "subsample": 0.9,
+        "colsample_bytree": 0.9,
+        "random_state": 42,
+        "verbosity": 0,
+        "eval_metric": "logloss" if n_classes <= 2 else "mlogloss",
+        "objective": "binary:logistic" if n_classes <= 2 else "multi:softprob",
+    }
+    if n_classes > 2:
+        params["num_class"] = n_classes
+    return XGBClassifier(**params)
+
+
+def _validate_classification_target(y_raw: pd.Series) -> pd.Series:
+    """Validate that the selected target behaves like a categorical label."""
+    y = (
+        y_raw.astype(str)
+        .str.strip()
+        .replace({"": None, "nan": None, "none": None, "null": None})
+        .dropna()
+    )
+    if y.empty:
+        raise Exception("Classification target column is empty after removing missing labels.")
+
+    unique_count = int(y.nunique())
+    if unique_count < 2:
+        raise Exception("Classification target must contain at least 2 distinct classes.")
+
+    unique_ratio = unique_count / max(len(y), 1)
+    numeric_candidate = pd.to_numeric(y, errors="coerce")
+    numeric_ratio = float(numeric_candidate.notna().mean()) if len(y) else 0.0
+    if numeric_ratio > 0.95 and unique_count > 10 and unique_ratio > 0.3:
+        raise Exception(
+            "Classification mode expects repeated class labels, but the selected target column "
+            f"looks continuous or high-cardinality ({unique_count} unique values across {len(y)} rows). "
+            "Switch to regression mode or choose a categorical label column."
+        )
+
+    return y
 
 
 def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
@@ -294,25 +357,20 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
     warnings = []
 
     if target_mode == "classification":
-        y = y_raw.astype(str)
+        y = _validate_classification_target(y_raw)
+        X = X.loc[y.index]
         le = LabelEncoder()
         y_encoded = le.fit_transform(y)
 
         _cb(25, "Trénuji XGBoost klasifikátor...")
-        xgb_model = XGBClassifier(
-            n_estimators=120,
-            max_depth=4,
-            learning_rate=0.1,
-            random_state=42,
-            verbosity=0,
-            eval_metric="mlogloss",
-            objective="multi:softprob",
-        )
-        xgb_model.fit(X, y_encoded)
+        xgb_model = _build_classification_model(len(le.classes_))
+        xgb_model.fit(X, y_encoded, sample_weight=_classification_sample_weights(y_encoded))
         xgb_pred = xgb_model.predict(X)
 
         train_accuracy = round(float(accuracy_score(y_encoded, xgb_pred)), 6)
+        train_balanced_accuracy = round(float(balanced_accuracy_score(y_encoded, xgb_pred)), 6)
         train_f1_macro = round(float(f1_score(y_encoded, xgb_pred, average="macro", zero_division=0)), 6)
+        train_mcc = round(float(matthews_corrcoef(y_encoded, xgb_pred)), 6)
 
         _cb(80, "K-fold validace klasifikace...")
         cv_results = _run_cross_validation_classification(X, y_encoded)
@@ -335,9 +393,13 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
         pipeline.cv_std = None
         pipeline.cv_mae = None
         pipeline.train_accuracy = train_accuracy
+        pipeline.train_balanced_accuracy = train_balanced_accuracy
         pipeline.train_f1_macro = train_f1_macro
+        pipeline.train_mcc = train_mcc
         pipeline.cv_accuracy = cv_results.get("cv_accuracy")
+        pipeline.cv_balanced_accuracy = cv_results.get("cv_balanced_accuracy")
         pipeline.cv_f1_macro = cv_results.get("cv_f1_macro")
+        pipeline.cv_mcc = cv_results.get("cv_mcc")
         pipeline.feature_importance = {"xgboost": xgb_importance, "rulekit": {}}
         pipeline.is_trained = True
         pipeline.target_variable = target_column
@@ -353,11 +415,15 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
             "status": "success",
             "target_mode": "classification",
             "train_accuracy": train_accuracy,
+            "train_balanced_accuracy": train_balanced_accuracy,
             "train_f1_macro": train_f1_macro,
+            "train_mcc": train_mcc,
             "cv_accuracy": cv_results.get("cv_accuracy"),
+            "cv_balanced_accuracy": cv_results.get("cv_balanced_accuracy"),
             "cv_f1_macro": cv_results.get("cv_f1_macro"),
             "cv_precision_macro": cv_results.get("cv_precision_macro"),
             "cv_recall_macro": cv_results.get("cv_recall_macro"),
+            "cv_mcc": cv_results.get("cv_mcc"),
             "cv_folds": cv_results.get("n_folds"),
             "rules_count": 0,
             "rules": [],
@@ -430,9 +496,13 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
     pipeline.cv_std = cv_results.get("cv_std")
     pipeline.cv_mae = cv_results.get("cv_mae")
     pipeline.train_accuracy = None
+    pipeline.train_balanced_accuracy = None
     pipeline.train_f1_macro = None
+    pipeline.train_mcc = None
     pipeline.cv_accuracy = None
+    pipeline.cv_balanced_accuracy = None
     pipeline.cv_f1_macro = None
+    pipeline.cv_mcc = None
     pipeline.feature_importance = {"xgboost": xgb_importance, "rulekit": rulekit_importance}
     pipeline.is_trained = True
     pipeline.target_variable = target_column
@@ -570,18 +640,66 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
         if pred_list and actual_list:
             labels = sorted(set(actual_list) | set(pred_list))
             acc = float(accuracy_score(actual_list, pred_list))
+            bal_acc = float(balanced_accuracy_score(actual_list, pred_list))
             f1m = float(f1_score(actual_list, pred_list, average="macro", zero_division=0))
             prec = float(precision_score(actual_list, pred_list, average="macro", zero_division=0))
             rec = float(recall_score(actual_list, pred_list, average="macro", zero_division=0))
+            mcc = float(matthews_corrcoef(actual_list, pred_list))
             cm = confusion_matrix(actual_list, pred_list, labels=labels)
+            class_prec, class_rec, class_f1, class_support = precision_recall_fscore_support(
+                actual_list,
+                pred_list,
+                labels=labels,
+                zero_division=0,
+            )
+            class_metrics = [
+                {
+                    "label": label,
+                    "precision": round(float(class_prec[idx]), 6),
+                    "recall": round(float(class_rec[idx]), 6),
+                    "f1": round(float(class_f1[idx]), 6),
+                    "support": int(class_support[idx]),
+                }
+                for idx, label in enumerate(labels)
+            ]
+            avg_confidence = None
+            correct_confidence_avg = None
+            incorrect_confidence_avg = None
+            confidence_values = [
+                float(item["confidence"]) for item in results if item.get("confidence") is not None
+            ]
+            if confidence_values:
+                avg_confidence = round(float(np.mean(confidence_values)), 6)
+            matched_items = [
+                item for item in results
+                if item.get("actual_label") is not None and item.get("confidence") is not None
+            ]
+            correct_conf = [
+                float(item["confidence"]) for item in matched_items
+                if item.get("predicted_label") == item.get("actual_label")
+            ]
+            incorrect_conf = [
+                float(item["confidence"]) for item in matched_items
+                if item.get("predicted_label") != item.get("actual_label")
+            ]
+            if correct_conf:
+                correct_confidence_avg = round(float(np.mean(correct_conf)), 6)
+            if incorrect_conf:
+                incorrect_confidence_avg = round(float(np.mean(incorrect_conf)), 6)
             metrics = {
                 "mode": "classification",
                 "accuracy": round(acc, 6),
+                "balanced_accuracy": round(bal_acc, 6),
                 "f1_macro": round(f1m, 6),
                 "precision_macro": round(prec, 6),
                 "recall_macro": round(rec, 6),
+                "mcc": round(mcc, 6),
                 "labels": labels,
                 "confusion_matrix": cm.tolist(),
+                "class_metrics": class_metrics,
+                "avg_confidence": avg_confidence,
+                "correct_confidence_avg": correct_confidence_avg,
+                "incorrect_confidence_avg": incorrect_confidence_avg,
                 "matched_count": len(pred_list),
                 "total_count": len(results),
             }
