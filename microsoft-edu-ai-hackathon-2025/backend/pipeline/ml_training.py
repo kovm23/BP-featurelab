@@ -263,6 +263,28 @@ def _build_classification_model(n_classes: int) -> XGBClassifier:
     return XGBClassifier(**params)
 
 
+def _resolve_eval_target_column(testing_Y_df: pd.DataFrame, target_variable: str) -> str | None:
+    """Find the exact evaluation target column or fail loudly.
+
+    Silent fallbacks can produce plausible-looking but incorrect metrics, so when
+    evaluation labels are provided we require the trained target column to exist.
+    """
+    if testing_Y_df is None or testing_Y_df.empty:
+        return None
+
+    for col in testing_Y_df.columns:
+        if col == "media_name":
+            continue
+        if col == target_variable or col.lower() == target_variable.lower():
+            return col
+
+    available = [c for c in testing_Y_df.columns if c != "media_name"]
+    raise Exception(
+        "Evaluation labels CSV must contain the same target column used for training: "
+        f"'{target_variable}'. Available columns: {available}"
+    )
+
+
 def _validate_classification_target(y_raw: pd.Series) -> pd.Series:
     """Validate that the selected target behaves like a categorical label."""
     y = (
@@ -279,6 +301,9 @@ def _validate_classification_target(y_raw: pd.Series) -> pd.Series:
         raise Exception("Classification target must contain at least 2 distinct classes.")
 
     unique_ratio = unique_count / max(len(y), 1)
+    value_counts = y.value_counts()
+    singleton_ratio = float((value_counts == 1).mean()) if not value_counts.empty else 0.0
+    tiny_class_ratio = float((value_counts <= 2).mean()) if not value_counts.empty else 0.0
     numeric_candidate = pd.to_numeric(y, errors="coerce")
     numeric_ratio = float(numeric_candidate.notna().mean()) if len(y) else 0.0
     if numeric_ratio > 0.95 and unique_count > 10 and unique_ratio > 0.3:
@@ -286,6 +311,15 @@ def _validate_classification_target(y_raw: pd.Series) -> pd.Series:
             "Classification mode expects repeated class labels, but the selected target column "
             f"looks continuous or high-cardinality ({unique_count} unique values across {len(y)} rows). "
             "Switch to regression mode or choose a categorical label column."
+        )
+    if unique_count > 20 and unique_ratio > 0.3 and (
+        singleton_ratio > 0.5 or tiny_class_ratio > 0.8
+    ):
+        raise Exception(
+            "Classification mode expects a small, repeated set of class labels, but the selected "
+            f"target column looks identifier-like or too sparse ({unique_count} unique values across "
+            f"{len(y)} rows, singleton class ratio {singleton_ratio:.2f}). "
+            "Choose a categorical label column with repeated classes."
         )
 
     return y
@@ -374,6 +408,8 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
 
         _cb(80, "K-fold validace klasifikace...")
         cv_results = _run_cross_validation_classification(X, y_encoded)
+        if cv_results.get("note"):
+            warnings.append(cv_results["note"])
 
         xgb_importance = {}
         if hasattr(xgb_model, "feature_importances_"):
@@ -399,7 +435,11 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
         pipeline.cv_accuracy = cv_results.get("cv_accuracy")
         pipeline.cv_balanced_accuracy = cv_results.get("cv_balanced_accuracy")
         pipeline.cv_f1_macro = cv_results.get("cv_f1_macro")
+        pipeline.cv_precision_macro = cv_results.get("cv_precision_macro")
+        pipeline.cv_recall_macro = cv_results.get("cv_recall_macro")
         pipeline.cv_mcc = cv_results.get("cv_mcc")
+        pipeline.cv_folds = cv_results.get("n_folds")
+        pipeline.warnings = warnings
         pipeline.feature_importance = {"xgboost": xgb_importance, "rulekit": {}}
         pipeline.is_trained = True
         pipeline.target_variable = target_column
@@ -475,6 +515,8 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
     logger.info("Running %d-fold cross-validation...", min(5, len(X)))
     cv_results = _run_cross_validation(X, y)
     logger.info("CV results: %s", cv_results)
+    if cv_results.get("note"):
+        warnings.append(cv_results["note"])
 
     xgb_importance = {}
     if hasattr(xgb_model, "feature_importances_"):
@@ -502,7 +544,10 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
     pipeline.cv_accuracy = None
     pipeline.cv_balanced_accuracy = None
     pipeline.cv_f1_macro = None
+    pipeline.cv_precision_macro = None
+    pipeline.cv_recall_macro = None
     pipeline.cv_mcc = None
+    pipeline.cv_folds = cv_results.get("n_folds")
     pipeline.feature_importance = {"xgboost": xgb_importance, "rulekit": rulekit_importance}
     pipeline.is_trained = True
     pipeline.target_variable = target_column
@@ -511,15 +556,16 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
     pipeline._scaler_scale = []
     pipeline._label_classes = []
 
-    pipeline.save_state()
-    _cb(98, "Ukládám model...")
-
     if cv_results.get("cv_mse") is not None and cv_results["cv_mse"] > 2 * ensemble_mse:
         warnings.append(
             f"Possible overfitting: CV MSE ({cv_results['cv_mse']:.6f}) "
             f"is much higher than training MSE ({ensemble_mse:.6f}). "
             f"Consider adding more training data."
         )
+    pipeline.warnings = warnings
+
+    pipeline.save_state()
+    _cb(98, "Ukládám model...")
 
     return {
         "status": "success",
@@ -586,15 +632,7 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
             join_col = testing_Y_df.columns[0]
             testing_Y_df = testing_Y_df.rename(columns={join_col: "media_name"})
             testing_Y_df["media_name"] = testing_Y_df["media_name"].astype(str).str.strip()
-            target_col = None
-            for c in testing_Y_df.columns:
-                if c.lower() == pipeline.target_variable.lower() or c == pipeline.target_variable:
-                    target_col = c
-                    break
-            if target_col is None:
-                other_cols = [c for c in testing_Y_df.columns if c != "media_name"]
-                if other_cols:
-                    target_col = other_cols[-1]
+            target_col = _resolve_eval_target_column(testing_Y_df, pipeline.target_variable)
             if target_col:
                 for _, row in testing_Y_df.iterrows():
                     actual_values[str(row["media_name"]).strip()] = str(row[target_col])
@@ -724,18 +762,7 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
         join_col = testing_Y_df.columns[0]
         testing_Y_df = testing_Y_df.rename(columns={join_col: "media_name"})
         testing_Y_df["media_name"] = testing_Y_df["media_name"].astype(str).str.strip()
-        target_col = None
-        for c in testing_Y_df.columns:
-            if c.lower() == pipeline.target_variable.lower() or c == pipeline.target_variable:
-                target_col = c
-                break
-        if target_col is None:
-            numeric_cols = [
-                c for c in testing_Y_df.columns
-                if c != "media_name" and pd.api.types.is_numeric_dtype(testing_Y_df[c])
-            ]
-            if numeric_cols:
-                target_col = numeric_cols[-1]
+        target_col = _resolve_eval_target_column(testing_Y_df, pipeline.target_variable)
         if target_col:
             for _, row in testing_Y_df.iterrows():
                 actual_values[str(row["media_name"]).strip()] = float(row[target_col])

@@ -437,6 +437,7 @@ Při `target_mode = classification` backend nejdřív validuje, že zvolený tar
 - musí obsahovat alespoň 2 různé třídy
 - nesmí být prázdný po odfiltrování chybějících hodnot
 - pokud je téměř celý numerický a má vysokou kardinalitu, je považován za pravděpodobně spojitou proměnnou a backend vrátí chybu s doporučením přepnout na regresi
+- pokud má vysokou kardinalitu i jako string a většina tříd je singleton nebo téměř singleton, je považován za identifier-like sloupec a backend ho odmítne
 
 Model pro klasifikaci:
 - `XGBClassifier`
@@ -508,7 +509,8 @@ Pokud je pipeline v režimu klasifikace:
 1. provede se preprocessing features stejně jako při tréninku
 2. použije se `XGBClassifier`
 3. vrací se `predicted_label` a `confidence`
-4. pokud jsou k dispozici ground-truth labels, počítají se klasifikační metriky:
+4. pokud jsou k dispozici ground-truth labels, musí CSV obsahovat stejný target sloupec jako při tréninku; jinak backend vrátí chybu místo tichého fallbacku na jiný sloupec
+5. pokud jsou k dispozici ground-truth labels, počítají se klasifikační metriky:
    - `accuracy`
    - `balanced_accuracy`
    - `f1_macro`
@@ -520,6 +522,11 @@ Pokud je pipeline v režimu klasifikace:
    - průměrná confidence, confidence pro správné a chybné predikce
 
 V klasifikační větvi se nepočítá `MSE` ani `MAE`.
+
+Frontend v přehledu predikcí navíc zvýrazňuje klasifikační řádky přímo v tabulce:
+- zeleně správně predikované položky
+- červeně chybné predikce
+- žlutě položky bez ground-truth labelu
 
 #### Async progress fáze (aktuální implementace)
 

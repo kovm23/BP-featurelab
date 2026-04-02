@@ -762,6 +762,14 @@ export function TrainingView({
       wrongConfidence: "Wrong avg conf.",
       confusionMatrix: "Confusion matrix",
       classBreakdown: "Per-class metrics",
+      predictionTableSummary: "Prediction table summary",
+      correctRows: "Correct",
+      wrongRows: "Incorrect",
+      unlabeledRows: "Without label",
+      rowStatus: "Status",
+      rowCorrect: "Correct",
+      rowWrong: "Incorrect",
+      rowUnlabeled: "No label",
       predictedAxis: "Predicted",
       actualAxis: "Actual",
       support: "Support",
@@ -855,6 +863,14 @@ export function TrainingView({
       wrongConfidence: "Chybně prům.",
       confusionMatrix: "Confusion matrix",
       classBreakdown: "Metriky po třídách",
+      predictionTableSummary: "Souhrn tabulky predikcí",
+      correctRows: "Správně",
+      wrongRows: "Chybně",
+      unlabeledRows: "Bez labelu",
+      rowStatus: "Stav",
+      rowCorrect: "Správně",
+      rowWrong: "Chybně",
+      rowUnlabeled: "Bez labelu",
       predictedAxis: "Predikce",
       actualAxis: "Skutečnost",
       support: "Podpora",
@@ -900,7 +916,7 @@ export function TrainingView({
 
   // Hide predict form when predictions arrive; show it again on re-run
   useEffect(() => {
-    if (predictions) setShowPredictForm(false);
+    setShowPredictForm(!predictions);
   }, [predictions]);
 
   const phaseTitle: Record<number, string> = {
@@ -921,6 +937,23 @@ export function TrainingView({
 
   const anyBusy = isDiscovering || isExtracting || isTraining || isExtractingTest || isPredicting;
   const hasDownstreamProgress = !!trainingDataX || !!trainResult || !!testingDataX || !!predictions;
+  const hasLabelPredictions = !!predictions?.some((p) => p.predicted_label !== undefined);
+  const hasActualPredictionValues = !!predictions?.some((p) => p.actual_score !== undefined || p.actual_label !== undefined);
+  const classificationRowsSummary = hasLabelPredictions && predictions
+    ? predictions.reduce(
+        (acc, pred) => {
+          if (pred.actual_label == null) {
+            acc.unlabeled += 1;
+          } else if (pred.predicted_label === pred.actual_label) {
+            acc.correct += 1;
+          } else {
+            acc.incorrect += 1;
+          }
+          return acc;
+        },
+        { correct: 0, incorrect: 0, unlabeled: 0 },
+      )
+    : null;
 
   // Elapsed timers for phases without a progress bar
   const trainSecs = useElapsedTimer(isTraining);
@@ -2161,6 +2194,24 @@ export function TrainingView({
               )}
 
               {/* Predictions table */}
+              {classificationRowsSummary && (
+                <div className="flex flex-wrap gap-2">
+                  <span className={`text-[11px] px-2 py-1 rounded-full border ${cls(deluxe, "bg-white border-slate-200 text-slate-600", "bg-slate-900/40 border-slate-700 text-slate-300")}`}>
+                    {tr.predictionTableSummary}
+                  </span>
+                  <span className={`text-[11px] px-2 py-1 rounded-full border ${cls(deluxe, "bg-emerald-50 border-emerald-200 text-emerald-700", "bg-emerald-900/30 border-emerald-700/60 text-emerald-300")}`}>
+                    {tr.correctRows}: {classificationRowsSummary.correct}
+                  </span>
+                  <span className={`text-[11px] px-2 py-1 rounded-full border ${cls(deluxe, "bg-rose-50 border-rose-200 text-rose-700", "bg-rose-900/30 border-rose-700/60 text-rose-300")}`}>
+                    {tr.wrongRows}: {classificationRowsSummary.incorrect}
+                  </span>
+                  {classificationRowsSummary.unlabeled > 0 && (
+                    <span className={`text-[11px] px-2 py-1 rounded-full border ${cls(deluxe, "bg-amber-50 border-amber-200 text-amber-700", "bg-amber-900/30 border-amber-700/60 text-amber-300")}`}>
+                      {tr.unlabeledRows}: {classificationRowsSummary.unlabeled}
+                    </span>
+                  )}
+                </div>
+              )}
               {featureSpec && Object.keys(featureSpec).length > 0 && (
                 <button
                   onClick={() => setShowFeatureCols((v) => !v)}
@@ -2175,15 +2226,16 @@ export function TrainingView({
                     <thead>
                       <tr className={cls(deluxe, "bg-slate-50", "bg-slate-900")}>
                         <th className="px-2 py-1 text-left font-mono">media_name</th>
-                        {predictions.some((p) => p.predicted_label !== undefined) ? (
+                        {hasLabelPredictions ? (
                           <>
+                            <th className="px-2 py-1 text-left font-mono">{tr.rowStatus}</th>
                             <th className="px-2 py-1 text-left font-mono">predicted_label</th>
                             <th className="px-2 py-1 text-left font-mono">confidence</th>
                           </>
                         ) : (
                           <th className="px-2 py-1 text-left font-mono">predicted_score</th>
                         )}
-                        {predictions.some((p) => p.actual_score !== undefined || p.actual_label !== undefined) && (
+                        {hasActualPredictionValues && (
                           <th className="px-2 py-1 text-left font-mono">
                             {predictions.some((p) => p.actual_label !== undefined) ? "actual_label" : "actual_score"}
                           </th>
@@ -2195,19 +2247,42 @@ export function TrainingView({
                       </tr>
                     </thead>
                     <tbody>
-                      {predictions.map((pred, i) => (
-                        <tr key={i} className={i % 2 === 0 ? cls(deluxe, "bg-white", "bg-slate-800/50") : cls(deluxe, "bg-slate-50/50", "bg-slate-900/50")}>
+                      {predictions.map((pred, i) => {
+                        const isClassifiedRow = hasLabelPredictions;
+                        const hasActualLabel = pred.actual_label != null;
+                        const isCorrect = hasActualLabel && pred.predicted_label === pred.actual_label;
+                        const isWrong = hasActualLabel && pred.predicted_label !== pred.actual_label;
+                        const baseRow = i % 2 === 0 ? cls(deluxe, "bg-white", "bg-slate-800/50") : cls(deluxe, "bg-slate-50/50", "bg-slate-900/50");
+                        const classRowTone = !isClassifiedRow
+                          ? ""
+                          : isCorrect
+                            ? cls(deluxe, "bg-emerald-50/70", "bg-emerald-950/30")
+                            : isWrong
+                              ? cls(deluxe, "bg-rose-50/70", "bg-rose-950/30")
+                              : cls(deluxe, "bg-amber-50/60", "bg-amber-950/20");
+                        const statusPill = isCorrect
+                          ? cls(deluxe, "bg-emerald-100 text-emerald-700", "bg-emerald-900/40 text-emerald-300")
+                          : isWrong
+                            ? cls(deluxe, "bg-rose-100 text-rose-700", "bg-rose-900/40 text-rose-300")
+                            : cls(deluxe, "bg-amber-100 text-amber-700", "bg-amber-900/40 text-amber-300");
+                        return (
+                        <tr key={i} className={classRowTone || baseRow}>
                           <td className="px-2 py-1 whitespace-nowrap font-medium">{pred.media_name}</td>
-                          {predictions.some((p) => p.predicted_label !== undefined) ? (
+                          {hasLabelPredictions ? (
                             <>
+                              <td className="px-2 py-1 whitespace-nowrap">
+                                <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusPill}`}>
+                                  {isCorrect ? tr.rowCorrect : isWrong ? tr.rowWrong : tr.rowUnlabeled}
+                                </span>
+                              </td>
                               <td className="px-2 py-1 whitespace-nowrap font-bold text-blue-600">{pred.predicted_label ?? "—"}</td>
                               <td className="px-2 py-1 whitespace-nowrap font-bold text-indigo-600">{pred.confidence != null ? Number(pred.confidence).toFixed(4) : "—"}</td>
                             </>
                           ) : (
                             <td className="px-2 py-1 whitespace-nowrap font-bold text-blue-600">{pred.predicted_score}</td>
                           )}
-                          {predictions.some((p) => p.actual_score !== undefined || p.actual_label !== undefined) && (
-                            <td className="px-2 py-1 whitespace-nowrap font-bold text-green-600">
+                          {hasActualPredictionValues && (
+                            <td className={`px-2 py-1 whitespace-nowrap font-bold ${hasLabelPredictions ? (isCorrect ? "text-emerald-600" : isWrong ? "text-rose-600" : "text-amber-600") : "text-green-600"}`}>
                               {pred.actual_label ?? (pred.actual_score !== undefined ? pred.actual_score : "—")}
                             </td>
                           )}
@@ -2218,7 +2293,8 @@ export function TrainingView({
                             </td>
                           ))}
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
