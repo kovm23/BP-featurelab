@@ -4,7 +4,7 @@ import logging
 import requests
 from flask import Blueprint, jsonify
 
-from services.openai_service import get_ollama_queue_info
+from services.openai_service import get_ollama_healthcheck_url, get_ollama_queue_info
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +15,7 @@ health_bp = Blueprint("health", __name__)
 def api_health():
     """Check if the backend and Ollama are reachable."""
     try:
-        r = requests.get("http://localhost:11434/api/tags", timeout=2)
+        r = requests.get(get_ollama_healthcheck_url(), timeout=2)
         ollama_ok = r.status_code == 200
     except Exception:
         ollama_ok = False

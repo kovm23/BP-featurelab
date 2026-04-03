@@ -488,6 +488,8 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
         pipeline.feature_importance = {"rulekit": rulekit_importance}
         pipeline.is_trained = True
         pipeline.target_variable = target_column
+        pipeline.predictions = None
+        pipeline.prediction_metrics = None
         pipeline._training_columns = list(X.columns)
         pipeline._scaler_mean = []
         pipeline._scaler_scale = []
@@ -593,6 +595,8 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
     pipeline.feature_importance = {"xgboost": xgb_importance, "rulekit": rulekit_importance}
     pipeline.is_trained = True
     pipeline.target_variable = target_column
+    pipeline.predictions = None
+    pipeline.prediction_metrics = None
     pipeline._training_columns = list(X.columns)
     pipeline._scaler_mean = []
     pipeline._scaler_scale = []
@@ -802,6 +806,9 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
                 "total_count": len(results),
             }
 
+        pipeline.predictions = results
+        pipeline.prediction_metrics = metrics
+        pipeline.save_state()
         return {"predictions": results, "metrics": metrics}
 
     # ---------------- Regression branch ----------------
@@ -879,4 +886,7 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
             "total_count": len(results),
         }
 
+    pipeline.predictions = results
+    pipeline.prediction_metrics = metrics
+    pipeline.save_state()
     return {"predictions": results, "metrics": metrics}

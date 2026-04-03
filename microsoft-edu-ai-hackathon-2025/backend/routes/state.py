@@ -27,6 +27,9 @@ def api_state():
     has_testing = pipeline.testing_X is not None and not pipeline.testing_X.empty
     if has_testing:
         completed_phases.append(4)
+    has_predictions = bool(pipeline.predictions)
+    if has_predictions:
+        completed_phases.append(5)
 
     # Suggest next step
     suggested_step = (max(completed_phases) + 1) if completed_phases else 1
@@ -100,4 +103,6 @@ def api_state():
         "testing_data_X": testing_data_X,
         "dataset_Y_columns": dataset_Y_columns,
         "train_result": train_result,
+        "predictions": pipeline.predictions,
+        "prediction_metrics": pipeline.prediction_metrics,
     })

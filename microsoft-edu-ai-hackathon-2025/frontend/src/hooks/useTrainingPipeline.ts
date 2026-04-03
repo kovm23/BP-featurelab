@@ -222,7 +222,7 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
               }
             },
           }).finally(() => { setIsDiscovering(false); setActiveCtrl(null); });
-        } else {
+        } else if (saved.phase === "extract_training" || saved.phase === "extract_testing") {
           const isTraining = saved.phase === "extract_training";
           const setBusy = isTraining ? setExtractionBusy : setTestExtractionBusy;
           const setData = isTraining ? setTrainingDataX : setTestingDataX;
@@ -244,6 +244,44 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
               }
             },
           }).finally(() => { setBusy(false); setActiveCtrl(null); });
+        } else if (saved.phase === "train") {
+          setTrainingBusy(true);
+          pollTrainJob({
+            jobId: saved.job_id,
+            signal: ctrl.signal,
+            onProgress: (tick) => {
+              setProgress(Math.max(0, Math.min(100, tick.progress ?? 0)));
+              setProgressLabel(tick.stage || tx.trainingInProgress);
+              if (tick.done && !tick.error) {
+                clearActiveJob();
+                setTrainResult(tick.details as TrainResult);
+              }
+              if (tick.done && tick.error) {
+                clearActiveJob();
+                setError(tx.phase3Failed + ": " + tick.error);
+              }
+            },
+          }).finally(() => { setTrainingBusy(false); setActiveCtrl(null); });
+        } else if (saved.phase === "predict") {
+          setPredictBusy(true);
+          pollPredictJob({
+            jobId: saved.job_id,
+            signal: ctrl.signal,
+            onProgress: (tick) => {
+              setProgress(Math.max(0, Math.min(100, tick.progress ?? 0)));
+              setProgressLabel(tick.stage || tx.predictingInProgress);
+              if (tick.done && !tick.error) {
+                clearActiveJob();
+                const d = tick.details as { predictions: PredictionItem[]; metrics: PredictionMetrics };
+                setPredictions(d.predictions);
+                setPredictionMetrics(d.metrics || null);
+              }
+              if (tick.done && tick.error) {
+                clearActiveJob();
+                setError(tx.phase5Failed + ": " + tick.error);
+              }
+            },
+          }).finally(() => { setPredictBusy(false); setActiveCtrl(null); });
         }
       })
       .catch(() => {
@@ -487,6 +525,7 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
         targetMode,
         signal: ctrl.signal,
       });
+      saveActiveJob({ job_id, phase: "train" });
       await pollTrainJob({
         jobId: job_id,
         signal: ctrl.signal,
@@ -494,9 +533,11 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
           setProgress(Math.max(0, Math.min(100, tick.progress ?? 0)));
           setProgressLabel(tick.stage || tx.trainingInProgress);
           if (tick.done && !tick.error) {
+            clearActiveJob();
             setTrainResult(tick.details as TrainResult);
           }
           if (tick.done && tick.error) {
+            clearActiveJob();
             setError(tx.phase3Failed + ": " + tick.error);
           }
         },
@@ -530,6 +571,7 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
         labelsFile,
         signal: ctrl.signal,
       });
+      saveActiveJob({ job_id, phase: "predict" });
       await pollPredictJob({
         jobId: job_id,
         signal: ctrl.signal,
@@ -537,11 +579,13 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
           setProgress(Math.max(0, Math.min(100, tick.progress ?? 0)));
           setProgressLabel(tick.stage || tx.predictingInProgress);
           if (tick.done && !tick.error) {
+            clearActiveJob();
             const d = tick.details as { predictions: PredictionItem[]; metrics: PredictionMetrics };
             setPredictions(d.predictions);
             setPredictionMetrics(d.metrics || null);
           }
           if (tick.done && tick.error) {
+            clearActiveJob();
             setError(tx.phase5Failed + ": " + tick.error);
           }
         },

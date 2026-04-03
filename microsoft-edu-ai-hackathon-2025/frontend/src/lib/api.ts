@@ -158,6 +158,8 @@ export interface PipelineState {
   testing_data_X: Record<string, unknown>[] | null;
   dataset_Y_columns: string[] | null;
   train_result: TrainResult | null;
+  predictions: PredictionItem[] | null;
+  prediction_metrics: PredictionMetrics | null;
 }
 
 export interface PredictionItem {

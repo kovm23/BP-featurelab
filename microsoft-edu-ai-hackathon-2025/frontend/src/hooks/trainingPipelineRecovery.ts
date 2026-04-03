@@ -1,5 +1,11 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import type { FeatureSpec, PipelineState, TargetMode } from "@/lib/api";
+import type {
+  FeatureSpec,
+  PipelineState,
+  PredictionItem,
+  PredictionMetrics,
+  TargetMode,
+} from "@/lib/api";
 import { savePersisted } from "@/hooks/trainingPipelineUtils";
 
 type Step = 1 | 2 | 3 | 4 | 5;
@@ -13,6 +19,8 @@ export interface PipelineHydrationSetters {
   setDatasetYColumns: Setter<string[] | null>;
   setTrainResult: Setter<PipelineState["train_result"]>;
   setTestingDataX: Setter<Record<string, unknown>[] | null>;
+  setPredictions: Setter<PredictionItem[] | null>;
+  setPredictionMetrics: Setter<PredictionMetrics | null>;
   setTrainingStep: Setter<Step>;
 }
 
@@ -42,6 +50,12 @@ export function applyBackendPipelineState(
   }
   if (state.testing_data_X && state.testing_data_X.length > 0) {
     setters.setTestingDataX(state.testing_data_X);
+  }
+  if (state.predictions && state.predictions.length > 0) {
+    setters.setPredictions(state.predictions);
+  }
+  if (state.prediction_metrics) {
+    setters.setPredictionMetrics(state.prediction_metrics);
   }
   setters.setTrainingStep((prev) => {
     const suggested = Math.min(state.suggested_step as Step, 5) as Step;

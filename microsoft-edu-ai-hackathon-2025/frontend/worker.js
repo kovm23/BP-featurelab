@@ -19,6 +19,8 @@ const API_ROUTES = [
   '/health',
   '/queue-info',
   '/reset',
+  '/export-session',
+  '/import-session',
 ];
 
 export default {

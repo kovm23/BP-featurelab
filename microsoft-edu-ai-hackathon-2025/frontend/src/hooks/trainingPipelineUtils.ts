@@ -11,7 +11,12 @@ export interface PersistedPipeline {
 const STORAGE_KEY = "mflPipeline";
 const ACTIVE_JOB_KEY = "mflActiveJob";
 
-export type ActiveJobPhase = "discover" | "extract_training" | "extract_testing";
+export type ActiveJobPhase =
+  | "discover"
+  | "extract_training"
+  | "extract_testing"
+  | "train"
+  | "predict";
 
 export interface ActiveJob {
   job_id: string;

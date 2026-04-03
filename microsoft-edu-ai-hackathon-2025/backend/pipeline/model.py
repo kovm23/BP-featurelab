@@ -15,6 +15,20 @@ from pipeline.ml_training import train_model, predict_batch
 logger = logging.getLogger(__name__)
 
 
+def _json_default(value):
+    if hasattr(value, "item"):
+        try:
+            return value.item()
+        except Exception:
+            pass
+    if hasattr(value, "isoformat"):
+        try:
+            return value.isoformat()
+        except Exception:
+            pass
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
 class MachineLearningPipeline:
     """Holds all state for the five-phase ML pipeline."""
 
@@ -68,6 +82,9 @@ class MachineLearningPipeline:
         self._label_classes: list[str] = []
         # Phase 4 outputs
         self.testing_X: pd.DataFrame | None = None
+        # Phase 5 outputs
+        self.predictions: list[dict] | None = None
+        self.prediction_metrics: dict | None = None
         # Internal
         self._training_columns: list[str] = []
         self._scaler_mean: list[float] = []
@@ -109,6 +126,10 @@ class MachineLearningPipeline:
         self.training_Y_df = None
         self.training_Y_column = ""
 
+    def _clear_prediction_outputs(self) -> None:
+        self.predictions = None
+        self.prediction_metrics = None
+
     def invalidate_from_phase(self, start_phase: int) -> None:
         """Clear outputs invalidated by re-running *start_phase*.
 
@@ -124,20 +145,28 @@ class MachineLearningPipeline:
             self._clear_training_data()
             self._clear_model_outputs()
             self.testing_X = None
+            self._clear_prediction_outputs()
             return
 
         if start_phase == 2:
             self._clear_training_data()
             self._clear_model_outputs()
             self.testing_X = None
+            self._clear_prediction_outputs()
             return
 
         if start_phase == 3:
             self._clear_model_outputs()
+            self._clear_prediction_outputs()
             return
 
         if start_phase == 4:
             self.testing_X = None
+            self._clear_prediction_outputs()
+            return
+
+        if start_phase == 5:
+            self._clear_prediction_outputs()
 
     # ------------------------------------------------------------------
     # Persistence
@@ -173,13 +202,15 @@ class MachineLearningPipeline:
                 "cv_mcc": self.cv_mcc,
                 "cv_folds": self.cv_folds,
                 "warnings": self.warnings,
+                "predictions": self.predictions,
+                "prediction_metrics": self.prediction_metrics,
                 "_label_classes": self._label_classes,
                 "_training_columns": self._training_columns,
                 "_scaler_mean": self._scaler_mean,
                 "_scaler_scale": self._scaler_scale,
             }
             with open(self._state_json, "w", encoding="utf-8") as f:
-                json.dump(state, f, ensure_ascii=False, indent=2)
+                json.dump(state, f, ensure_ascii=False, indent=2, default=_json_default)
 
             # Save DataFrames as CSV
             self._save_df(self.training_X, self._training_x_csv)
@@ -249,6 +280,8 @@ class MachineLearningPipeline:
             self.cv_mcc = state.get("cv_mcc")
             self.cv_folds = state.get("cv_folds")
             self.warnings = state.get("warnings", [])
+            self.predictions = state.get("predictions")
+            self.prediction_metrics = state.get("prediction_metrics")
             self._label_classes = state.get("_label_classes", [])
             self._training_columns = state.get("_training_columns", [])
             self._scaler_mean = state.get("_scaler_mean", [])
@@ -300,6 +333,8 @@ class MachineLearningPipeline:
             self.cv_mcc = state.get("cv_mcc")
             self.cv_folds = state.get("cv_folds")
             self.warnings = state.get("warnings", [])
+            self.predictions = state.get("predictions")
+            self.prediction_metrics = state.get("prediction_metrics")
             self._label_classes = state.get("_label_classes", [])
             self.testing_X = state.get("testing_X")
             self._training_columns = state.get("_training_columns", [])
