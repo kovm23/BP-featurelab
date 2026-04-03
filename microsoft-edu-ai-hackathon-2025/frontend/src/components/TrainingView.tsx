@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, ChevronRight, Cpu, X } from "lucide-react";
 import { AVAILABLE_MODELS } from "@/lib/api";
 import type { FeatureSpec, PredictionItem, PredictionMetrics, TrainResult } from "@/lib/api";
-import { cls, enrichError, formatDurationShort, QueueBusyBanner, useElapsedTimer, useEstimatedRemaining, useProgressStall } from "./training-view/shared";
+import { cls, enrichError, QueueBusyBanner, useElapsedTimer, useProgressStall } from "./training-view/shared";
 import { DiscoveryPhasePanel } from "./training-view/DiscoveryPhasePanel";
 import { PredictionPhasePanel } from "./training-view/PredictionPhasePanel";
 import { TestingExtractionPhasePanel } from "./training-view/TestingExtractionPhasePanel";
@@ -226,11 +226,6 @@ export function TrainingView({
 
   const trainSecs = useElapsedTimer(isTraining);
   const predictSecs = useElapsedTimer(isPredicting);
-  const discoveryEta = useEstimatedRemaining(progress, isDiscovering);
-  const extractEta = useEstimatedRemaining(progress, isExtracting);
-  const trainEta = useEstimatedRemaining(progress, isTraining);
-  const testExtractEta = useEstimatedRemaining(progress, isExtractingTest);
-  const predictEta = useEstimatedRemaining(progress, isPredicting);
   const extractStalled = useProgressStall(progress, isExtracting);
   const testExtractStalled = useProgressStall(progress, isExtractingTest);
 
@@ -240,9 +235,6 @@ export function TrainingView({
       errorRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
   }, [error]);
-
-  const renderEtaText = (eta: number | null) =>
-    eta != null ? `${tr.etaRemaining}: ~${formatDurationShort(eta)}` : null;
 
   return (
     <div
@@ -338,7 +330,6 @@ export function TrainingView({
           recheckOllama={recheckOllama}
           progress={progress}
           progressLabel={progressLabel}
-          etaText={renderEtaText(discoveryEta)}
           onCancel={onCancel}
           onGoToStep={onGoToStep}
         />
@@ -372,7 +363,6 @@ export function TrainingView({
           recheckOllama={recheckOllama}
           progress={progress}
           progressLabel={progressLabel}
-          etaText={renderEtaText(extractEta)}
           extractStalled={extractStalled}
           onCancel={onCancel}
           onGoToStep={onGoToStep}
@@ -396,7 +386,6 @@ export function TrainingView({
           trainResult={trainResult}
           progress={progress}
           progressLabel={progressLabel}
-          etaText={renderEtaText(trainEta)}
           onCancel={onCancel}
           onGoToStep={onGoToStep}
         />
@@ -423,7 +412,6 @@ export function TrainingView({
           recheckOllama={recheckOllama}
           progress={progress}
           progressLabel={progressLabel}
-          etaText={renderEtaText(testExtractEta)}
           testExtractStalled={testExtractStalled}
           onCancel={onCancel}
           onGoToStep={onGoToStep}
@@ -445,7 +433,6 @@ export function TrainingView({
           predictSecs={predictSecs}
           progress={progress}
           progressLabel={progressLabel}
-          etaText={renderEtaText(predictEta)}
           onCancel={onCancel}
           predictions={predictions}
           predictionMetrics={predictionMetrics}

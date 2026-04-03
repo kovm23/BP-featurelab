@@ -3,11 +3,11 @@ import logging
 import os
 import secrets
 
-from dotenv import load_dotenv
 from flask import Flask, request
 from flask_cors import CORS
 
 import session_registry
+from env_loader import load_backend_env
 from routes import (
     discover_bp,
     extract_bp,
@@ -20,7 +20,7 @@ from routes import (
     train_bp,
 )
 
-load_dotenv()
+load_backend_env()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -77,5 +77,4 @@ if __name__ == "__main__":
         debug=debug,
         use_reloader=debug,
     )
-
 

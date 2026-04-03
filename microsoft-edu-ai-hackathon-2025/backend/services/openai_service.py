@@ -5,16 +5,21 @@ import numpy as np
 from PIL import Image
 import base64
 import io
-from dotenv import load_dotenv
 import json
 import time
 import threading
+from env_loader import load_backend_env
 
-load_dotenv()
+load_backend_env()
+
+
+def _ollama_api_base_url() -> str:
+    raw_base = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
+    return raw_base if raw_base.endswith("/v1") else f"{raw_base}/v1"
 
 # --- Konfigurace klienta (pouze lokální Ollama) ---
 local_client = openai.OpenAI(
-    base_url="http://localhost:11434/v1",
+    base_url=_ollama_api_base_url(),
     api_key="ollama",
     timeout=httpx.Timeout(120.0, connect=5.0),
 )
@@ -27,7 +32,7 @@ _ollama_lock = threading.Semaphore(1)
 _ollama_waiting = 0
 _waiting_lock = threading.Lock()
 
-DEFAULT_MODEL = "qwen2.5vl:7b"
+DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5vl:7b")
 
 
 from contextlib import contextmanager
