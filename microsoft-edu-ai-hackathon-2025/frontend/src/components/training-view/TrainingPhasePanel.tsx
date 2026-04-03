@@ -52,7 +52,7 @@ export function TrainingPhasePanel(props: {
         <FeatureSpecBox deluxe={deluxe} uiLanguage={uiLanguage} featureSpec={featureSpec} targetVariable={targetVariable} />
       )}
 
-      {trainingDataX && <DatasetTable deluxe={deluxe} data={trainingDataX} title="Training Dataset X" />}
+      {trainingDataX && <DatasetTable deluxe={deluxe} data={trainingDataX} title={tr.trainingDatasetTitle} />}
 
       <div>
         <label className={`block text-sm font-medium mb-1 ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>

@@ -97,7 +97,7 @@ const TRAINING_PIPELINE_TEXT = {
     phase1Failed: "Fáze 1 selhala",
     phaseFailed: "selhala",
     extractFailed: "Extrakce selhala",
-    featureDiscoveryFailed: "Feature Discovery selhala",
+    featureDiscoveryFailed: "Objevování featur selhalo",
     startingExtraction: "Spouštím extrakci...",
     phase2: "Fáze 2",
     phase4: "Fáze 4",

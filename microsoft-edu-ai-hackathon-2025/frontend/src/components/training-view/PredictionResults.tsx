@@ -33,14 +33,14 @@ function PredictionMetricsPanel({
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {isCls ? (
           <>
-            <MetricStat deluxe={deluxe} value={(predictionMetrics.accuracy ?? 0).toFixed(4)} label="Accuracy" />
+            <MetricStat deluxe={deluxe} value={(predictionMetrics.accuracy ?? 0).toFixed(4)} label={tr.accuracy} />
             <MetricStat deluxe={deluxe} value={(predictionMetrics.balanced_accuracy ?? 0).toFixed(4)} label={tr.balancedAccuracy} />
-            <MetricStat deluxe={deluxe} value={(predictionMetrics.f1_macro ?? 0).toFixed(4)} label="F1 macro" />
-            <MetricStat deluxe={deluxe} value={(predictionMetrics.precision_macro ?? 0).toFixed(4)} label="Precision macro" />
+            <MetricStat deluxe={deluxe} value={(predictionMetrics.f1_macro ?? 0).toFixed(4)} label={tr.f1Macro} />
+            <MetricStat deluxe={deluxe} value={(predictionMetrics.precision_macro ?? 0).toFixed(4)} label={tr.precisionMacro} />
             <MetricStat
               deluxe={deluxe}
               value={(predictionMetrics.recall_macro ?? 0).toFixed(4)}
-              label="Recall macro"
+              label={tr.recallMacro}
               valueClass={(predictionMetrics.recall_macro ?? 0) > 0.6 ? "text-green-600" : (predictionMetrics.recall_macro ?? 0) > 0.3 ? "text-yellow-600" : "text-red-500"}
             />
             <MetricStat
@@ -57,12 +57,12 @@ function PredictionMetricsPanel({
           </>
         ) : (
           <>
-            <MetricStat deluxe={deluxe} value={(predictionMetrics.mse ?? 0).toFixed(4)} label="MSE (nižší = lepší)" />
-            <MetricStat deluxe={deluxe} value={(predictionMetrics.mae ?? 0).toFixed(4)} label="MAE (nižší = lepší)" />
+            <MetricStat deluxe={deluxe} value={(predictionMetrics.mse ?? 0).toFixed(4)} label={tr.mseLowerBetter} />
+            <MetricStat deluxe={deluxe} value={(predictionMetrics.mae ?? 0).toFixed(4)} label={tr.maeLowerBetter} />
             <MetricStat
               deluxe={deluxe}
               value={predictionMetrics.correlation != null ? predictionMetrics.correlation.toFixed(4) : "N/A"}
-              label="Korelace (vyšší = lepší)"
+              label={tr.correlationHigherBetter}
               valueClass={
                 predictionMetrics.correlation != null && predictionMetrics.correlation > 0.5
                   ? "text-green-600"
@@ -96,9 +96,9 @@ function PredictionMetricsPanel({
                 <table className="w-full text-xs">
                   <thead>
                     <tr className={cls(deluxe, "text-slate-600", "text-slate-400")}>
-                      <th className="px-2 py-1 text-left">Label</th>
-                      <th className="px-2 py-1 text-left">Precision</th>
-                      <th className="px-2 py-1 text-left">Recall</th>
+                      <th className="px-2 py-1 text-left">{tr.label}</th>
+                      <th className="px-2 py-1 text-left">{tr.precision}</th>
+                      <th className="px-2 py-1 text-left">{tr.recall}</th>
                       <th className="px-2 py-1 text-left">F1</th>
                       <th className="px-2 py-1 text-left">{tr.support}</th>
                     </tr>
@@ -367,22 +367,22 @@ export function PredictionResults({
           <table className="w-full text-xs">
             <thead>
               <tr className={cls(deluxe, "bg-slate-50", "bg-slate-900")}>
-                <th className="px-2 py-1 text-left font-mono">media_name</th>
+                <th className="px-2 py-1 text-left font-mono">{tr.mediaName}</th>
                 {hasLabelPredictions ? (
                   <>
                     <th className="px-2 py-1 text-left font-mono">{tr.rowStatus}</th>
-                    <th className="px-2 py-1 text-left font-mono">predicted_label</th>
-                    <th className="px-2 py-1 text-left font-mono">confidence</th>
+                    <th className="px-2 py-1 text-left font-mono">{tr.predictedLabel}</th>
+                    <th className="px-2 py-1 text-left font-mono">{tr.confidenceLabel}</th>
                   </>
                 ) : (
-                  <th className="px-2 py-1 text-left font-mono">predicted_score</th>
+                  <th className="px-2 py-1 text-left font-mono">{tr.predictedScore}</th>
                 )}
                 {hasActualPredictionValues && (
                   <th className="px-2 py-1 text-left font-mono">
-                    {predictions.some((p) => p.actual_label !== undefined) ? "actual_label" : "actual_score"}
+                    {predictions.some((p) => p.actual_label !== undefined) ? tr.actualLabel : tr.actualScore}
                   </th>
                 )}
-                <th className="px-2 py-1 text-left font-mono">rule_applied</th>
+                <th className="px-2 py-1 text-left font-mono">{tr.ruleApplied}</th>
                 {showFeatureCols && featureSpec && Object.keys(featureSpec).map((feature) => (
                   <th key={feature} className="px-2 py-1 text-left font-mono">
                     {feature}

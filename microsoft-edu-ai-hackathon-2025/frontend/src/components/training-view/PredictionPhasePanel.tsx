@@ -57,7 +57,7 @@ export function PredictionPhasePanel(props: {
 
   return (
     <div className="space-y-4">
-      {testingDataX && <DatasetTable deluxe={deluxe} data={testingDataX} title="Testing Dataset X" />}
+      {testingDataX && <DatasetTable deluxe={deluxe} data={testingDataX} title={tr.testingDatasetTitle} />}
 
       {showPredictForm && (
         <div className={`p-3 rounded-lg border ${cls(deluxe, "bg-amber-50/50 border-amber-200", "bg-amber-900/20 border-amber-800/50")}`}>
@@ -88,7 +88,7 @@ export function PredictionPhasePanel(props: {
                 }}
                 className={`text-xs ${cls(deluxe, "text-slate-600", "text-slate-400")}`}
               />
-              {testingLabels && <p className="mt-1 text-xs text-green-500 font-medium">CSV: {testingLabels.name}</p>}
+              {testingLabels && <p className="mt-1 text-xs text-green-500 font-medium">{tr.selectedCsv}: {testingLabels.name}</p>}
             </div>
           )}
         </div>

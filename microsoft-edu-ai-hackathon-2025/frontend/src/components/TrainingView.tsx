@@ -245,7 +245,7 @@ export function TrainingView({
       )}`}
     >
       {error && (() => {
-        const { message, hint } = enrichError(error);
+        const { message, hint } = enrichError(error, uiLanguage);
         return (
           <div ref={errorRef} className={`mb-4 flex items-start gap-2 p-3 rounded-lg border ${cls(deluxe, "bg-red-50 border-red-200 text-red-800", "bg-red-900/30 border-red-800/50 text-red-300")}`}>
             <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
@@ -276,7 +276,7 @@ export function TrainingView({
       />
 
       <h2 className={`text-xl font-bold mb-2 ${cls(deluxe, "text-slate-900", "text-white")}`}>
-        {phaseTitle[step] ?? `Fáze ${step}`}
+        {phaseTitle[step] ?? (uiLanguage === "en" ? `Phase ${step}` : `Fáze ${step}`)}
       </h2>
       <p className={`text-sm mb-6 ${cls(deluxe, "text-slate-500", "text-slate-400")}`}>
         {phaseDesc[step] ?? ""}

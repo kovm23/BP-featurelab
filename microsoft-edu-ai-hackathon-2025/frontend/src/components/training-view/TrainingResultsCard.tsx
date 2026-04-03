@@ -45,7 +45,7 @@ export function TrainingResultsCard({
         {trainResult.target_mode === "classification" ? (
           <>
             <p>
-              Train Accuracy:{" "}
+              {tr.trainAccuracy}:{" "}
               <strong>
                 {trainResult.train_accuracy != null ? Number(trainResult.train_accuracy).toFixed(4) : "—"}
               </strong>
@@ -57,7 +57,7 @@ export function TrainingResultsCard({
               </p>
             )}
             <p>
-              Train F1 macro:{" "}
+              {tr.f1Macro}:{" "}
               <strong>
                 {trainResult.train_f1_macro != null ? Number(trainResult.train_f1_macro).toFixed(4) : "—"}
               </strong>
@@ -69,7 +69,7 @@ export function TrainingResultsCard({
             )}
             {trainResult.cv_accuracy != null && (
               <p>
-                Cross-val Accuracy ({trainResult.cv_folds ?? 5}-fold):{" "}
+                {tr.crossValAccuracy} ({trainResult.cv_folds ?? 5}-fold):{" "}
                 <strong>{Number(trainResult.cv_accuracy).toFixed(4)}</strong>
               </p>
             )}
@@ -81,18 +81,18 @@ export function TrainingResultsCard({
             )}
             {trainResult.cv_f1_macro != null && (
               <p>
-                Cross-val F1 macro: <strong>{Number(trainResult.cv_f1_macro).toFixed(4)}</strong>
+                {tr.crossValF1Macro}: <strong>{Number(trainResult.cv_f1_macro).toFixed(4)}</strong>
               </p>
             )}
             {trainResult.cv_precision_macro != null && (
               <p>
-                Cross-val Precision:{" "}
+                {tr.crossValPrecision}:{" "}
                 <strong>{Number(trainResult.cv_precision_macro).toFixed(4)}</strong>
               </p>
             )}
             {trainResult.cv_recall_macro != null && (
               <p>
-                Cross-val Recall: <strong>{Number(trainResult.cv_recall_macro).toFixed(4)}</strong>
+                {tr.crossValRecall}: <strong>{Number(trainResult.cv_recall_macro).toFixed(4)}</strong>
               </p>
             )}
             {trainResult.cv_mcc != null && (
@@ -104,17 +104,17 @@ export function TrainingResultsCard({
         ) : (
           <>
             <p>
-              Ensemble MSE: <strong>{trainResult.mse != null ? Number(trainResult.mse).toFixed(4) : "—"}</strong>
+              {tr.ensembleMse}: <strong>{trainResult.mse != null ? Number(trainResult.mse).toFixed(4) : "—"}</strong>
             </p>
             {trainResult.rulekit_mse != null && (
-              <p>RuleKit MSE: <strong>{Number(trainResult.rulekit_mse).toFixed(4)}</strong></p>
+              <p>{tr.rulekitMse}: <strong>{Number(trainResult.rulekit_mse).toFixed(4)}</strong></p>
             )}
             {trainResult.xgb_mse != null && (
-              <p>XGBoost MSE: <strong>{Number(trainResult.xgb_mse).toFixed(4)}</strong></p>
+              <p>{tr.xgboostMse}: <strong>{Number(trainResult.xgb_mse).toFixed(4)}</strong></p>
             )}
             {trainResult.cv_mse != null && (
               <p>
-                Cross-val MSE ({trainResult.cv_folds ?? 5}-fold):{" "}
+                {tr.crossValMse} ({trainResult.cv_folds ?? 5}-fold):{" "}
                 <strong>{Number(trainResult.cv_mse).toFixed(4)}</strong>
                 {trainResult.cv_std != null && (
                   <span className="opacity-70"> ± {Number(trainResult.cv_std).toFixed(4)}</span>
@@ -124,12 +124,12 @@ export function TrainingResultsCard({
                     trainResult.cv_mse < (trainResult.mse ?? 0) * 2 ? "text-green-500" : "text-amber-500"
                   }
                 >
-                  {trainResult.cv_mse < (trainResult.mse ?? 0) * 2 ? "✓ model zobecňuje" : "⚠ možné přetrénování"}
+                  {trainResult.cv_mse < (trainResult.mse ?? 0) * 2 ? `✓ ${tr.generalizesWell}` : `⚠ ${tr.possibleOverfitting}`}
                 </span>
               </p>
             )}
             {trainResult.cv_mae != null && (
-              <p>Cross-val MAE: <strong>{Number(trainResult.cv_mae).toFixed(4)}</strong></p>
+              <p>{tr.crossValMae}: <strong>{Number(trainResult.cv_mae).toFixed(4)}</strong></p>
             )}
           </>
         )}
@@ -192,7 +192,7 @@ export function TrainingResultsCard({
           }}
           className="px-2 py-1 bg-zinc-600 text-white rounded text-xs hover:bg-zinc-700 flex items-center justify-center gap-1"
         >
-          <Download className="w-3 h-3" /> Feature Spec
+          <Download className="w-3 h-3" /> {tr.featureSpecShort}
         </button>
         <button
           onClick={() => {
@@ -200,7 +200,7 @@ export function TrainingResultsCard({
           }}
           className="px-2 py-1 bg-zinc-600 text-white rounded text-xs hover:bg-zinc-700 flex items-center justify-center gap-1"
         >
-          <Download className="w-3 h-3" /> Training Data (X)
+          <Download className="w-3 h-3" /> {tr.trainingDataShort}
         </button>
         <button
           onClick={() => {

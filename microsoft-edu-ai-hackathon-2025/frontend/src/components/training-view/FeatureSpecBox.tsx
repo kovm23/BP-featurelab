@@ -49,18 +49,18 @@ export function FeatureSpecBox({
         rangeSuffix: "range",
       }
     : {
-        title: "Feature Definition Spec",
+        title: "Specifikace featur",
         target: "Cíl",
         editable: "Editovatelné",
         range: "Rozsah",
         categories: "Kategorie",
-        featureName: "Název feature",
-        newFeatureName: "Název nové feature (např. scene_brightness)",
+        featureName: "Název featury",
+        newFeatureName: "Název nové featury (např. scene_brightness)",
         save: "Uložit",
         cancel: "Zrušit",
         edit: "Upravit",
         remove: "Odebrat",
-        addFeature: "Přidat feature",
+        addFeature: "Přidat featuru",
         add: "Přidat",
         rangeSuffix: "rozsah",
       };

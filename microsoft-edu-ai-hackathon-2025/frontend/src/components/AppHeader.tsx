@@ -27,6 +27,8 @@ export function AppHeader({
     exportSession: string;
     importSession: string;
     language: string;
+    appTitle: string;
+    appSubtitle: string;
     schoolLogoAlt: string;
   };
 }) {
@@ -42,10 +44,10 @@ export function AppHeader({
         </a>
         <div>
           <h1 className={`text-[28px] font-semibold tracking-tight ${deluxe ? "text-white" : "text-slate-900"}`}>
-            Media Feature Lab — Pro
+            {t.appTitle}
           </h1>
           <p className={`mt-0.5 text-sm ${deluxe ? "text-slate-300" : "text-slate-600"}`}>
-            Prague University of Economics and Business
+            {t.appSubtitle}
           </p>
         </div>
       </div>

@@ -66,7 +66,7 @@ export function DiscoveryPhasePanel(props: {
     <div className="space-y-4">
       <div>
         <label className={`block text-sm font-medium mb-1 ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>
-          Co chceme predikovat? (Cílová proměnná)
+          {tr.targetVariableLabel}
         </label>
         <input
           type="text"
@@ -109,6 +109,9 @@ export function DiscoveryPhasePanel(props: {
             {tr.classification}
           </button>
         </div>
+        <p className={`mt-2 text-xs ${cls(deluxe, "text-slate-500", "text-slate-400")}`}>
+          {targetMode === "regression" ? tr.targetModeHintRegression : tr.targetModeHintClassification}
+        </p>
       </div>
 
       <div
@@ -176,7 +179,7 @@ export function DiscoveryPhasePanel(props: {
             className="rounded"
           />
           <span className={`text-sm font-medium ${cls(deluxe, "text-amber-800", "text-amber-300")}`}>
-            Přidat labels soubor (dataset_Y)
+            {tr.addLabelsFile}
           </span>
         </label>
         {useDiscoveryLabels && (
@@ -189,7 +192,7 @@ export function DiscoveryPhasePanel(props: {
               }}
               className={`text-xs ${cls(deluxe, "text-slate-600", "text-slate-400")}`}
             />
-            {discoveryLabels && <p className="mt-1 text-xs text-green-500 font-medium">CSV: {discoveryLabels.name}</p>}
+            {discoveryLabels && <p className="mt-1 text-xs text-green-500 font-medium">{tr.selectedCsv}: {discoveryLabels.name}</p>}
           </div>
         )}
       </div>

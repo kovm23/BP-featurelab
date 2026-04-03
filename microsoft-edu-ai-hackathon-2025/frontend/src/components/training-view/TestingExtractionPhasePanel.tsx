@@ -156,7 +156,7 @@ export function TestingExtractionPhasePanel(props: {
 
       {testingDataX && (
         <>
-          <DatasetTable deluxe={deluxe} data={testingDataX} title="Testing Dataset X" />
+          <DatasetTable deluxe={deluxe} data={testingDataX} title={tr.testingDatasetTitle} />
           <div className="flex justify-center mt-2">
             <button
               onClick={() =>

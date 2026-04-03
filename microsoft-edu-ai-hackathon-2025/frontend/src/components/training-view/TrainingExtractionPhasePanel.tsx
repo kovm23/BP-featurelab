@@ -1,5 +1,4 @@
 import React from "react";
-import React from "react";
 import { CheckCircle2, ChevronRight, Download, Loader2, PlayCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { FeatureSpec } from "@/lib/api";
@@ -160,11 +159,17 @@ export function TrainingExtractionPhasePanel(props: {
                 }}
                 className={`text-xs ${cls(deluxe, "text-slate-600", "text-slate-400")}`}
               />
-              {extractionLabels && <p className="mt-1 text-xs text-green-500 font-medium">CSV: {extractionLabels.name}</p>}
+              {extractionLabels && <p className="mt-1 text-xs text-green-500 font-medium">{tr.selectedCsv}: {extractionLabels.name}</p>}
             </div>
           )}
         </div>
       )}
+
+      <div className={`p-3 rounded-lg border ${cls(deluxe, "bg-blue-50/70 border-blue-200", "bg-blue-900/20 border-blue-800/50")}`}>
+        <p className={`text-xs ${cls(deluxe, "text-blue-800", "text-blue-200")}`}>
+          {tr.labelsMatchingHint}
+        </p>
+      </div>
 
       {ollamaOk === false && <OllamaWarning deluxe={deluxe} tr={tr} recheckOllama={recheckOllama} />}
 
@@ -219,7 +224,7 @@ export function TrainingExtractionPhasePanel(props: {
 
       {trainingDataX && (
         <>
-          <DatasetTable deluxe={deluxe} data={trainingDataX} title="Training Dataset X" />
+          <DatasetTable deluxe={deluxe} data={trainingDataX} title={tr.trainingDatasetTitle} />
           <div className="flex justify-center mt-2">
             <button
               onClick={() => downloadTrainingDataCSV(trainingDataX)}

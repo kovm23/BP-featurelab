@@ -12,6 +12,8 @@ export default function MediaFeatureLabPro() {
 
   const i18n = {
     cs: {
+      appTitle: "Media Feature Lab — Pro",
+      appSubtitle: "Vysoká škola ekonomická v Praze",
       toggleTheme: "Přepnout motiv",
       guide: "Průvodce",
       reset: "Reset",
@@ -24,6 +26,8 @@ export default function MediaFeatureLabPro() {
       resetConfirm: "Opravdu chcete resetovat celý pipeline? Všechna data budou ztracena.",
     },
     en: {
+      appTitle: "Media Feature Lab — Pro",
+      appSubtitle: "Prague University of Economics and Business",
       toggleTheme: "Toggle theme",
       guide: "Help",
       reset: "Reset",
