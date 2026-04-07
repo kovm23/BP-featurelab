@@ -29,6 +29,52 @@ def _is_transient_ollama_error(exc: Exception) -> bool:
     return any(token in msg for token in transient_tokens)
 
 
+def _warm_up_model(model_name: str, progress_cb=None) -> None:
+    """Send a minimal request to ensure the model is fully loaded before real work.
+
+    Ollama spawns a new runner process on the first request and can return an EOF
+    while that runner is still initialising. Retrying here with generous backoff
+    absorbs the load latency so downstream calls succeed on the first try.
+    """
+    import time
+    max_wait = 120
+    deadline = time.monotonic() + max_wait
+    attempt = 0
+    while True:
+        try:
+            with _tracked_ollama_lock():
+                local_client.chat.completions.create(
+                    model=model_name,
+                    messages=[{"role": "user", "content": "1"}],
+                    max_tokens=1,
+                    temperature=0.0,
+                )
+            return
+        except Exception as exc:
+            if not _is_transient_ollama_error(exc):
+                raise
+            attempt += 1
+            wait_s = min(15 * attempt, 45)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RuntimeError(
+                    f"Model '{model_name}' failed to load within {max_wait}s: {exc}"
+                ) from exc
+            actual_wait = min(wait_s, remaining)
+            logger.warning(
+                "Ollama model load not ready (attempt %s), retrying in %ss: %s",
+                attempt,
+                actual_wait,
+                exc,
+            )
+            if progress_cb:
+                try:
+                    progress_cb(3, f"Model se načítá ({attempt}. pokus)...")
+                except Exception:
+                    pass
+            time.sleep(actual_wait)
+
+
 def discover_features(
     pipeline,
     media_paths: list[str],
@@ -53,6 +99,11 @@ def discover_features(
     target_mode = getattr(pipeline, "target_mode", "regression")
 
     labels_context = build_labels_context(labels_df, target_variable, target_mode)
+
+    # Pre-warm the model so Ollama finishes loading before the observation loop.
+    # Without this, the first inference call often returns EOF while the runner starts.
+    _cb(3, "Načítám model...")
+    _warm_up_model(model_name, progress_cb=progress_cb)
 
     # Step 1: analyse each sample independently to gather observations
     observations = []
@@ -112,8 +163,9 @@ def discover_features(
     )
 
     response = None
-    max_retries = 3
-    backoff_s = 2
+    max_retries = 4
+    backoff_s = 20  # model cold-load takes 20-30 s; each wait must exceed that
+    import time
     for attempt in range(max_retries):
         try:
             with _tracked_ollama_lock():
@@ -127,7 +179,7 @@ def discover_features(
             is_last = attempt >= max_retries - 1
             if is_last or not _is_transient_ollama_error(exc):
                 raise
-            wait_s = backoff_s * (2 ** attempt)
+            wait_s = backoff_s * (attempt + 1)
             logger.warning(
                 "Transient Ollama failure during feature synthesis (attempt %s/%s): %s. Retrying in %ss",
                 attempt + 1,
@@ -136,7 +188,6 @@ def discover_features(
                 wait_s,
             )
             _cb(70, f"Model se načítá, opakuji požadavek ({attempt + 2}/{max_retries})...")
-            import time
             time.sleep(wait_s)
 
     if response is None:

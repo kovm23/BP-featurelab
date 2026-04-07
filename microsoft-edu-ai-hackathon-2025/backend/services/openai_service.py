@@ -137,8 +137,17 @@ def extract_image_features_with_llm(image_base64_list, prompt=None, deployment_n
                 else:
                     features_list.append({"error": "Rate limit exceeded."})
             except Exception as e:
-                features_list.append({"error": f"Model error ({model_name}): {str(e)}"})
-                break
+                msg = str(e).lower()
+                is_transient = any(
+                    t in msg for t in ("eof", "load request", "connection reset", "timed out", "connection refused")
+                )
+                if is_transient and attempt < max_retries - 1:
+                    wait = backoff * (attempt + 1)
+                    logger.warning("Transient Ollama error on image extraction attempt %s, retrying in %ss: %s", attempt + 1, wait, e)
+                    time.sleep(wait)
+                else:
+                    features_list.append({"error": f"Model error ({model_name}): {str(e)}"})
+                    break
 
     return features_list
 
