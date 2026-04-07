@@ -40,6 +40,27 @@ _ollama_waiting = 0
 _waiting_lock = threading.Lock()
 
 DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5vl:7b")
+OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "4096"))
+_OLLAMA_OPTIONS = {"num_ctx": OLLAMA_NUM_CTX}
+OLLAMA_CPU_FALLBACK = os.getenv("OLLAMA_CPU_FALLBACK", "1").strip().lower() in ("1", "true", "yes")
+
+
+def ollama_request_options() -> dict:
+    return dict(_OLLAMA_OPTIONS)
+
+
+def _is_gpu_load_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(
+        token in msg
+        for token in (
+            "unable to allocate cuda",
+            "cuda0 buffer",
+            "do load request",
+            "/load\": eof",
+            "connection reset",
+        )
+    )
 
 
 from contextlib import contextmanager
@@ -106,9 +127,13 @@ def extract_image_features_with_llm(image_base64_list, prompt=None, deployment_n
 
         max_retries = 3
         backoff = 2
+        use_cpu_fallback = False
 
         for attempt in range(max_retries):
             try:
+                options = ollama_request_options()
+                if use_cpu_fallback:
+                    options["num_gpu"] = 0
                 with _tracked_ollama_lock():
                     response = local_client.chat.completions.create(
                         model=model_name,
@@ -118,6 +143,7 @@ def extract_image_features_with_llm(image_base64_list, prompt=None, deployment_n
                         ],
                         max_tokens=2048,
                         temperature=0.1,
+                        extra_body={"options": options},
                     )
                 content = response.choices[0].message.content
                 clean_content = _clean_json_response(content)
@@ -141,6 +167,11 @@ def extract_image_features_with_llm(image_base64_list, prompt=None, deployment_n
                 is_transient = any(
                     t in msg for t in ("eof", "load request", "connection reset", "timed out", "connection refused")
                 )
+                if OLLAMA_CPU_FALLBACK and not use_cpu_fallback and _is_gpu_load_error(e):
+                    use_cpu_fallback = True
+                    logger.warning("GPU model load failed, retrying on CPU fallback: %s", e)
+                    time.sleep(2)
+                    continue
                 if is_transient and attempt < max_retries - 1:
                     wait = backoff * (attempt + 1)
                     logger.warning("Transient Ollama error on image extraction attempt %s, retrying in %ss: %s", attempt + 1, wait, e)
@@ -165,9 +196,13 @@ def extract_text_features_with_llm(text_list, prompt=None, deployment_name=None,
 
         max_retries = 3
         backoff = 2
+        use_cpu_fallback = False
 
         for attempt in range(max_retries):
             try:
+                options = ollama_request_options()
+                if use_cpu_fallback:
+                    options["num_gpu"] = 0
                 with _tracked_ollama_lock():
                     response = local_client.chat.completions.create(
                         model=model_name,
@@ -177,6 +212,7 @@ def extract_text_features_with_llm(text_list, prompt=None, deployment_name=None,
                         ],
                         max_tokens=2048,
                         temperature=0.1,
+                        extra_body={"options": options},
                     )
                 content = response.choices[0].message.content
                 clean_content = _clean_json_response(content)
@@ -188,6 +224,11 @@ def extract_text_features_with_llm(text_list, prompt=None, deployment_name=None,
                 features_list.append(features)
                 break
             except Exception as e:
+                if OLLAMA_CPU_FALLBACK and not use_cpu_fallback and _is_gpu_load_error(e):
+                    use_cpu_fallback = True
+                    logger.warning("GPU model load failed, retrying text extraction on CPU fallback: %s", e)
+                    time.sleep(2)
+                    continue
                 if attempt < max_retries - 1:
                     time.sleep(backoff)
                 else:

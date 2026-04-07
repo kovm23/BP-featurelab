@@ -7,7 +7,11 @@ import re
 import pandas as pd
 
 from pipeline.feature_schema import normalize_feature_spec
-from services.openai_service import local_client, _tracked_ollama_lock
+from services.openai_service import (
+    _tracked_ollama_lock,
+    local_client,
+    ollama_request_options,
+)
 from services.processing import process_single_media
 from utils.target_context import build_labels_context
 
@@ -29,6 +33,19 @@ def _is_transient_ollama_error(exc: Exception) -> bool:
     return any(token in msg for token in transient_tokens)
 
 
+def _is_gpu_load_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(
+        token in msg
+        for token in (
+            "unable to allocate cuda",
+            "cuda0 buffer",
+            "do load request",
+            "/load\": eof",
+        )
+    )
+
+
 def _warm_up_model(model_name: str, progress_cb=None) -> None:
     """Send a minimal request to ensure the model is fully loaded before real work.
 
@@ -40,17 +57,26 @@ def _warm_up_model(model_name: str, progress_cb=None) -> None:
     max_wait = 120
     deadline = time.monotonic() + max_wait
     attempt = 0
+    use_cpu_fallback = False
     while True:
         try:
+            options = ollama_request_options()
+            if use_cpu_fallback:
+                options["num_gpu"] = 0
             with _tracked_ollama_lock():
                 local_client.chat.completions.create(
                     model=model_name,
                     messages=[{"role": "user", "content": "1"}],
                     max_tokens=1,
                     temperature=0.0,
+                    extra_body={"options": options},
                 )
             return
         except Exception as exc:
+            if not use_cpu_fallback and _is_gpu_load_error(exc):
+                use_cpu_fallback = True
+                logger.warning("GPU load failed during warm-up, switching to CPU fallback: %s", exc)
+                continue
             if not _is_transient_ollama_error(exc):
                 raise
             attempt += 1
@@ -166,16 +192,25 @@ def discover_features(
     max_retries = 4
     backoff_s = 20  # model cold-load takes 20-30 s; each wait must exceed that
     import time
+    use_cpu_fallback = False
     for attempt in range(max_retries):
         try:
+            options = ollama_request_options()
+            if use_cpu_fallback:
+                options["num_gpu"] = 0
             with _tracked_ollama_lock():
                 response = local_client.chat.completions.create(
                     model=model_name,
                     messages=[{"role": "user", "content": synthesis_prompt}],
                     temperature=0.3,
+                    extra_body={"options": options},
                 )
             break
         except Exception as exc:
+            if not use_cpu_fallback and _is_gpu_load_error(exc):
+                use_cpu_fallback = True
+                logger.warning("GPU load failed during synthesis, switching to CPU fallback: %s", exc)
+                continue
             is_last = attempt >= max_retries - 1
             if is_last or not _is_transient_ollama_error(exc):
                 raise
