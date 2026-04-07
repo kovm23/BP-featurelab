@@ -16,6 +16,19 @@ logger = logging.getLogger(__name__)
 _META_KEYS = {"summary", "classification", "reasoning"}
 
 
+def _is_transient_ollama_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    transient_tokens = (
+        "eof",
+        "load request",
+        "connection reset",
+        "remoteprotocolerror",
+        "timed out",
+        "connection refused",
+    )
+    return any(token in msg for token in transient_tokens)
+
+
 def discover_features(
     pipeline,
     media_paths: list[str],
@@ -98,12 +111,36 @@ def discover_features(
         f"\"scene_type\": [\"indoor\", \"outdoor\", \"mixed\"]}}"
     )
 
-    with _tracked_ollama_lock():
-        response = local_client.chat.completions.create(
-            model=model_name,
-            messages=[{"role": "user", "content": synthesis_prompt}],
-            temperature=0.3,
-        )
+    response = None
+    max_retries = 3
+    backoff_s = 2
+    for attempt in range(max_retries):
+        try:
+            with _tracked_ollama_lock():
+                response = local_client.chat.completions.create(
+                    model=model_name,
+                    messages=[{"role": "user", "content": synthesis_prompt}],
+                    temperature=0.3,
+                )
+            break
+        except Exception as exc:
+            is_last = attempt >= max_retries - 1
+            if is_last or not _is_transient_ollama_error(exc):
+                raise
+            wait_s = backoff_s * (2 ** attempt)
+            logger.warning(
+                "Transient Ollama failure during feature synthesis (attempt %s/%s): %s. Retrying in %ss",
+                attempt + 1,
+                max_retries,
+                exc,
+                wait_s,
+            )
+            _cb(70, f"Model se načítá, opakuji požadavek ({attempt + 2}/{max_retries})...")
+            import time
+            time.sleep(wait_s)
+
+    if response is None:
+        raise RuntimeError("LLM feature synthesis failed without response.")
     raw_content = response.choices[0].message.content or ""
     # Use json decoder to find the first valid JSON object
     _cb(90, "Parsování feature specifikace...")

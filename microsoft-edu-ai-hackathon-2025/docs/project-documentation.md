@@ -10,6 +10,33 @@ Media Feature Lab je webová aplikace pro automatickou klasifikaci/regresi multi
 4. **Feature Extraction (testing)** — Extrakce features z testovacích médií
 5. **Prediction** — Predikce s evaluačními metrikami
 
+### 1.1 Typický end-to-end průchod systémem
+
+| Fáze | Vstup od uživatele | Co dělá backend | Hlavní výstup |
+|---|---|---|---|
+| 1. Discovery | Ukázková média + název cílové proměnné + target mode | LLM analyzuje omezený počet reprezentativních vzorků a navrhne strukturovanou `feature_spec` | JSON specifikace featur |
+| 2. Training Extraction | Trénovací ZIP + volitelně CSV s labely | LLM extrahuje hodnoty featur pro každý soubor v datasetu | `training_X.csv`, načtené `dataset_Y`, progress job |
+| 3. Training | Výběr cílového sloupce z CSV | RuleKit / ensemble natrénuje model a vypočítá metriky | pravidla, metriky, feature importance |
+| 4. Testing Extraction | Testovací ZIP + stejná `feature_spec` | Extrakce stejných featur z neviděných dat | `testing_X.csv` |
+| 5. Prediction | Volitelně testovací `dataset_Y` pro evaluaci | Batch predikce nad `testing_X` a případné porovnání s ground truth | tabulka predikcí, evaluační metriky |
+
+Prakticky je důležité rozlišit:
+
+- **Discovery** neprochází celý dataset, ale jen malý reprezentativní vzorek.
+- **Extraction** už naopak zpracovává všechna média v trénovacím nebo testovacím ZIPu.
+- **Training** a **Prediction** jsou asynchronní joby, jejichž stav frontend pravidelně polluje.
+
+### 1.2 Omezení a předpoklady pro interpretaci výsledků
+
+Při psaní praktické části je vhodné explicitně uvést tato provozní omezení:
+
+- Discovery používá maximálně prvních 5 médií po načtení / rozbalení vstupu. Slouží k návrhu featur, ne k plné analýze datasetu.
+- Všechna LLM volání jsou globálně serializována přes semaphore, takže při více uživatelích nebo více paralelních jobech roste latence kvůli frontě.
+- Extrakce nad větším datasetem může trvat minuty až desítky minut podle zvoleného modelu, velikosti vstupu a vytížení Ollamy.
+- Párování `dataset_X` a `dataset_Y` používá normalizované basename bez přípony; tolerují se cesty, přípony, uvozovky a velikost písmen, ale názvy musí stále odpovídat stejnému médiu.
+- Klasifikace validuje, že cílová proměnná je skutečně kategorická; sloupce s vysokou kardinalitou nebo téměř spojitým numerickým rozsahem jsou odmítnuty.
+- Výsledky jsou interpretovatelné, ale jejich kvalita závisí na kvalitě lokálního multimodálního modelu v Ollamě a na kvalitě vstupních dat.
+
 ### Stav implementace (aktualizace 2026-04-02)
 
 Tato sekce doplňuje historický popis níže o aktuální chování aplikace:
@@ -26,6 +53,9 @@ Tato sekce doplňuje historický popis níže o aktuální chování aplikace:
 - EN lokalizace je napojena i na klíčové texty 5fázového wizardu (phase titles/descriptions, hlavní CTA tlačítka, continue/stop akce, completion badges).
 - Runtime hlášky z `useTrainingPipeline` (fallback progress labely a frontendové error prefixy) respektují zvolený jazyk CZ/EN.
 - Produkční routování API přes Cloudflare Worker proxy je součástí nasazení frontendu.
+- Discovery endpoint přijímá ZIP nebo více samostatných médií, ale pro samotný návrh featur analyzuje maximálně 5 vzorků.
+- Frontend po refreshi obnovuje nejen Fáze 1-4, ale i uložené výsledky Fáze 5 (`predictions`, `prediction_metrics`) a umí znovu navázat na aktivní async job ve Fázích 1-5.
+- Cloudflare Worker proxy pokrývá i export/import relace (`/export-session`, `/import-session`), takže tento workflow funguje i přes veřejnou `workers.dev` URL.
 
 ### Architektura
 
@@ -54,7 +84,7 @@ Tato sekce doplňuje historický popis níže o aktuální chování aplikace:
 
 | Komponenta | Technologie | Verze |
 |---|---|---|
-| Frontend | React, TypeScript, Vite, TailwindCSS | React 18, Vite 5 |
+| Frontend | React, TypeScript, Vite, TailwindCSS | React 18, Vite 7 |
 | Backend | Python, Flask, Gunicorn | Python 3.10, Flask 3.x |
 | LLM | Ollama (lokální) — Qwen 2.5 VL 7B | ollama latest |
 | Whisper | faster-whisper (large-v3, GPU, float16) | - |
@@ -117,16 +147,23 @@ Každý uživatel (prohlížeč) dostane vlastní instanci `MachineLearningPipel
 | `training_Y_df` | `DataFrame \| None` | Labels CSV (ground truth) |
 | `model` | `RuleRegressor \| RuleClassifier \| None` | Natrénovaný RuleKit model |
 | `xgb_model` | `XGBRegressor \| None` | Natrénovaný XGBoost model pro regresi |
-| `scaler` | `StandardScaler \| None` | Feature scaler (in-memory) |
+| `scaler` | `None` | Zachováno jen kvůli zpětné kompatibilitě; aktuální pipeline neškáluje features |
 | `rules` | `list[str]` | Extrahovaná pravidla z RuleKit |
+| `target_mode` | `str` | `regression` nebo `classification` |
+| `training_Y_column` | `str` | Název cílového sloupce použitého při tréninku |
 | `mse` | `float \| None` | Ensemble MSE na trénovacích datech |
 | `rulekit_mse` | `float \| None` | RuleKit MSE |
 | `xgb_mse` | `float \| None` | XGBoost MSE |
+| `cv_mse`, `cv_mae`, `cv_std` | `float \| None` | Cross-val metriky pro regresi |
+| `train_accuracy`, `cv_accuracy`, ... | `float \| None` | Trénovací a cross-val metriky pro klasifikaci |
+| `warnings` | `list[str]` | Ne-fatal upozornění z tréninku |
 | `is_trained` | `bool` | Indikátor natrénovaného modelu |
 | `testing_X` | `DataFrame \| None` | Extrahované features z testovacích dat |
+| `predictions` | `list[dict] \| None` | Batch výstup Fáze 5 |
+| `prediction_metrics` | `dict \| None` | Vyhodnocení predikcí vůči ground truth |
 | `_training_columns` | `list[str]` | Sloupce po preprocessing (pro alignment) |
-| `_scaler_mean` | `list[float]` | Uložené parametry StandardScaler |
-| `_scaler_scale` | `list[float]` | Uložené parametry StandardScaler |
+| `_scaler_mean` | `list[float]` | Legacy kompatibilita; aktuálně nepoužíváno |
+| `_scaler_scale` | `list[float]` | Legacy kompatibilita; aktuálně nepoužíváno |
 
 #### Persistence
 
@@ -134,12 +171,19 @@ Pipeline stav se ukládá do `checkpoints/sessions/{session_id}/`:
 
 | Soubor | Formát | Obsah |
 |---|---|---|
-| `pipeline_state.json` | JSON | Skalární metadata (feature_spec, rules, MSE, scaler params...) |
+| `pipeline_state.json` | JSON | Metadata pipeline (feature_spec, target_mode, pravidla, metriky, warnings, predictions, prediction_metrics, legacy scaler params...) |
 | `training_X.csv` | CSV | Extrahované trénovací features |
 | `training_Y_df.csv` | CSV | Trénovací labels |
 | `testing_X.csv` | CSV | Extrahované testovací features |
 | `model.pkl` | Pickle | RuleKit Java model object |
 | `xgb_model.pkl` | Pickle | XGBoost model |
+
+Frontend endpoint `GET /state` z těchto dat skládá hydratační payload, takže po refreshi dokáže obnovit:
+
+- dokončené fáze 1-5
+- `train_result`
+- `predictions` a `prediction_metrics`
+- dropdown pro výběr cílového sloupce (`dataset_Y_columns`)
 
 **Migrační logika:** Pokud existuje legacy `pipeline_state.pkl` (starý pickle formát), systém ho automaticky načte, re-uloží v novém JSON+CSV formátu a smaže starý soubor.
 
@@ -152,6 +196,8 @@ Pipeline stav se ukládá do `checkpoints/sessions/{session_id}/`:
 Dvouúrovňový proces pro automatický návrh feature specifikace:
 
 #### Krok 1: Pozorování vzorků
+
+Do discovery lze poslat ZIP i více samostatných médií. Po načtení / rozbalení backend pracuje s nalezenými mediálními soubory, ale pro samotný návrh featur záměrně analyzuje jen **maximálně prvních 5 vzorků**. Tento krok tedy slouží k rychlému feature engineeringu, ne k plné analýze datasetu.
 
 Pro každý z max. 5 vzorkových médií se zavolá LLM s observation promptem:
 
@@ -672,6 +718,8 @@ Hook po refaktoru funguje jako tenká orchestrace nad menšími specializovaným
 - deleguje reset/invalidation do `trainingPipelineState.ts`
 - deleguje restore/persist helpery do `trainingPipelineRecovery.ts` a `trainingPipelineUtils.ts`
 - používá `localStorage` jen pro lightweight metadata (step, target variable, mode, feature spec, model provider), nikoli pro velké datasety
+- po reloadu obnovuje stav z `GET /state` a navazuje i na aktivní async job (`discover`, `extract_training`, `extract_testing`, `train`, `predict`)
+- po dokončené Fázi 5 obnovuje i `predictions` a `prediction_metrics`, takže výsledky predikce se po refreshi neztratí
 
 Tím je logika lépe testovatelná a odděluje:
 - stavový orchestration layer
@@ -740,7 +788,7 @@ Podpora Cloudflare tunnelu: HMR disabled (`hmr: false`), timeout 100s v tunnel.
 
 Pro doménu `*.workers.dev` je použit Worker (`frontend/worker.js`), který:
 
-- proxyuje API cesty (`/discover`, `/extract`, `/train`, `/predict`, `/status`, `/state`, `/health`, `/queue-info`, ...)
+- proxyuje API cesty (`/discover`, `/extract`, `/train`, `/predict`, `/status`, `/state`, `/health`, `/queue-info`, `/export-session`, `/import-session`, ...)
 - servíruje statická frontend aktiva přes `ASSETS`
 - řeší CORS preflight (`OPTIONS`) a nastavuje CORS hlavičky na proxy odpovědích
 - bufferuje request/response body (`arrayBuffer`) kvůli stabilnímu přenosu JSON payloadů (`job_id`) přes Worker runtime
@@ -966,6 +1014,21 @@ cd frontend
 pm2 start npx --name frontend -- vite --host --port 5173
 ```
 
+### 6.4 Reprodukovatelný experimentální scénář pro BP
+
+Pro praktickou část bakalářské práce je vhodné popsat alespoň jeden standardizovaný experiment:
+
+1. Připravit trénovací ZIP a testovací ZIP se stejným typem médií.
+2. Připravit CSV s cílovou proměnnou, kde první sloupec odpovídá názvům médií.
+3. Ve Fázi 1 spustit discovery a nechat vygenerovat `feature_spec`.
+4. Ve Fázi 2 extrahovat `training_X` z trénovacího datasetu.
+5. Ve Fázi 3 vybrat cílový sloupec a natrénovat model.
+6. Ve Fázi 4 extrahovat `testing_X` ze separátního testovacího datasetu.
+7. Ve Fázi 5 spustit predikci a případně přiložit testovací `dataset_Y` pro evaluaci.
+8. Exportovat artefakty (`feature_spec`, `training_X`, `testing_X`, `predictions`, `rules`, `metrics`) pro další analýzu a screenshoty do práce.
+
+Tento scénář je dobře přenositelný do textu praktické části, protože přímo kopíruje strukturu uživatelského rozhraní i backendové pipeline.
+
 ---
 
 ## 7. API Reference
@@ -974,10 +1037,12 @@ pm2 start npx --name frontend -- vite --host --port 5173
 Spustí feature discovery z vzorkových médií.
 
 **Request:** `multipart/form-data`
-- `files`: Media soubory (max 5)
+- `files`: Mediální soubory nebo ZIP archivy se vzorky
 - `target_variable`: Název cílové proměnné
 - `model`: ID LLM modelu
 - `labels_file` (optional): CSV s labels
+
+Poznámka: endpoint může přijmout více souborů nebo ZIP, ale discovery pro samotný návrh featur analyzuje maximálně prvních 5 nalezených médií.
 
 **Response:** `{"job_id": "uuid"}`
 
@@ -1033,6 +1098,26 @@ Vrátí stav async jobu.
 }
 ```
 
+### GET /state
+Vrátí hydratační snapshot aktuální session pro obnovu frontendu po refreshi.
+
+**Response (zkráceně):**
+```json
+{
+  "feature_spec": {...},
+  "target_variable": "memorability_score",
+  "target_mode": "regression",
+  "completed_phases": [1, 2, 3, 4, 5],
+  "suggested_step": 5,
+  "training_data_X": [...],
+  "testing_data_X": [...],
+  "dataset_Y_columns": ["media_name", "label"],
+  "train_result": {...},
+  "predictions": [...],
+  "prediction_metrics": {...}
+}
+```
+
 ### POST /train
 Spustí trénování modelu.
 
@@ -1084,3 +1169,185 @@ Finální výsledek je dostupný přes `GET /status/{job_id}` v `details`:
 Vymaže všechny checkpointy a resetuje pipeline stav.
 
 **Response:** `{"ok": true, "removed_checkpoints": [...]}`
+
+### GET /health
+Vrátí základní healthcheck backendu a dostupnost Ollamy.
+
+**Response:**
+```json
+{
+  "ok": true,
+  "ollama": true
+}
+```
+
+### GET /queue-info
+Vrátí informaci o vytížení inference fronty pro Ollamu.
+
+**Response:**
+```json
+{
+  "busy": true,
+  "queued": 2
+}
+```
+
+Poznámka: `queued` znamená počet requestů čekajících na LLM semaphore, nikoliv přesný počet „jiných uživatelů“.
+
+### GET /export-session
+Exportuje aktuální session checkpoint jako ZIP archiv.
+
+**Response:** binární ZIP soubor s checkpointy aktuální session.
+
+### POST /import-session
+Obnoví session z dříve exportovaného ZIP archivu.
+
+**Request:** `multipart/form-data`
+- `file`: ZIP soubor vytvořený přes `/export-session`
+
+**Response:**
+```json
+{
+  "ok": true,
+  "imported_files": ["pipeline_state.json", "training_X.csv", "model.pkl"]
+}
+```
+
+---
+
+## 8. Uživatelské testování pro BP
+
+Tato sekce slouží jako podklad pro praktickou část bakalářské práce. Je napsána tak, aby ji bylo možné snadno převzít do kapitoly o evaluaci použitelnosti aplikace i bez finálních výsledků testování.
+
+### 8.1 Cíl uživatelského testování
+
+Cílem uživatelského testování není ověřovat přesnost strojového učení jako takového, ale zejména:
+
+- ověřit srozumitelnost 5fázového workflow aplikace,
+- ověřit, zda uživatel dokáže samostatně projít celou pipeline od nahrání dat až po predikci,
+- identifikovat matoucí nebo problematická místa rozhraní,
+- ověřit, zda uživatel rozumí základním výstupům modelu a evaluačním metrikám.
+
+Pro praktickou část práce je tento typ evaluace vhodný zejména proto, že odpovídá hlavnímu cíli aplikace: umožnit uživateli pohodlně pracovat s multimodální ML pipeline bez nutnosti programování.
+
+### 8.2 Doporučený návrh testu
+
+Doporučený formát testování:
+
+- typ testu: krátké nemoderované scénářové testování,
+- délka jednoho testu: přibližně 10 až 15 minut,
+- počet respondentů: přibližně 5 až 8,
+- forma sběru odpovědí: online dotazník po dokončení práce s aplikací.
+
+Nemoderované testování je vhodné v situaci, kdy autor není přítomen u každého respondenta. Zároveň je organizačně jednoduché a dostatečné pro ověření základní použitelnosti systému.
+
+### 8.3 Materiály pro testování
+
+Pro testování je vhodné respondentům poskytnout:
+
+- veřejný odkaz na aplikaci,
+- připravený trénovací dataset ve formátu ZIP,
+- připravený testovací dataset ve formátu ZIP,
+- stručné zadání úkolů,
+- odkaz na hodnoticí dotazník.
+
+Pro krátké testování je doporučeno použít menší dataset, který nezatěžuje respondenta dlouhým čekáním. Prakticky se osvědčuje:
+
+- trénovací dataset v řádu desítek až nižších stovek obrázků,
+- testovací dataset v řádu desítek obrázků,
+- předem určený cílový sloupec v CSV, aby se minimalizovala nejednoznačnost zadání.
+
+Pokud je cílem především ověřit použitelnost rozhraní, je vhodnější menší a rychlejší dataset než rozsáhlý dataset, který by test zbytečně prodlužoval.
+
+### 8.4 Doporučený scénář úkolů pro respondenty
+
+Respondentům lze zadat následující posloupnost kroků:
+
+1. Otevřete aplikaci a nahrajte ukázková nebo připravená data pro Fázi 1.
+2. Ve Fázi 1 spusťte Discovery.
+3. Ve Fázi 2 nahrajte trénovací dataset a spusťte extrakci.
+4. Ve Fázi 3 vyberte určený cílový sloupec a spusťte trénink modelu.
+5. Ve Fázi 4 nahrajte testovací dataset a spusťte testovací extrakci.
+6. Ve Fázi 5 spusťte predikci a zobrazte výsledky.
+7. Prohlédněte si výsledné metriky a tabulku predikcí.
+8. Po dokončení práce s aplikací vyplňte krátký dotazník.
+
+Tento scénář odpovídá reálnému workflow aplikace a zároveň pokrývá všechny klíčové obrazovky, které mají být z hlediska použitelnosti ověřeny.
+
+### 8.5 Sledované ukazatele
+
+Při vyhodnocení testování je vhodné sledovat kombinaci objektivních a subjektivních ukazatelů.
+
+Objektivní ukazatele:
+
+- zda respondent dokončil všechny zadané úkoly,
+- přibližná doba dokončení testu,
+- ve které fázi došlo k nejčastějším problémům,
+- zda respondent zvládl najít a interpretovat výstupy modelu.
+
+Subjektivní ukazatele:
+
+- srozumitelnost rozhraní,
+- logická návaznost jednotlivých fází,
+- pochopení rozdílu mezi regresí a klasifikací,
+- pochopení metrik a predikčních výsledků,
+- schopnost používat aplikaci bez další pomoci.
+
+Tyto ukazatele lze pohodlně sbírat přes krátký formulář typu Google Forms nebo Microsoft Forms.
+
+### 8.6 Doporučená struktura dotazníku
+
+Dotazník může být rozdělen do čtyř částí:
+
+1. základní informace o respondentovi,
+2. dokončení úkolů,
+3. Likertovo škálové hodnocení použitelnosti,
+4. otevřené otázky.
+
+Doporučené okruhy otázek:
+
+- vztah respondenta k technologiím nebo informatice,
+- předchozí zkušenost s machine learningem nebo datovou analýzou,
+- odhad času potřebného pro dokončení testu,
+- nejproblematičtější fáze aplikace,
+- srozumitelnost rozhraní,
+- logická návaznost workflow,
+- pochopení metrik a tabulky predikcí,
+- návrhy na zlepšení.
+
+### 8.7 Hotový text metodiky do bakalářské práce
+
+Následující text lze přímo použít jako základ kapitoly o metodice uživatelského testování:
+
+> Cílem uživatelského testování bylo ověřit použitelnost a srozumitelnost webové aplikace Media Feature Lab z pohledu běžného uživatele. Testování nebylo zaměřeno na přesnost modelu samotného, ale především na schopnost uživatele samostatně projít celou pětifázovou pipeline aplikace, orientovat se v jednotlivých krocích a porozumět výsledným výstupům.
+>
+> Testování bylo navrženo jako krátké nemoderované scénářové testování. Respondenti obdrželi odkaz na aplikaci, připravená testovací data a stručné zadání úkolů. Po dokončení práce s aplikací vyplnili online dotazník. Tento přístup byl zvolen s ohledem na nízkou organizační náročnost a snahu minimalizovat časové zatížení respondentů.
+>
+> Každý respondent pracoval se stejnou sadou dat a plnil stejnou posloupnost kroků odpovídající hlavnímu workflow aplikace. Konkrétně šlo o spuštění discovery fáze, extrakci featur z trénovacích dat, natrénování modelu, extrakci testovacích featur a spuštění predikce. Součástí testování bylo také základní ověření schopnosti uživatele interpretovat výsledné metriky a orientovat se v tabulce predikcí.
+>
+> Pro testování byla připravena datová sada obsahující trénovací a testovací obrázky ve formátu ZIP. Cílový sloupec pro trénování modelu byl určen předem, aby bylo možné soustředit pozornost především na použitelnost rozhraní a ne na rozhodování nad daty. Délka jednoho testu byla navržena přibližně na 10 až 15 minut.
+>
+> Po dokončení práce s aplikací respondenti vyplnili dotazník zaměřený na subjektivní hodnocení použitelnosti systému. Hodnocena byla zejména srozumitelnost rozhraní, návaznost jednotlivých fází, pochopení rozdílu mezi regresí a klasifikací, interpretace metrik a celková schopnost používat aplikaci bez další pomoci. Součástí dotazníku byly i otevřené otázky pro zachycení nejasností a návrhů na zlepšení.
+
+### 8.8 Šablona pro doplnění výsledků po dokončení testování
+
+Po získání odpovědí lze navázat následující textovou šablonou:
+
+> Uživatelského testování se zúčastnilo celkem **[N] respondentů**. Z toho **[X] respondentů** dokončilo všechny zadané úkoly, zatímco **[Y] respondentů** uvedlo, že dokončilo pouze část testu. Průměrná nebo nejčastěji uváděná délka testu byla **[doplňte]**.
+>
+> Jako nejproblematičtější se ukázala zejména **[doplňte fázi nebo typ problému]**. Respondenti nejčastěji zmiňovali **[doplňte konkrétní nejasnosti]**. Naopak jako srozumitelné byly hodnoceny zejména **[doplňte]**.
+>
+> Z odpovědí v Likertově škále vyplynulo, že aplikace byla celkově vnímána jako **[doplňte: srozumitelná / spíše srozumitelná / problematická]**. Respondenti pozitivně hodnotili zejména **[doplňte]**, zatímco prostor pro zlepšení se ukázal v oblasti **[doplňte]**.
+>
+> Na základě testování byly identifikovány konkrétní návrhy na zlepšení uživatelského rozhraní, zejména **[doplňte]**. Tato zjištění slouží jako podklad pro další iteraci aplikace a zároveň potvrzují, že zvolený koncept vícefázového rozhraní je pro uživatele do značné míry pochopitelný.
+
+### 8.9 Doporučení pro interpretaci výsledků v BP
+
+Při psaní závěrečné interpretace je vhodné zdůraznit:
+
+- že testování ověřovalo především použitelnost a srozumitelnost systému,
+- že se jednalo o krátké scénářové testování, nikoliv o rozsáhlou UX studii,
+- že cílem nebylo statisticky reprezentativní srovnání, ale identifikace hlavních problémových míst,
+- že i menší počet respondentů je pro odhalení hlavních UX problémů u tohoto typu aplikace dostatečně informativní.
+
+Takový způsob interpretace je pro bakalářskou práci metodicky obhajitelný a odpovídá rozsahu studentského prototypu.

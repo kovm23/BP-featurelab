@@ -27,6 +27,16 @@ export function TrainingResultsCard({
     Object.keys(trainResult.feature_importance.xgboost).length > 0
       ? trainResult.feature_importance.xgboost
       : (trainResult.feature_importance?.rulekit ?? {});
+  const hasAdvancedClassificationMetrics =
+    trainResult.target_mode === "classification" && (
+      trainResult.train_accuracy != null ||
+      trainResult.train_balanced_accuracy != null ||
+      trainResult.train_f1_macro != null ||
+      trainResult.train_mcc != null ||
+      trainResult.cv_accuracy != null ||
+      trainResult.cv_precision_macro != null ||
+      trainResult.cv_recall_macro != null
+    );
 
   return (
     <div
@@ -44,38 +54,9 @@ export function TrainingResultsCard({
       <div className={`text-xs space-y-0.5 ${cls(deluxe, "text-green-700", "text-green-400/80")}`}>
         {trainResult.target_mode === "classification" ? (
           <>
-            <p>
-              {tr.trainAccuracy}:{" "}
-              <strong>
-                {trainResult.train_accuracy != null ? Number(trainResult.train_accuracy).toFixed(4) : "—"}
-              </strong>
-            </p>
-            {trainResult.train_balanced_accuracy != null && (
-              <p>
-                {tr.balancedAccuracy}:{" "}
-                <strong>{Number(trainResult.train_balanced_accuracy).toFixed(4)}</strong>
-              </p>
-            )}
-            <p>
-              {tr.f1Macro}:{" "}
-              <strong>
-                {trainResult.train_f1_macro != null ? Number(trainResult.train_f1_macro).toFixed(4) : "—"}
-              </strong>
-            </p>
-            {trainResult.train_mcc != null && (
-              <p>
-                {tr.matthews}: <strong>{Number(trainResult.train_mcc).toFixed(4)}</strong>
-              </p>
-            )}
-            {trainResult.cv_accuracy != null && (
-              <p>
-                {tr.crossValAccuracy} ({trainResult.cv_folds ?? 5}-fold):{" "}
-                <strong>{Number(trainResult.cv_accuracy).toFixed(4)}</strong>
-              </p>
-            )}
             {trainResult.cv_balanced_accuracy != null && (
               <p>
-                {tr.balancedAccuracy} CV:{" "}
+                {tr.balancedAccuracy} ({trainResult.cv_folds ?? 5}-fold):{" "}
                 <strong>{Number(trainResult.cv_balanced_accuracy).toFixed(4)}</strong>
               </p>
             )}
@@ -99,6 +80,50 @@ export function TrainingResultsCard({
               <p>
                 {tr.matthews} CV: <strong>{Number(trainResult.cv_mcc).toFixed(4)}</strong>
               </p>
+            )}
+            {hasAdvancedClassificationMetrics && (
+              <details className={`mt-2 rounded border p-2 ${cls(deluxe, "border-slate-200", "border-slate-700")}`}>
+                <summary className={`cursor-pointer font-medium ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>
+                  {tr.advancedMetrics}
+                </summary>
+                <div className="mt-2 space-y-0.5">
+                  {trainResult.train_accuracy != null && (
+                    <p>
+                      {tr.trainAccuracy}: <strong>{Number(trainResult.train_accuracy).toFixed(4)}</strong>
+                    </p>
+                  )}
+                  {trainResult.train_balanced_accuracy != null && (
+                    <p>
+                      {tr.balancedAccuracy}: <strong>{Number(trainResult.train_balanced_accuracy).toFixed(4)}</strong>
+                    </p>
+                  )}
+                  {trainResult.train_f1_macro != null && (
+                    <p>
+                      {tr.f1Macro}: <strong>{Number(trainResult.train_f1_macro).toFixed(4)}</strong>
+                    </p>
+                  )}
+                  {trainResult.train_mcc != null && (
+                    <p>
+                      {tr.matthews}: <strong>{Number(trainResult.train_mcc).toFixed(4)}</strong>
+                    </p>
+                  )}
+                  {trainResult.cv_accuracy != null && (
+                    <p>
+                      {tr.crossValAccuracy}: <strong>{Number(trainResult.cv_accuracy).toFixed(4)}</strong>
+                    </p>
+                  )}
+                  {trainResult.cv_precision_macro != null && (
+                    <p>
+                      {tr.crossValPrecision}: <strong>{Number(trainResult.cv_precision_macro).toFixed(4)}</strong>
+                    </p>
+                  )}
+                  {trainResult.cv_recall_macro != null && (
+                    <p>
+                      {tr.crossValRecall}: <strong>{Number(trainResult.cv_recall_macro).toFixed(4)}</strong>
+                    </p>
+                  )}
+                </div>
+              </details>
             )}
           </>
         ) : (
