@@ -31,7 +31,7 @@ Prakticky je důležité rozlišit:
 Při psaní praktické části je vhodné explicitně uvést tato provozní omezení:
 
 - Discovery používá maximálně prvních 5 médií po načtení / rozbalení vstupu. Slouží k návrhu featur, ne k plné analýze datasetu.
-- Všechna LLM volání jsou globálně serializována přes semaphore, takže při více uživatelích nebo více paralelních jobech roste latence kvůli frontě.
+- Všechna LLM volání jsou globálně serializována přes file lock (fcntl), takže při více uživatelích nebo více paralelních jobech roste latence kvůli frontě.
 - Extrakce nad větším datasetem může trvat minuty až desítky minut podle zvoleného modelu, velikosti vstupu a vytížení Ollamy.
 - Párování `dataset_X` a `dataset_Y` používá normalizované basename bez přípony; tolerují se cesty, přípony, uvozovky a velikost písmen, ale názvy musí stále odpovídat stejnému médiu.
 - Klasifikace validuje, že cílová proměnná je skutečně kategorická; sloupce s vysokou kardinalitou nebo téměř spojitým numerickým rozsahem jsou odmítnuty.
@@ -56,6 +56,8 @@ Tato sekce doplňuje historický popis níže o aktuální chování aplikace:
 - Discovery endpoint přijímá ZIP nebo více samostatných médií, ale pro samotný návrh featur analyzuje maximálně 5 vzorků.
 - Frontend po refreshi obnovuje nejen Fáze 1-4, ale i uložené výsledky Fáze 5 (`predictions`, `prediction_metrics`) a umí znovu navázat na aktivní async job ve Fázích 1-5.
 - Cloudflare Worker proxy pokrývá i export/import relace (`/export-session`, `/import-session`), takže tento workflow funguje i přes veřejnou `workers.dev` URL.
+- Session registry eviktuje neaktivní session po 24 hodinách.
+- Serializace Ollama volání je implementována přes globální file lock (`fcntl`) sdílený mezi procesy.
 
 ### Architektura
 
@@ -85,13 +87,13 @@ Tato sekce doplňuje historický popis níže o aktuální chování aplikace:
 | Komponenta | Technologie | Verze |
 |---|---|---|
 | Frontend | React, TypeScript, Vite, TailwindCSS | React 18, Vite 7 |
-| Backend | Python, Flask, Gunicorn | Python 3.10, Flask 3.x |
+| Backend | Python, Flask, Gunicorn | Python 3.11+, Flask 3.x |
 | LLM | Ollama (lokální) — Qwen 2.5 VL 7B | ollama latest |
 | Whisper | faster-whisper (large-v3, GPU, float16) | - |
 | ML modely | RuleKit (Java), XGBoost, scikit-learn | xgboost 3.2 |
 | Video | OpenCV, ffmpeg | cv2 4.x |
 | Process manager | PM2 | - |
-| Tunnel | Cloudflare (trycloudflare.com) | - |
+| Tunnel/Proxy | Cloudflare Worker + cloudflared tunnel (volitelně self-host přes nginx) | - |
 
 ---
 
@@ -628,7 +630,7 @@ prohlížeč B ──X-Session-ID: xyz──► get_pipeline("xyz") ──► Ma
 
 Session ID je UUID generovaný prohlížečem při první návštěvě a uložen v `localStorage`. Posílá se jako HTTP hlavička `X-Session-ID` s každým requestem. Server identifikuje uživatele a vrátí (nebo vytvoří) jeho pipeline instanci.
 
-Session registry eviktuje neaktivní session po 6 hodinách (TTL-based cleanup).
+Session registry eviktuje neaktivní session po 24 hodinách (TTL-based cleanup).
 
 #### Ollama EOF — popis chyby a oprava
 
@@ -643,14 +645,13 @@ Konkrétně k chybě dochází, pokud:
 1. Uživatel A spustí Fázi 1 (Feature Discovery) → background thread čeká na Ollama
 2. Uživatel B (nebo druhá záložka) spustí jakoukoliv fázi → další Ollama request
 
-**Oprava:** Globální `threading.Semaphore(1)` v `backend/services/openai_service.py` serializuje všechna volání Ollama API. Druhý thread čeká, dokud první nedokončí svůj LLM call.
+**Oprava:** Globální file lock přes `fcntl.flock(...)` v `backend/services/openai_service.py` serializuje všechna volání Ollama API i napříč procesy. Druhý thread/proces čeká, dokud první nedokončí svůj LLM call.
 
 ```python
-_ollama_lock = threading.Semaphore(1)
-
-# Každý LLM call je chráněn:
-with _ollama_lock:
-    response = local_client.chat.completions.create(...)
+with open(_OLLAMA_LOCK_FILE, "w") as lockfile:
+  fcntl.flock(lockfile.fileno(), fcntl.LOCK_EX)
+  response = local_client.chat.completions.create(...)
+  fcntl.flock(lockfile.fileno(), fcntl.LOCK_UN)
 ```
 
 **Dopad na výkon:** Extrakce více médií jedním uživatelem probíhá sekvenčně (bylo tak i dříve). Souběžní uživatelé se řadí do fronty na úrovni LLM callů. Celková doba zpracování je stejná, ale bez crashů.
@@ -782,7 +783,7 @@ Vite dev server proxyuje API requesty na backend:
 ...
 ```
 
-Podpora Cloudflare tunnelu: HMR disabled (`hmr: false`), timeout 100s v tunnel.
+Podpora Cloudflare tunnelu: HMR disabled (`hmr: false`) pro stabilnější chování při vzdáleném vývoji.
 
 #### Cloudflare Worker proxy (produkční nasazení)
 
@@ -792,6 +793,8 @@ Pro doménu `*.workers.dev` je použit Worker (`frontend/worker.js`), který:
 - servíruje statická frontend aktiva přes `ASSETS`
 - řeší CORS preflight (`OPTIONS`) a nastavuje CORS hlavičky na proxy odpovědích
 - bufferuje request/response body (`arrayBuffer`) kvůli stabilnímu přenosu JSON payloadů (`job_id`) přes Worker runtime
+- sanitizuje `Permissions-Policy` (odstranění nekompatibilního `browsing-topics`), aby se předešlo browser warningům
+- podporuje primární i fallback backend URL (`BACKEND_URL`, `BACKEND_URL_FALLBACK`) a při edge chybách 520-530 zkouší další backend kandidát
 
 #### X-Session-ID
 
@@ -976,15 +979,17 @@ Pro srovnávací experiment v bakalářské práci doporučuji následující de
 
 | Proměnná | Default | Popis |
 |---|---|---|
-| `VITE_API_BASE` | `""` | Frontend API base URL (prázdné = proxy) |
-| `BACKEND_URL` | - | Backend URL pro Cloudflare Worker proxy (`frontend/wrangler.toml` → `[vars]`) |
+| `VITE_API_BASE` | `http://localhost:5000` (dev) / unset (Worker proxy) | Frontend API base URL |
+| `BACKEND_URL` | - | Primární backend URL pro Cloudflare Worker proxy (nastavuje se v Cloudflare env vars/secrets, necommitovat krátkodobé tunnel URL do repozitáře) |
+| `BACKEND_URL_FALLBACK` | - | Volitelná fallback backend URL (nebo seznam URL), použije se při nedostupnosti primárního backendu |
 | `ALLOWED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173,https://bpfeaturelab.kovm23.workers.dev` | CORS allowlist backendu pro browser requesty a Worker frontend |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Base URL lokálního Ollama serveru |
 | `OLLAMA_MODEL` | `qwen2.5vl:7b` | Výchozí Ollama model pro discovery/extrakci |
 | `FLASK_DEBUG` | `0` | Debug mode (0 = production) |
-| `EXTRACTION_PASSES` | `2` | Počet LLM callů per médium při extrakci |
+| `EXTRACTION_PASSES` | `1` | Počet LLM callů per médium při extrakci |
+| `CV_MAX_FOLDS` | `3` | Horní limit počtu CV foldů |
 
-Poznámka: při použití `trycloudflare.com` je `BACKEND_URL` dočasná adresa, která se mění po restartu tunelu.
+Poznámka: při použití `trycloudflare.com` je `BACKEND_URL` dočasná adresa, která se mění po restartu tunelu. Pokud není po restartu aktualizována, Worker může vracet chyby 530.
 
 Poznámka: při produkčním nasazení přes `*.workers.dev` musí backend `ALLOWED_ORIGINS` obsahovat veřejný frontend origin, jinak polling na `/status/<job_id>` a `/queue-info` skončí 403.
 
@@ -996,22 +1001,18 @@ Pro zjednodušený přesun backendu na jiný server je v repozitáři připraven
 
 | Proces | Příkaz | Port |
 |---|---|---|
-| `backend` | `gunicorn -w 1 -b 0.0.0.0:5000 --timeout 600 app:app` | 5000 |
-| `frontend` | `npx vite --host --port 5173` | 5173 |
-| `tunnel-backend` | Cloudflare tunnel → :5000 | — |
-| `tunnel-frontend` | Cloudflare tunnel → :5173 | — |
+| `backend` | `gunicorn -w 1 -b 0.0.0.0:5000 --timeout 1200 --graceful-timeout 60 app:app` | 5000 |
+| `backend-tunnel` | `cloudflared tunnel --url http://127.0.0.1:5000` | — |
 
 ### 6.3 Spuštění
 
 ```bash
-# Backend
+# Backend + tunnel (Cloudflare varianta)
 cd backend
-source ../venv/bin/activate
-pm2 start ../venv/bin/gunicorn --name backend -- -w 1 -b 0.0.0.0:5000 --timeout 600 app:app
+pm2 start ecosystem.config.js
+```
 
-# Frontend
-cd frontend
-pm2 start npx --name frontend -- vite --host --port 5173
+Pro self-hosted variantu bez Cloudflare použij nginx konfiguraci z `docs/nginx-llmfeatures.vse.cz.conf` (viz `docs/migration.md`) a provozuj pouze backend.
 ```
 
 ### 6.4 Reprodukovatelný experimentální scénář pro BP
@@ -1192,7 +1193,7 @@ Vrátí informaci o vytížení inference fronty pro Ollamu.
 }
 ```
 
-Poznámka: `queued` znamená počet requestů čekajících na LLM semaphore, nikoliv přesný počet „jiných uživatelů“.
+Poznámka: `queued` znamená počet requestů čekajících na LLM lock, nikoliv přesný počet „jiných uživatelů“.
 
 ### GET /export-session
 Exportuje aktuální session checkpoint jako ZIP archiv.

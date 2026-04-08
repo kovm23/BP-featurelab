@@ -9,8 +9,8 @@ binding = "ASSETS"
 [build]
 command = "npm install && npm run build"
 
-[vars]
-# Set this to the currently running backend origin before deploying.
-# Do not commit short-lived trycloudflare URLs here unless you are updating
-# the production deployment in the same change.
-BACKEND_URL = "https://battery-iso-texts-limousines.trycloudflare.com"
+# Worker backend URL must be configured outside this file
+# (Cloudflare dashboard env vars or `wrangler secret put`).
+# Supported runtime bindings:
+# - BACKEND_URL: primary backend URL, or comma-separated URL list.
+# - BACKEND_URL_FALLBACK: optional fallback backend URL(s).

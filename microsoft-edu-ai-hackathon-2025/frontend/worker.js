@@ -23,6 +23,54 @@ const API_ROUTES = [
   '/import-session',
 ];
 
+const DEFAULT_PERMISSIONS_POLICY = [
+  'camera=()',
+  'microphone=()',
+  'geolocation=()',
+  'payment=()',
+  'usb=()',
+  'fullscreen=(self)',
+].join(', ');
+
+function sanitizePermissionsPolicy(value) {
+  if (!value || typeof value !== 'string') {
+    return DEFAULT_PERMISSIONS_POLICY;
+  }
+
+  const cleaned = value
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part && !part.toLowerCase().startsWith('browsing-topics='));
+
+  return cleaned.length > 0 ? cleaned.join(', ') : DEFAULT_PERMISSIONS_POLICY;
+}
+
+function resolveBackendCandidates(env) {
+  const raw = [env.BACKEND_URL, env.BACKEND_URL_FALLBACK]
+    .filter(Boolean)
+    .join(',');
+
+  const urls = raw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => entry.replace(/\/$/, ''));
+
+  return [...new Set(urls)];
+}
+
+function applyCommonResponseHeaders(headers, request) {
+  const origin = request.headers.get('Origin') || '*';
+  headers.set('Access-Control-Allow-Origin', origin);
+  headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  headers.set('Access-Control-Allow-Headers', 'Content-Type, X-Session-ID');
+  headers.set('Access-Control-Allow-Credentials', 'true');
+  headers.set(
+    'Permissions-Policy',
+    sanitizePermissionsPolicy(headers.get('Permissions-Policy')),
+  );
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -43,16 +91,18 @@ export default {
             'Access-Control-Allow-Headers': 'Content-Type, X-Session-ID',
             'Access-Control-Allow-Credentials': 'true',
             'Access-Control-Max-Age': '86400',
+            'Permissions-Policy': DEFAULT_PERMISSIONS_POLICY,
           },
         });
       }
 
-      if (!env.BACKEND_URL) {
-        return new Response('BACKEND_URL secret not configured', { status: 502 });
+      const backendCandidates = resolveBackendCandidates(env);
+      if (backendCandidates.length === 0) {
+        return new Response('No backend URL configured (BACKEND_URL)', {
+          status: 502,
+          headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+        });
       }
-
-      const backendBase = env.BACKEND_URL.replace(/\/$/, '');
-      const targetUrl = backendBase + url.pathname + url.search;
 
       // Read the body into a buffer so it survives the new Request() constructor.
       // Streaming bodies (request.body) can be silently dropped in some CF runtime versions.
@@ -65,35 +115,67 @@ export default {
       const headers = new Headers(request.headers);
       headers.delete('host');
 
-      try {
-        const proxyRes = await fetch(targetUrl, {
-          method: request.method,
-          headers,
-          body,
-          redirect: 'follow',
-        });
+      const failures = [];
+      for (const backendBase of backendCandidates) {
+        const targetUrl = backendBase + url.pathname + url.search;
+        try {
+          const proxyRes = await fetch(targetUrl, {
+            method: request.method,
+            headers,
+            body,
+            redirect: 'follow',
+          });
 
-        // Buffer the response body so it's not lost in stream handoff.
-        const resBody = await proxyRes.arrayBuffer();
+          // Retry next backend candidate on origin edge failures.
+          if (proxyRes.status >= 520 && proxyRes.status <= 530) {
+            failures.push({ backend: backendBase, status: proxyRes.status });
+            continue;
+          }
 
-        const resHeaders = new Headers(proxyRes.headers);
-        const origin = request.headers.get('Origin') || '*';
-        resHeaders.set('Access-Control-Allow-Origin', origin);
-        resHeaders.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-        resHeaders.set('Access-Control-Allow-Headers', 'Content-Type, X-Session-ID');
-        resHeaders.set('Access-Control-Allow-Credentials', 'true');
+          // Buffer the response body so it's not lost in stream handoff.
+          const resBody = await proxyRes.arrayBuffer();
+          const resHeaders = new Headers(proxyRes.headers);
+          applyCommonResponseHeaders(resHeaders, request);
 
-        return new Response(resBody, {
-          status: proxyRes.status,
-          statusText: proxyRes.statusText,
-          headers: resHeaders,
-        });
-      } catch (err) {
-        return new Response(`Backend unreachable: ${err.message}`, { status: 502 });
+          return new Response(resBody, {
+            status: proxyRes.status,
+            statusText: proxyRes.statusText,
+            headers: resHeaders,
+          });
+        } catch (err) {
+          failures.push({
+            backend: backendBase,
+            error: err && err.message ? err.message : String(err),
+          });
+        }
       }
+
+      return new Response(
+        JSON.stringify(
+          {
+            error: 'All configured backends are unreachable',
+            failures,
+          },
+          null,
+          2,
+        ),
+        {
+          status: 502,
+          headers: {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Permissions-Policy': DEFAULT_PERMISSIONS_POLICY,
+          },
+        });
     }
 
     // Fall through to static assets
-    return env.ASSETS.fetch(request);
+    const assetRes = await env.ASSETS.fetch(request);
+    const headers = new Headers(assetRes.headers);
+    applyCommonResponseHeaders(headers, request);
+    return new Response(assetRes.body, {
+      status: assetRes.status,
+      statusText: assetRes.statusText,
+      headers,
+    });
   },
 };
