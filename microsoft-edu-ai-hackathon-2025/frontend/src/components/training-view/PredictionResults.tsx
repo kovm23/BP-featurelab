@@ -1,5 +1,4 @@
-import React from "react";
-import { CheckCircle2, CircleHelp, Download, PlayCircle } from "lucide-react";
+import { CheckCircle2, Download, PlayCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type {
   FeatureSpec,
@@ -31,7 +30,7 @@ function PredictionMetricsPanel({
         {tr.evalTitle}
       </p>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-x-5 gap-y-4">
         {isCls ? (
           <>
             <MetricStat deluxe={deluxe} value={(predictionMetrics.accuracy ?? 0).toFixed(4)} label={tr.accuracy} tooltip={tr.accuracyTooltip} />
@@ -153,39 +152,17 @@ function MetricStat({
   valueClass?: string;
   tooltip?: string;
 }) {
-  const [showTooltip, setShowTooltip] = React.useState(false);
-
   return (
-    <div className="text-center relative group">
-      <div className={`p-2 rounded-md border transition-colors cursor-help ${cls(
-        deluxe,
-        "bg-white/40 border-blue-100 hover:bg-white/60",
-        "bg-slate-800/40 border-slate-700 hover:bg-slate-800/60"
-      )}`}
-        onMouseEnter={() => tooltip && setShowTooltip(true)}
-        onMouseLeave={() => setShowTooltip(false)}
-      >
-        <div className="flex items-center justify-center gap-1">
-          <div>
-            <p className={`text-lg font-bold ${valueClass ?? cls(deluxe, "text-blue-700", "text-blue-400")}`}>{value}</p>
-            <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>{label}</p>
-          </div>
-          {tooltip && (
-            <CircleHelp className={`w-3.5 h-3.5 flex-shrink-0 ${cls(deluxe, "text-blue-400", "text-blue-500")}`} />
-          )}
-        </div>
-      </div>
+    <div className="relative text-center group py-1 cursor-help">
+      <p className={`text-xl font-semibold leading-none ${valueClass ?? cls(deluxe, "text-blue-700", "text-blue-400")}`}>{value}</p>
+      <p className={`mt-1 text-[11px] leading-tight ${cls(deluxe, "text-blue-700/80", "text-blue-400/80")}`}>{label}</p>
 
-      {tooltip && showTooltip && (
-        <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 rounded-md text-xs whitespace-nowrap pointer-events-none z-50 ${cls(
+      {tooltip && (
+        <div className={`absolute left-1/2 bottom-full -translate-x-1/2 mb-2 w-52 px-2.5 py-2 rounded-md text-[11px] leading-snug pointer-events-none opacity-0 translate-y-1 transition-all duration-150 z-50 group-hover:opacity-100 group-hover:translate-y-0 ${cls(
           deluxe,
-          "bg-slate-800 text-slate-50",
+          "bg-slate-900 text-slate-50",
           "bg-slate-100 text-slate-900"
-        )} shadow-lg after:content-[''] after:absolute after:top-full after:left-1/2 after:-translate-x-1/2 after:border-4 ${cls(
-          deluxe,
-          "after:border-t-slate-800 after:border-r-transparent after:border-b-transparent after:border-l-transparent",
-          "after:border-t-slate-100 after:border-r-transparent after:border-b-transparent after:border-l-transparent"
-        )}`}>
+        )} shadow-md`}>
           {tooltip}
         </div>
       )}
@@ -205,9 +182,9 @@ function ConfidenceStat({
   valueClass?: string;
 }) {
   return (
-    <div className={`rounded-md p-2 border ${cls(deluxe, "bg-white/70 border-blue-100", "bg-slate-900/40 border-slate-700")}`}>
-      <p className="text-[10px] opacity-70">{label}</p>
-      <p className={`text-sm font-semibold ${valueClass ?? ""}`}>
+    <div className="text-center py-1">
+      <p className={`text-[10px] ${cls(deluxe, "text-blue-700/70", "text-blue-400/70")}`}>{label}</p>
+      <p className={`text-sm font-semibold mt-0.5 ${valueClass ?? cls(deluxe, "text-blue-800", "text-blue-300")}`}>
         {value != null ? Number(value).toFixed(4) : "—"}
       </p>
     </div>
