@@ -9,6 +9,7 @@ Training pipeline:
 """
 import json
 import logging
+import os
 import re
 
 import numpy as np
@@ -36,6 +37,64 @@ logger = logging.getLogger(__name__)
 # Ensemble weights (RuleKit is interpretable, XGBoost is more accurate)
 RULEKIT_WEIGHT = 0.4
 XGB_WEIGHT = 0.6
+CLASSIFICATION_POSITIVE_LABEL = os.getenv("CLASSIFICATION_POSITIVE_LABEL", "").strip()
+CLASSIFICATION_POSITIVE_THRESHOLD = float(os.getenv("CLASSIFICATION_POSITIVE_THRESHOLD", "0.45"))
+
+
+def _fit_median_imputer(X: pd.DataFrame) -> dict[str, float]:
+    medians: dict[str, float] = {}
+    for col in X.columns:
+        numeric_series = pd.to_numeric(X[col], errors="coerce")
+        if numeric_series.notna().any():
+            medians[col] = float(numeric_series.median())
+    return medians
+
+
+def _apply_median_imputer(X: pd.DataFrame, medians: dict[str, float]) -> pd.DataFrame:
+    out = X.copy()
+    for col in out.columns:
+        numeric_series = pd.to_numeric(out[col], errors="coerce")
+        if col in medians:
+            out[col] = numeric_series.fillna(medians[col])
+        else:
+            out[col] = numeric_series
+    return out.fillna(0.0)
+
+
+def _oversample_minority(X: pd.DataFrame, y: pd.Series, max_factor: int = 3) -> tuple[pd.DataFrame, pd.Series]:
+    counts = y.value_counts()
+    if counts.empty or len(counts) < 2:
+        return X, y
+
+    majority = int(counts.max())
+    parts_X = [X]
+    parts_y = [y]
+    for label, count in counts.items():
+        if count <= 0:
+            continue
+        factor = min(max_factor, max(1, majority // int(count)))
+        if factor > 1:
+            mask = y == label
+            parts_X.append(pd.concat([X.loc[mask]] * (factor - 1), ignore_index=True))
+            parts_y.append(pd.concat([y.loc[mask]] * (factor - 1), ignore_index=True))
+
+    X_bal = pd.concat(parts_X, ignore_index=True)
+    y_bal = pd.concat(parts_y, ignore_index=True)
+    return X_bal, y_bal
+
+
+def _resolve_positive_label(labels: list[str], y_reference: pd.Series | None = None) -> str | None:
+    if not labels or len(labels) != 2:
+        return None
+    if CLASSIFICATION_POSITIVE_LABEL and CLASSIFICATION_POSITIVE_LABEL in labels:
+        return CLASSIFICATION_POSITIVE_LABEL
+    if y_reference is not None and not y_reference.empty:
+        counts = y_reference.astype(str).value_counts().to_dict()
+        return min(labels, key=lambda lbl: counts.get(lbl, 0))
+    for preferred in ("1", "true", "positive", "malignant", "yes"):
+        if preferred in labels:
+            return preferred
+    return labels[-1]
 def _preprocess_features(df: pd.DataFrame, training_columns: list[str] | None = None) -> pd.DataFrame:
     """Normalise and one-hot-encode feature columns.
 
@@ -147,6 +206,10 @@ def _run_cross_validation(X: pd.DataFrame, y: pd.Series, n_splits: int = 5) -> d
         X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
         y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
 
+        medians = _fit_median_imputer(X_train)
+        X_train = _apply_median_imputer(X_train, medians)
+        X_val = _apply_median_imputer(X_val, medians)
+
         # RuleKit
         rk = RuleRegressor()
         try:
@@ -203,14 +266,25 @@ def _run_cross_validation_classification(
     fold_prec = []
     fold_rec = []
     fold_mcc = []
+    positive_label = _resolve_positive_label([str(c) for c in pd.Index(pd.unique(y_labels)).tolist()], y_reference=y_labels)
 
     for train_idx, val_idx in kf.split(X, y_labels):
         X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
         y_train, y_val = y_labels.iloc[train_idx], y_labels.iloc[val_idx]
 
+        medians = _fit_median_imputer(X_train)
+        X_train = _apply_median_imputer(X_train, medians)
+        X_val = _apply_median_imputer(X_val, medians)
+        X_train, y_train = _oversample_minority(X_train, y_train)
+
         rk_clf = RuleClassifier()
         rk_clf.fit(X_train, y_train)
-        y_pred, _ = _rulekit_classification_predict(rk_clf, X_val)
+        y_pred, _ = _rulekit_classification_predict(
+            rk_clf,
+            X_val,
+            positive_label=positive_label,
+            positive_threshold=CLASSIFICATION_POSITIVE_THRESHOLD,
+        )
 
         fold_acc.append(float(accuracy_score(y_val, y_pred)))
         fold_bal_acc.append(float(balanced_accuracy_score(y_val, y_pred)))
@@ -280,6 +354,8 @@ def _proba_to_labels(proba: np.ndarray, label_classes: list[str]) -> np.ndarray:
 def _rulekit_classification_predict(
     rulekit_model,
     X: pd.DataFrame,
+    positive_label: str | None = None,
+    positive_threshold: float | None = None,
 ) -> tuple[np.ndarray, np.ndarray | None]:
     if rulekit_model is None:
         raise Exception("Classification RuleKit model is missing.")
@@ -296,6 +372,19 @@ def _rulekit_classification_predict(
         if target_labels:
             pred_proba = _align_probability_columns(raw_proba, source_labels, target_labels)
             pred_labels = _proba_to_labels(pred_proba, target_labels)
+            if (
+                positive_label
+                and positive_threshold is not None
+                and len(target_labels) == 2
+                and positive_label in target_labels
+            ):
+                pos_idx = target_labels.index(positive_label)
+                neg_label = target_labels[1 - pos_idx]
+                pred_labels = np.where(
+                    pred_proba[:, pos_idx] >= float(positive_threshold),
+                    positive_label,
+                    neg_label,
+                ).astype(object)
     return pred_labels, pred_proba
 
 
@@ -439,12 +528,22 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
     if target_mode == "classification":
         y = _validate_classification_target(y_raw)
         X = X.loc[y.index]
+        medians = _fit_median_imputer(X)
+        X = _apply_median_imputer(X, medians)
+        label_classes = [str(c) for c in pd.Index(pd.unique(y)).tolist()]
+        positive_label = _resolve_positive_label(label_classes, y_reference=y)
+        X_fit, y_fit = _oversample_minority(X, y)
 
         _cb(25, "Trénuji RuleKit klasifikátor...")
         rulekit_model = RuleClassifier()
-        rulekit_model.fit(X, y)
+        rulekit_model.fit(X_fit, y_fit)
         _cb(60, "RuleKit klasifikační predikce...")
-        y_pred, _ = _rulekit_classification_predict(rulekit_model, X)
+        y_pred, _ = _rulekit_classification_predict(
+            rulekit_model,
+            X,
+            positive_label=positive_label,
+            positive_threshold=CLASSIFICATION_POSITIVE_THRESHOLD,
+        )
 
         train_accuracy = round(float(accuracy_score(y, y_pred)), 6)
         train_balanced_accuracy = round(float(balanced_accuracy_score(y, y_pred)), 6)
@@ -491,9 +590,15 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
         pipeline.predictions = None
         pipeline.prediction_metrics = None
         pipeline._training_columns = list(X.columns)
-        pipeline._scaler_mean = []
+        pipeline._scaler_mean = [medians.get(col, 0.0) for col in pipeline._training_columns]
         pipeline._scaler_scale = []
-        pipeline._label_classes = [str(c) for c in pd.Index(pd.unique(y)).tolist()]
+        pipeline._label_classes = label_classes
+
+        if positive_label:
+            warnings.append(
+                "Classification threshold policy active: "
+                f"positive_label='{positive_label}', threshold={CLASSIFICATION_POSITIVE_THRESHOLD:.2f}"
+            )
 
         pipeline.save_state()
         _cb(98, "Ukládám model...")
@@ -527,6 +632,8 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
         raise Exception("Target column is not numeric. For non-numeric labels switch to classification mode.")
     X = X.loc[valid_mask]
     y = y.loc[valid_mask]
+    reg_medians = _fit_median_imputer(X)
+    X = _apply_median_imputer(X, reg_medians)
 
     _cb(25, "Trénuji RuleKit (indukce pravidel)...")
     logger.info("Training RuleKit model...")
@@ -598,7 +705,7 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
     pipeline.predictions = None
     pipeline.prediction_metrics = None
     pipeline._training_columns = list(X.columns)
-    pipeline._scaler_mean = []
+    pipeline._scaler_mean = [reg_medians.get(col, 0.0) for col in pipeline._training_columns]
     pipeline._scaler_scale = []
     pipeline._label_classes = []
 
@@ -674,7 +781,15 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
             y_pred = np.asarray([str(label) for label in legacy_pred], dtype=object)
             y_pred_proba = None
         else:
-            y_pred, y_pred_proba = _rulekit_classification_predict(rulekit_classifier, X_test)
+            medians = dict(zip(pipeline._training_columns, pipeline._scaler_mean))
+            X_test = _apply_median_imputer(X_test, medians)
+            positive_label = _resolve_positive_label(getattr(pipeline, "_label_classes", []) or [])
+            y_pred, y_pred_proba = _rulekit_classification_predict(
+                rulekit_classifier,
+                X_test,
+                positive_label=positive_label,
+                positive_threshold=CLASSIFICATION_POSITIVE_THRESHOLD,
+            )
 
         coverage_matrix = None
         if rulekit_classifier is not None and hasattr(rulekit_classifier, "get_coverage_matrix") and pipeline.rules:
@@ -813,6 +928,8 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
 
     # ---------------- Regression branch ----------------
     _cb(25, "RuleKit predikce...")
+    reg_medians = dict(zip(pipeline._training_columns, pipeline._scaler_mean))
+    X_test = _apply_median_imputer(X_test, reg_medians)
     rulekit_pred = pipeline.model.predict(X_test)
     X_test_scaled = X_test
 

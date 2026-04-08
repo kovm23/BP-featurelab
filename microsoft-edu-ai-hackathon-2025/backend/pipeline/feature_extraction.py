@@ -248,19 +248,11 @@ def extract_features_async(
 
         df_X = pd.DataFrame(features_data)
 
-        # Impute missing values (None) with column median for numeric, mode for object
-        for col in df_X.columns:
-            if col == "media_name":
-                continue
-            # Try numeric
-            numeric_series = pd.to_numeric(df_X[col], errors="coerce")
-            null_count = numeric_series.isna().sum()
-            if null_count > 0 and null_count < len(df_X):
-                if numeric_series.notna().any():
-                    median_val = numeric_series.median()
-                    df_X[col] = numeric_series.fillna(median_val)
-                    logger.info("Imputed %d missing values in '%s' with median %.4f",
-                                null_count, col, median_val)
+        # Keep missing values here; imputation is handled later in training/CV
+        # to avoid data leakage between folds and between train/test splits.
+        missing_cells = int(df_X.drop(columns=["media_name"], errors="ignore").isna().sum().sum())
+        if missing_cells > 0:
+            logger.info("Extraction preserved %d missing feature cells for leakage-safe imputation.", missing_cells)
 
         logger.info(
             "Extraction complete: %d rows, %d total clamped values",
