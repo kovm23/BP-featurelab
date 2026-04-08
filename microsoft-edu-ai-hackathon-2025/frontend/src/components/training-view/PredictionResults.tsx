@@ -51,11 +51,6 @@ function PredictionMetricsPanel({
               tooltip={tr.matthewsTooltip}
               valueClass={(predictionMetrics.mcc ?? 0) > 0.5 ? "text-green-600" : (predictionMetrics.mcc ?? 0) > 0.2 ? "text-yellow-600" : "text-red-500"}
             />
-            <div className="text-center col-span-2 sm:col-span-4">
-              <p className={`text-sm ${cls(deluxe, "text-blue-700", "text-blue-400")}`}>
-                {tr.paired}: {predictionMetrics.matched_count}/{predictionMetrics.total_count} ({matchPct}%)
-              </p>
-            </div>
           </>
         ) : (
           <>
@@ -74,14 +69,14 @@ function PredictionMetricsPanel({
                     : "text-red-500"
               }
             />
-            <MetricStat
-              deluxe={deluxe}
-              value={`${matchPct}%`}
-              label={`${tr.paired} (${predictionMetrics.matched_count}/${predictionMetrics.total_count})`}
-              valueClass={matchPct === 100 ? "text-green-600" : matchPct > 50 ? "text-yellow-600" : "text-red-500"}
-            />
           </>
         )}
+      </div>
+
+      <div className={`mt-3 pt-2 border-t ${cls(deluxe, "border-blue-200/80", "border-blue-800/50")}`}>
+        <p className={`text-xs text-right ${cls(deluxe, "text-blue-700", "text-blue-400")}`}>
+          {tr.paired}: {predictionMetrics.matched_count}/{predictionMetrics.total_count} ({matchPct}%)
+        </p>
       </div>
 
       {isCls && (
