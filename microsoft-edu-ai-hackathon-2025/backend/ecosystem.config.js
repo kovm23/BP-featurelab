@@ -17,5 +17,12 @@ module.exports = {
         VIRTUAL_ENV: venvPath,
       },
     },
+    {
+      name: "backend-tunnel",
+      script: "/usr/local/bin/cloudflared",
+      args: "tunnel --url http://127.0.0.1:5000",
+      cwd: repoRoot,
+      interpreter: "none",
+    },
   ],
 };

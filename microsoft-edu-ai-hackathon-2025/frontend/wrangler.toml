@@ -10,4 +10,7 @@ binding = "ASSETS"
 command = "npm install && npm run build"
 
 [vars]
-BACKEND_URL = "https://optimum-productive-archive-liz.trycloudflare.com"
+# Set this to the currently running backend origin before deploying.
+# Do not commit short-lived trycloudflare URLs here unless you are updating
+# the production deployment in the same change.
+BACKEND_URL = "https://battery-iso-texts-limousines.trycloudflare.com"

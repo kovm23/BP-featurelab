@@ -64,6 +64,10 @@ Pokud používáš Cloudflare Worker frontend:
 1. nastav nový `BACKEND_URL`
 2. redeployni Worker
 
+Poznámka:
+- `trycloudflare.com` URL je dočasná. Po restartu tunelu se změní a stará adresa přestane fungovat.
+- Nekomituj do `frontend/wrangler.toml` starou tunelovou URL jako trvalou hodnotu. Před deployem ji vždy přepiš na aktuální backend origin.
+
 Frontend UI není nutné přesouvat na nový server, pokud ti stačí stávající `workers.dev`.
 
 ## 7. Nejkratší migrační checklist
