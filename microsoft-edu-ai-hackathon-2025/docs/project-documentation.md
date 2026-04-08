@@ -988,6 +988,9 @@ Pro srovnávací experiment v bakalářské práci doporučuji následující de
 | `FLASK_DEBUG` | `0` | Debug mode (0 = production) |
 | `EXTRACTION_PASSES` | `1` | Počet LLM callů per médium při extrakci |
 | `CV_MAX_FOLDS` | `3` | Horní limit počtu CV foldů |
+| `SECRET_KEY` | náhodný `token_hex(32)` při každém startu | Flask session secret — pro stabilitu sessions mezi restarty nastavit jako perzistentní hodnotu |
+
+**Poznámka k PM2 konfiguraci:** `EXTRACTION_PASSES` a `CV_MAX_FOLDS` jsou nastaveny přímo v `backend/ecosystem.config.js` (sekce `env`). Při použití PM2 tedy jejich hodnota vychází z tohoto souboru, nikoliv z `backend/.env`. Změna hodnot vyžaduje úpravu `ecosystem.config.js` a restart procesů přes `pm2 reload ecosystem.config.js`.
 
 Poznámka: při použití `trycloudflare.com` je `BACKEND_URL` dočasná adresa, která se mění po restartu tunelu. Pokud není po restartu aktualizována, Worker může vracet chyby 530.
 
@@ -1033,6 +1036,18 @@ Tento scénář je dobře přenositelný do textu praktické části, protože p
 ---
 
 ## 7. API Reference
+
+### Podporované formáty vstupu
+
+| Typ | Přípony |
+|---|---|
+| Video | `.mp4`, `.avi`, `.mov`, `.mkv` |
+| Obrázek | `.jpg`, `.jpeg`, `.png`, `.webp`, `.heic`, `.gif` |
+| Archiv | `.zip` |
+
+Limity: maximální velikost uploadu je **2 GB** (Flask `MAX_CONTENT_LENGTH`). ZIP archiv nesmí po rozbalení překročit **5 GB** (kontrola před extrakcí).
+
+---
 
 ### POST /discover
 Spustí feature discovery z vzorkových médií.

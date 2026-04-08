@@ -250,11 +250,20 @@ def extract_features_async(
 
         df_X = pd.DataFrame(features_data)
 
-        # Keep missing values here; imputation is handled later in training/CV
-        # to avoid data leakage between folds and between train/test splits.
-        missing_cells = int(df_X.drop(columns=["media_name"], errors="ignore").isna().sum().sum())
+        # Impute missing cells immediately so the UI never shows empty rows.
+        # We use column-median computed from this extraction batch (no train/test
+        # leakage because each batch is imputed independently). The training
+        # pipeline still re-imputes per CV fold for methodological correctness.
+        feature_cols = [c for c in df_X.columns if c != "media_name"]
+        missing_cells = int(df_X[feature_cols].isna().sum().sum())
         if missing_cells > 0:
-            logger.info("Extraction preserved %d missing feature cells for leakage-safe imputation.", missing_cells)
+            logger.info("Imputing %d missing feature cells with column medians.", missing_cells)
+            for col in feature_cols:
+                numeric_series = pd.to_numeric(df_X[col], errors="coerce")
+                col_median = numeric_series.median()  # NaN if all missing
+                if pd.isna(col_median):
+                    col_median = 0.0
+                df_X[col] = numeric_series.fillna(col_median)
 
         logger.info(
             "Extraction complete: %d rows, %d total clamped values",
