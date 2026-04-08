@@ -22,7 +22,9 @@ logger = logging.getLogger(__name__)
 
 _META_KEYS = {"summary", "classification", "reasoning", "observation", "description"}
 
-EXTRACTION_PASSES = int(os.environ.get("EXTRACTION_PASSES", "2"))
+# For UI/user acceptance testing we default to 1 pass (faster).
+# Production can raise this via EXTRACTION_PASSES env.
+EXTRACTION_PASSES = int(os.environ.get("EXTRACTION_PASSES", "1"))
 
 
 def _format_feature_constraint(spec_value) -> str:

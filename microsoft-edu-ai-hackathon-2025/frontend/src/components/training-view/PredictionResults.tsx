@@ -1,4 +1,5 @@
-import { CheckCircle2, Download, PlayCircle } from "lucide-react";
+import React from "react";
+import { CheckCircle2, CircleHelp, Download, PlayCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type {
   FeatureSpec,
@@ -33,20 +34,22 @@ function PredictionMetricsPanel({
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {isCls ? (
           <>
-            <MetricStat deluxe={deluxe} value={(predictionMetrics.accuracy ?? 0).toFixed(4)} label={tr.accuracy} />
-            <MetricStat deluxe={deluxe} value={(predictionMetrics.balanced_accuracy ?? 0).toFixed(4)} label={tr.balancedAccuracy} />
-            <MetricStat deluxe={deluxe} value={(predictionMetrics.f1_macro ?? 0).toFixed(4)} label={tr.f1Macro} />
-            <MetricStat deluxe={deluxe} value={(predictionMetrics.precision_macro ?? 0).toFixed(4)} label={tr.precisionMacro} />
+            <MetricStat deluxe={deluxe} value={(predictionMetrics.accuracy ?? 0).toFixed(4)} label={tr.accuracy} tooltip={tr.accuracyTooltip} />
+            <MetricStat deluxe={deluxe} value={(predictionMetrics.balanced_accuracy ?? 0).toFixed(4)} label={tr.balancedAccuracy} tooltip={tr.balancedAccuracyTooltip} />
+            <MetricStat deluxe={deluxe} value={(predictionMetrics.f1_macro ?? 0).toFixed(4)} label={tr.f1Macro} tooltip={tr.f1MacroTooltip} />
+            <MetricStat deluxe={deluxe} value={(predictionMetrics.precision_macro ?? 0).toFixed(4)} label={tr.precisionMacro} tooltip={tr.precisionMacroTooltip} />
             <MetricStat
               deluxe={deluxe}
               value={(predictionMetrics.recall_macro ?? 0).toFixed(4)}
               label={tr.recallMacro}
+              tooltip={tr.recallMacroTooltip}
               valueClass={(predictionMetrics.recall_macro ?? 0) > 0.6 ? "text-green-600" : (predictionMetrics.recall_macro ?? 0) > 0.3 ? "text-yellow-600" : "text-red-500"}
             />
             <MetricStat
               deluxe={deluxe}
               value={(predictionMetrics.mcc ?? 0).toFixed(4)}
               label={tr.matthews}
+              tooltip={tr.matthewsTooltip}
               valueClass={(predictionMetrics.mcc ?? 0) > 0.5 ? "text-green-600" : (predictionMetrics.mcc ?? 0) > 0.2 ? "text-yellow-600" : "text-red-500"}
             />
             <div className="text-center col-span-2 sm:col-span-4">
@@ -57,12 +60,13 @@ function PredictionMetricsPanel({
           </>
         ) : (
           <>
-            <MetricStat deluxe={deluxe} value={(predictionMetrics.mse ?? 0).toFixed(4)} label={tr.mseLowerBetter} />
-            <MetricStat deluxe={deluxe} value={(predictionMetrics.mae ?? 0).toFixed(4)} label={tr.maeLowerBetter} />
+            <MetricStat deluxe={deluxe} value={(predictionMetrics.mse ?? 0).toFixed(4)} label={tr.mseLowerBetter} tooltip={tr.mseTooltip} />
+            <MetricStat deluxe={deluxe} value={(predictionMetrics.mae ?? 0).toFixed(4)} label={tr.maeLowerBetter} tooltip={tr.maeTooltip} />
             <MetricStat
               deluxe={deluxe}
               value={predictionMetrics.correlation != null ? predictionMetrics.correlation.toFixed(4) : "N/A"}
               label={tr.correlationHigherBetter}
+              tooltip={tr.correlationTooltip}
               valueClass={
                 predictionMetrics.correlation != null && predictionMetrics.correlation > 0.5
                   ? "text-green-600"
@@ -141,16 +145,50 @@ function MetricStat({
   value,
   label,
   valueClass,
+  tooltip,
 }: {
   deluxe: boolean;
   value: string;
   label: string;
   valueClass?: string;
+  tooltip?: string;
 }) {
+  const [showTooltip, setShowTooltip] = React.useState(false);
+
   return (
-    <div className="text-center">
-      <p className={`text-lg font-bold ${valueClass ?? cls(deluxe, "text-blue-700", "text-blue-400")}`}>{value}</p>
-      <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>{label}</p>
+    <div className="text-center relative group">
+      <div className={`p-2 rounded-md border transition-colors cursor-help ${cls(
+        deluxe,
+        "bg-white/40 border-blue-100 hover:bg-white/60",
+        "bg-slate-800/40 border-slate-700 hover:bg-slate-800/60"
+      )}`}
+        onMouseEnter={() => tooltip && setShowTooltip(true)}
+        onMouseLeave={() => setShowTooltip(false)}
+      >
+        <div className="flex items-center justify-center gap-1">
+          <div>
+            <p className={`text-lg font-bold ${valueClass ?? cls(deluxe, "text-blue-700", "text-blue-400")}`}>{value}</p>
+            <p className={`text-[10px] ${cls(deluxe, "text-blue-600", "text-blue-500")}`}>{label}</p>
+          </div>
+          {tooltip && (
+            <CircleHelp className={`w-3.5 h-3.5 flex-shrink-0 ${cls(deluxe, "text-blue-400", "text-blue-500")}`} />
+          )}
+        </div>
+      </div>
+
+      {tooltip && showTooltip && (
+        <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 rounded-md text-xs whitespace-nowrap pointer-events-none z-50 ${cls(
+          deluxe,
+          "bg-slate-800 text-slate-50",
+          "bg-slate-100 text-slate-900"
+        )} shadow-lg after:content-[''] after:absolute after:top-full after:left-1/2 after:-translate-x-1/2 after:border-4 ${cls(
+          deluxe,
+          "after:border-t-slate-800 after:border-r-transparent after:border-b-transparent after:border-l-transparent",
+          "after:border-t-slate-100 after:border-r-transparent after:border-b-transparent after:border-l-transparent"
+        )}`}>
+          {tooltip}
+        </div>
+      )}
     </div>
   );
 }

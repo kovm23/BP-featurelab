@@ -39,6 +39,7 @@ RULEKIT_WEIGHT = 0.4
 XGB_WEIGHT = 0.6
 CLASSIFICATION_POSITIVE_LABEL = os.getenv("CLASSIFICATION_POSITIVE_LABEL", "").strip()
 CLASSIFICATION_POSITIVE_THRESHOLD = float(os.getenv("CLASSIFICATION_POSITIVE_THRESHOLD", "0.45"))
+CV_MAX_FOLDS = max(2, int(os.getenv("CV_MAX_FOLDS", "3")))
 
 
 def _fit_median_imputer(X: pd.DataFrame) -> dict[str, float]:
@@ -192,7 +193,7 @@ def _count_rule_features(rules: list[str], feature_names: list[str]) -> dict:
     return {k: round(v / total, 4) for k, v in sorted(counts.items(), key=lambda x: -x[1])}
 
 
-def _run_cross_validation(X: pd.DataFrame, y: pd.Series, n_splits: int = 5) -> dict:
+def _run_cross_validation(X: pd.DataFrame, y: pd.Series, n_splits: int = CV_MAX_FOLDS) -> dict:
     """Run K-fold CV with the ensemble approach. Returns CV metrics."""
     n_splits = min(n_splits, len(X))
     if n_splits < 2:
@@ -241,7 +242,7 @@ def _run_cross_validation(X: pd.DataFrame, y: pd.Series, n_splits: int = 5) -> d
 
 
 def _run_cross_validation_classification(
-    X: pd.DataFrame, y_labels: pd.Series, n_splits: int = 5
+    X: pd.DataFrame, y_labels: pd.Series, n_splits: int = CV_MAX_FOLDS
 ) -> dict:
     """Run stratified CV for classification with RuleKit only."""
     class_counts = y_labels.value_counts()
