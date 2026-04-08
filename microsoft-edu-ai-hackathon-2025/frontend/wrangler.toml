@@ -9,8 +9,7 @@ binding = "ASSETS"
 [build]
 command = "npm install && npm run build"
 
-# Worker backend URL must be configured outside this file
-# (Cloudflare dashboard env vars or `wrangler secret put`).
-# Supported runtime bindings:
-# - BACKEND_URL: primary backend URL, or comma-separated URL list.
-# - BACKEND_URL_FALLBACK: optional fallback backend URL(s).
+[vars]
+# Update BACKEND_URL whenever the cloudflared quick tunnel restarts
+# (pm2 logs backend-tunnel | grep trycloudflare to get the new address).
+BACKEND_URL = "https://saints-clear-plate-biographies.trycloudflare.com"
