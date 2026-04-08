@@ -13,7 +13,7 @@ from pipeline import MachineLearningPipeline
 
 logger = logging.getLogger(__name__)
 
-_SESSION_TTL = 6 * 3600  # seconds — evict idle sessions after 6 hours
+_SESSION_TTL = 24 * 3600  # seconds — for testing: evict idle sessions after 24 hours
 _registry: dict[str, dict] = {}
 _lock = threading.Lock()
 

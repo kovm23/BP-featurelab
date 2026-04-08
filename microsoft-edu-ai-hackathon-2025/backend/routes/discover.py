@@ -46,7 +46,7 @@ def api_discover():
     for f in uploaded:
         if not allowed_file(f.filename):
             continue
-        path = os.path.join(UPLOAD_FOLDER, secure_filename(f.filename))
+        path = os.path.join(UPLOAD_FOLDER, f"{uuid.uuid4().hex[:8]}_{secure_filename(f.filename)}")
         f.save(path)
         saved_paths.append(path)
 

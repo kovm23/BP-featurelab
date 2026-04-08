@@ -8,6 +8,9 @@ import io
 import json
 import time
 import threading
+import fcntl
+import tempfile
+from pathlib import Path
 from env_loader import load_backend_env
 
 load_backend_env()
@@ -31,9 +34,10 @@ local_client = openai.OpenAI(
     timeout=httpx.Timeout(120.0, connect=5.0),
 )
 
-# Ollama neumí zpracovat více požadavků najednou — při souběžném volání
-# vrací EOF při načítání modelu. Semaphore serializuje volání.
-_ollama_lock = threading.Semaphore(1)
+# Ollama neumí zpracovat více požadavků najednou — serialace přes globální file-based lock
+# (sdílený mezi všemi worker procesy, na rozdíl od threading.Semaphore)
+_OLLAMA_LOCK_FILE = os.path.join(tempfile.gettempdir(), "ollama_model_load.lock")
+Path(_OLLAMA_LOCK_FILE).touch(exist_ok=True)
 
 # Counter of threads currently waiting to acquire the lock (for /queue-info).
 _ollama_waiting = 0
@@ -67,16 +71,18 @@ from contextlib import contextmanager
 
 @contextmanager
 def _tracked_ollama_lock():
-    """Acquire _ollama_lock while tracking how many threads are waiting."""
+    """Acquire global file-based Ollama lock while tracking waiting threads."""
     global _ollama_waiting
     with _waiting_lock:
         _ollama_waiting += 1
     try:
-        _ollama_lock.acquire()
-        try:
-            yield
-        finally:
-            _ollama_lock.release()
+        # File-based lock: works across all worker processes
+        with open(_OLLAMA_LOCK_FILE, 'w') as lockfile:
+            fcntl.flock(lockfile.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lockfile.fileno(), fcntl.LOCK_UN)
     finally:
         with _waiting_lock:
             _ollama_waiting -= 1
@@ -86,9 +92,8 @@ def get_ollama_queue_info() -> dict:
     """Return current Ollama queue status for the /queue-info endpoint."""
     with _waiting_lock:
         waiting = _ollama_waiting
-    # waiting >= 1 means at least one thread is active (holding or waiting)
     busy = waiting > 0
-    queued = max(0, waiting - 1)  # first one is running, rest are queued
+    queued = max(0, waiting - 1)
     return {"busy": busy, "queued": queued}
 
 

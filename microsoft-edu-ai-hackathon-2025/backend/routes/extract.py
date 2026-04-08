@@ -81,7 +81,7 @@ def api_extract():
 
     labels_df = load_labels_from_request(request, DATASET_FOLDER)
 
-    zip_path = os.path.join(DATASET_FOLDER, secure_filename(file.filename))
+    zip_path = os.path.join(DATASET_FOLDER, f"{uuid.uuid4().hex[:8]}_{secure_filename(file.filename)}")
     file.save(zip_path)
 
     extract_path = os.path.join(DATASET_FOLDER, f"extract_{uuid.uuid4()}")
