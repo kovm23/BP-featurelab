@@ -37,7 +37,7 @@ Při psaní praktické části je vhodné explicitně uvést tato provozní omez
 - Klasifikace validuje, že cílová proměnná je skutečně kategorická; sloupce s vysokou kardinalitou nebo téměř spojitým numerickým rozsahem jsou odmítnuty.
 - Výsledky jsou interpretovatelné, ale jejich kvalita závisí na kvalitě lokálního multimodálního modelu v Ollamě a na kvalitě vstupních dat.
 
-### Stav implementace (aktualizace 2026-04-02)
+### Stav implementace (aktualizace 2026-04-09)
 
 Tato sekce doplňuje historický popis níže o aktuální chování aplikace:
 
@@ -58,6 +58,9 @@ Tato sekce doplňuje historický popis níže o aktuální chování aplikace:
 - Cloudflare Worker proxy pokrývá i export/import relace (`/export-session`, `/import-session`), takže tento workflow funguje i přes veřejnou `workers.dev` URL.
 - Session registry eviktuje neaktivní session po 24 hodinách.
 - Serializace Ollama volání je implementována přes globální file lock (`fcntl`) sdílený mezi procesy.
+- Konstanta `MAX_CONTENT_LENGTH` (2 GB) je definována v `config.py` a importována do `app.py`.
+- `speech_service.py` používá standardní `logging` místo `print()`.
+- Bare `except Exception:` klauzule v `ml_training.py` logují varování místo tiše polykat chyby.
 
 ### Architektura
 

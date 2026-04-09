@@ -7,6 +7,7 @@ from flask import Flask, request
 from flask_cors import CORS
 
 import session_registry
+from config import MAX_CONTENT_LENGTH
 from env_loader import load_backend_env
 from routes import (
     discover_bp,
@@ -45,7 +46,7 @@ CORS(
 )
 logger.info("Allowed CORS origins: %s", ", ".join(ALLOWED_ORIGINS))
 
-app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024 * 1024  # 2 GB
+app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
 
 app.register_blueprint(discover_bp)
 app.register_blueprint(extract_bp)

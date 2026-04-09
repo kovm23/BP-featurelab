@@ -216,7 +216,8 @@ def _run_cross_validation(X: pd.DataFrame, y: pd.Series, n_splits: int = CV_MAX_
         try:
             rk.fit(X_train, y_train)
             rk_pred = rk.predict(X_val)
-        except Exception:
+        except Exception as e:
+            logger.warning("RuleRegressor CV fold failed, using mean fallback: %s", e)
             rk_pred = np.full(len(X_val), y_train.mean())
 
         # XGBoost
@@ -516,8 +517,8 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
         if progress_cb:
             try:
                 progress_cb(pct, msg)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("progress_cb failed: %s", e)
 
     target_mode = getattr(pipeline, "target_mode", "regression")
 
@@ -750,8 +751,8 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
         if progress_cb:
             try:
                 progress_cb(pct, msg)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("progress_cb failed: %s", e)
 
     if not pipeline.is_trained:
         raise Exception("Model is not trained. Complete Phase 3 first.")
@@ -794,7 +795,8 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
         if rulekit_classifier is not None and hasattr(rulekit_classifier, "get_coverage_matrix") and pipeline.rules:
             try:
                 coverage_matrix = rulekit_classifier.get_coverage_matrix(X_test)
-            except Exception:
+            except Exception as e:
+                logger.warning("get_coverage_matrix failed: %s", e)
                 coverage_matrix = None
 
         actual_values: dict[str, str] = {}

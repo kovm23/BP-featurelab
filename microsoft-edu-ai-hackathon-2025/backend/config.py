@@ -17,3 +17,5 @@ CHECKPOINT_FOLDER = os.path.join(_BASE_DIR, "checkpoints")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(DATASET_FOLDER, exist_ok=True)
 os.makedirs(CHECKPOINT_FOLDER, exist_ok=True)
+
+MAX_CONTENT_LENGTH = 2 * 1024 * 1024 * 1024  # 2 GB
