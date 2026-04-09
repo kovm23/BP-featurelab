@@ -565,7 +565,6 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
 
         pipeline.model = rulekit_model
         pipeline.xgb_model = None
-        pipeline.scaler = None
         pipeline.rules = rules
         pipeline.mse = None
         pipeline.rulekit_mse = None
@@ -681,7 +680,6 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
 
     pipeline.model = rulekit_model
     pipeline.xgb_model = xgb_model
-    pipeline.scaler = None
     pipeline.rules = rules
     pipeline.mse = ensemble_mse
     pipeline.rulekit_mse = rulekit_mse

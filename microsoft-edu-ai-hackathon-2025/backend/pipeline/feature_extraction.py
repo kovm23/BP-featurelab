@@ -166,7 +166,7 @@ def extract_features_async(
                 logger.warning("Cannot load checkpoint: %s", e)
                 features_data = []
 
-        job_registry.set(job_id, {
+        job_registry.set_job(job_id, {
             "progress": 5,
             "stage": f"Starting extraction ({n_passes} pass/es)... "
                      f"({len(done_names)} already done)",
@@ -181,7 +181,7 @@ def extract_features_async(
 
             if media_name in done_names:
                 progress = 5 + int((i / total) * 90)
-                job_registry.set(job_id, {
+                job_registry.set_job(job_id, {
                     "progress": progress,
                     "stage": f"Skipping ({i + 1}/{total}): {file_name} (already done)",
                     "done": False,
@@ -194,7 +194,7 @@ def extract_features_async(
             pass_results = []
             for p in range(n_passes):
                 pass_label = f" [pass {p + 1}/{n_passes}]" if n_passes > 1 else ""
-                job_registry.set(job_id, {
+                job_registry.set_job(job_id, {
                     "progress": progress,
                     "stage": f"Extracting ({i + 1}/{total}): {file_name}{pass_label}",
                     "done": False,
@@ -306,8 +306,8 @@ def extract_features_async(
         }
         if df_Y is not None:
             result_payload["details"]["dataset_Y_columns"] = list(df_Y.columns)
-        job_registry.set(job_id, result_payload)
+        job_registry.set_job(job_id, result_payload)
 
     except Exception as e:
         logger.exception("Error during extraction job %s", job_id)
-        job_registry.set(job_id, {"progress": 100, "stage": "Error", "done": True, "error": str(e)})
+        job_registry.set_job(job_id, {"progress": 100, "stage": "Error", "done": True, "error": str(e)})

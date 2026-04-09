@@ -38,6 +38,7 @@ import {
   submitPredictRequest,
   submitTrainRequest,
 } from "@/hooks/trainingPipelineRequests";
+import { getErrorMessage } from "@/lib/helpers";
 import {
   applyBackendPipelineState,
   persistDiscoveryOutcome,
@@ -395,7 +396,7 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
         setFeatureSpec(data.suggested_features);
       }
     } catch (err: unknown) {
-      setError(tx.phase1Failed + ": " + (err instanceof Error ? err.message : String(err)));
+      setError(tx.phase1Failed + ": " + getErrorMessage(err));
     } finally {
       setIsDiscovering(false);
       setActiveCtrl(null);
@@ -460,7 +461,7 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
         });
       }
     } catch (e: unknown) {
-      setError(`${config.phaseLabel} ${tx.phaseFailed}: ${e instanceof Error ? e.message : String(e)}`);
+      setError(`${config.phaseLabel} ${tx.phaseFailed}: ${getErrorMessage(e)}`);
     } finally {
       setBusy(false);
     }
@@ -544,7 +545,7 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
       });
     } catch (e: unknown) {
       if (!ctrl.signal.aborted) {
-        setError(tx.phase3Failed + ": " + (e instanceof Error ? e.message : String(e)));
+        setError(tx.phase3Failed + ": " + getErrorMessage(e));
       }
     } finally {
       setTrainingBusy(false);
@@ -592,7 +593,7 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
       });
     } catch (e: unknown) {
       if (!ctrl.signal.aborted) {
-        setError(tx.phase5Failed + ": " + (e instanceof Error ? e.message : String(e)));
+        setError(tx.phase5Failed + ": " + getErrorMessage(e));
       }
     } finally {
       setPredictBusy(false);

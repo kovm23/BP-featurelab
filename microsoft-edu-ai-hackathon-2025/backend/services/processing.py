@@ -12,17 +12,12 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 
-from .openai_service import extract_image_features_with_llm
+from .openai_service import DEFAULT_MODEL, extract_image_features_with_llm
 from .speech_service import extract_audio_from_video, transcribe_with_timestamps
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-ALLOWED_EXTENSIONS = {
-    "text": {"pdf", "txt", "md", "csv"},
-    "image": {"png", "jpg", "jpeg"},
-    "video": {"mp4", "avi", "mov", "mkv"},
-}
 VIDEO_KEY_FRAME_LIMIT = 10
 
 MEDIA_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".jpg", ".jpeg", ".png", ".webp", ".heic", ".gif"}
@@ -147,7 +142,7 @@ def extract_key_frames_with_timestamps(
 def process_single_media(
     media_path: str,
     prompt: str,
-    model_name: str = "qwen2.5vl:7b",
+    model_name: str = DEFAULT_MODEL,
 ) -> Dict[str, Any]:
     """
     Zpracuje jedno médium (video/obrázek) a pošle na LLM s daným promptem.

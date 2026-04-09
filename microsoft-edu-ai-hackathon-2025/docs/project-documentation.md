@@ -361,9 +361,15 @@ Loguje statistiky: kolik hodnot bylo clampnuto, pro které features.
 
 #### Imputace chybějících hodnot
 
-Po extrakci všech řádků se chybějící hodnoty (`None`) nahradí **mediánem sloupce** (pro numerické). Toto je lepší než defaultní 0, protože:
+Po extrakci všech řádků se chybějící hodnoty (`None`) **okamžitě** nahradí **mediánem sloupce** v rámci aktuální dávky. Tím pádem `training_X.csv` ani UI nikdy neobsahují prázdné buňky.
+
+Proč medián, ne 0:
 - 0 může být validní hodnota na okraji škály
 - Medián neposouvá distribuci
+
+**Poznámka k metodologii:** Training pipeline si každý CV fold imputuje zvlášť (z trénovací části foldu), aby nedošlo k data leakage. Okamžitá imputace v extrakci tuto logiku nenarušuje, protože pracuje s celou dávkou nezávisle na trénovacích labelech.
+
+Pokud LLM pro dané médium nevrátí žádný validní JSON (např. poškozený soubor, timeout modelu), vznikne prázdný řádek s `media_name`. Po imputaci mediánem dostane tento řádek hodnoty typické pro daný dataset — při malém počtu takových řádků to neovlivní výsledky.
 
 #### Checkpoint & Resume
 

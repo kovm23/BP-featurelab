@@ -1,5 +1,6 @@
 import { useRef } from "react";
 import { EXPORT_SESSION_URL, IMPORT_SESSION_URL, sessionHeaders } from "@/lib/api";
+import { getErrorMessage } from "@/lib/helpers";
 
 export function useSessionTransfer(transferErrorLabel: string, importOkLabel: string) {
   const importInputRef = useRef<HTMLInputElement | null>(null);
@@ -22,8 +23,7 @@ export function useSessionTransfer(transferErrorLabel: string, importOkLabel: st
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      alert(`${transferErrorLabel}: ${msg}`);
+      alert(`${transferErrorLabel}: ${getErrorMessage(e)}`);
     }
   }
 
@@ -43,8 +43,7 @@ export function useSessionTransfer(transferErrorLabel: string, importOkLabel: st
       alert(importOkLabel);
       window.location.reload();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      alert(`${transferErrorLabel}: ${msg}`);
+      alert(`${transferErrorLabel}: ${getErrorMessage(e)}`);
     }
   }
 

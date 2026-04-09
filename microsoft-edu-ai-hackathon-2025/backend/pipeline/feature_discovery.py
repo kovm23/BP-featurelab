@@ -96,8 +96,8 @@ def _warm_up_model(model_name: str, progress_cb=None) -> None:
             if progress_cb:
                 try:
                     progress_cb(3, f"Model se načítá ({attempt}. pokus)...")
-                except Exception:
-                    pass
+                except Exception as cb_exc:
+                    logger.debug("progress_cb failed: %s", cb_exc)
             time.sleep(actual_wait)
 
 
@@ -118,8 +118,8 @@ def discover_features(
         if progress_cb:
             try:
                 progress_cb(pct, msg)
-            except Exception:
-                pass
+            except Exception as cb_exc:
+                logger.debug("progress_cb failed: %s", cb_exc)
 
     pipeline.target_variable = target_variable
     target_mode = getattr(pipeline, "target_mode", "regression")

@@ -57,7 +57,6 @@ class MachineLearningPipeline:
         # Phase 3 outputs
         self.model = None          # RuleKit model
         self.xgb_model = None      # XGBoost model
-        self.scaler = None         # Kept for backward compatibility
         self.rules: list[str] = []
         self.mse: float | None = None
         self.rulekit_mse: float | None = None
@@ -93,7 +92,6 @@ class MachineLearningPipeline:
     def _clear_model_outputs(self) -> None:
         self.model = None
         self.xgb_model = None
-        self.scaler = None
         self.rules = []
         self.mse = None
         self.rulekit_mse = None

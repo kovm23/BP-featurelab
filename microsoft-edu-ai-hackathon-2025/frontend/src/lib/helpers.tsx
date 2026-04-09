@@ -8,6 +8,12 @@ import { TYPE_STYLES, EXT_GROUPS } from "@/lib/api";
 // FILE DETECTION & UTILITIES
 // =====================================================
 
+/** Normalise a caught value (which is `unknown` in TS) into a human-readable string. */
+export function getErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return String(err);
+}
+
 export function detectType(files: File[]): FileType | null {
   const getGroup = (name: string): FileType | null => {
     const lower = name.toLowerCase();

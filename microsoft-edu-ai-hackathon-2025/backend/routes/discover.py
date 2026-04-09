@@ -10,6 +10,7 @@ from werkzeug.utils import secure_filename
 
 from config import UPLOAD_FOLDER
 from jobs import set_job, update_job
+from services.openai_service import DEFAULT_MODEL
 from utils.file_utils import allowed_file, extract_zip_contents
 from utils.csv_utils import load_labels_from_request
 
@@ -36,7 +37,7 @@ def api_discover():
     pipeline.target_mode = target_mode
     pipeline.target_variable = target_var
     pipeline.save_state()
-    model_name = request.form.get("model", "qwen2.5vl:7b")
+    model_name = request.form.get("model", DEFAULT_MODEL)
     labels_df = load_labels_from_request(request, UPLOAD_FOLDER)
 
     media_paths = []

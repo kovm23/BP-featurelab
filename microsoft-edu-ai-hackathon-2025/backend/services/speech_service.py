@@ -1,7 +1,10 @@
+import logging
 import os
 import ffmpeg
 from typing import Dict, Any, Union
 from faster_whisper import WhisperModel
+
+logger = logging.getLogger(__name__)
 
 # Globální proměnná pro uložení načteného modelu (Singleton)
 local_whisper_model = None
@@ -11,7 +14,7 @@ def get_local_whisper():
     """Načte model do VRAM pouze jednou."""
     global local_whisper_model
     if local_whisper_model is None:
-        print("Loading Local Whisper Large-v3 model to GPU... (this may take a moment)")
+        logger.info("Loading Local Whisper Large-v3 model to GPU (this may take a moment)...")
         local_whisper_model = WhisperModel("large-v3", device="cuda", compute_type="float16")
     return local_whisper_model
 
@@ -28,10 +31,10 @@ def extract_audio_from_video(video_path: str, output_audio_path: str) -> bool:
         )
         return True
     except ffmpeg.Error as e:
-        print(f"Chyba při extrakci audia: {e}")
+        logger.error("ffmpeg audio extraction failed: %s", e)
         return False
-    except Exception as e:
-        print(f"Obecná chyba extrakce: {e}")
+    except Exception:
+        logger.exception("Unexpected error during audio extraction")
         return False
 
 

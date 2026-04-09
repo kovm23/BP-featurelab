@@ -11,6 +11,7 @@ from werkzeug.utils import secure_filename
 
 from config import DATASET_FOLDER, UPLOAD_FOLDER, ALLOWED_EXTENSIONS
 from pipeline.feature_schema import normalize_feature_spec
+from services.openai_service import DEFAULT_MODEL
 from utils.file_utils import allowed_file, extract_zip_contents
 from utils.csv_utils import load_labels_from_request, load_labels_from_path
 import jobs as job_registry
@@ -35,7 +36,7 @@ def _start_extraction(pipeline, media_files, feature_spec, model_name,
     pipeline.invalidate_from_phase(2 if dataset_type == "training" else 4)
     pipeline.save_state()
     job_id = str(uuid.uuid4())
-    job_registry.set(job_id, {"progress": 0, "stage": "Starting extraction...", "done": False})
+    job_registry.set_job(job_id, {"progress": 0, "stage": "Starting extraction...", "done": False})
 
     def _run():
         try:
@@ -68,7 +69,7 @@ def api_extract():
     if not allowed_file(file.filename, ALLOWED_EXTENSIONS["zip"]):
         return jsonify({"error": "Allowed format: .zip"}), 400
 
-    model_name = request.form.get("model", "qwen2.5vl:7b")
+    model_name = request.form.get("model", DEFAULT_MODEL)
     try:
         feature_spec = json.loads(request.form.get("feature_spec", "{}"))
     except (json.JSONDecodeError, TypeError):
@@ -116,7 +117,7 @@ def api_extract_local():
         return jsonify({"error": "Expected a JSON body."}), 400
 
     zip_path = data.get("zip_path")
-    model_name = data.get("model", "qwen2.5vl:7b")
+    model_name = data.get("model", DEFAULT_MODEL)
     feature_spec = data.get("feature_spec", {})
     feature_spec = normalize_feature_spec(feature_spec)
     dataset_type = data.get("dataset_type", "training")
