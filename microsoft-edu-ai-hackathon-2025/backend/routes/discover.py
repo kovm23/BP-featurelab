@@ -77,7 +77,7 @@ def api_discover():
             def _pcb(pct: int, msg: str) -> None:
                 update_job(job_id, progress=pct, stage=msg)
 
-            _pcb(3, "Připravuji soubory...")
+            _pcb(3, "Preparing files...")
             features = pipeline.discover_features(
                 media_paths, target_var, model_name, labels_df, progress_cb=_pcb
             )

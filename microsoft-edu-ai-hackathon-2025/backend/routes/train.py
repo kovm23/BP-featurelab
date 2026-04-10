@@ -38,18 +38,18 @@ def api_train():
     pipeline.save_state()
 
     job_id = str(uuid.uuid4())
-    set_job(job_id, {"progress": 0, "stage": "Spouštím trénink...", "done": False})
+    set_job(job_id, {"progress": 0, "stage": "Starting training...", "done": False})
 
     def _run():
         try:
-            update_job(job_id, stage="Předzpracování příznaků...", progress=10)
+            update_job(job_id, stage="Preprocessing features...", progress=10)
             result = pipeline.train_model(
                 target_col,
                 progress_cb=lambda pct, msg: update_job(job_id, progress=pct, stage=msg),
             )
             set_job(job_id, {
                 "progress": 100,
-                "stage": "Trénink dokončen!",
+                "stage": "Training complete!",
                 "done": True,
                 "details": result,
             })

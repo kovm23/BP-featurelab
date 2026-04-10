@@ -523,7 +523,7 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
     target_mode = getattr(pipeline, "target_mode", "regression")
 
     # --- Feature matrix ready (no scaling by request) ---
-    _cb(15, "Příznaky připraveny (bez škálování)...")
+    _cb(15, "Features ready (no scaling)...")
 
     warnings = []
 
@@ -536,10 +536,10 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
         positive_label = _resolve_positive_label(label_classes, y_reference=y)
         X_fit, y_fit = _oversample_minority(X, y)
 
-        _cb(25, "Trénuji RuleKit klasifikátor...")
+        _cb(25, "Training RuleKit classifier...")
         rulekit_model = RuleClassifier()
         rulekit_model.fit(X_fit, y_fit)
-        _cb(60, "RuleKit klasifikační predikce...")
+        _cb(60, "RuleKit classification predictions...")
         y_pred, _ = _rulekit_classification_predict(
             rulekit_model,
             X,
@@ -552,7 +552,7 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
         train_f1_macro = round(float(f1_score(y, y_pred, average="macro", zero_division=0)), 6)
         train_mcc = round(float(matthews_corrcoef(y, y_pred)), 6)
 
-        _cb(80, "K-fold validace klasifikace...")
+        _cb(80, "K-fold classification validation...")
         cv_results = _run_cross_validation_classification(X, y)
         if cv_results.get("note"):
             warnings.append(cv_results["note"])
@@ -602,7 +602,7 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
             )
 
         pipeline.save_state()
-        _cb(98, "Ukládám model...")
+        _cb(98, "Saving model...")
 
         return {
             "status": "success",
@@ -636,7 +636,7 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
     reg_medians = _fit_median_imputer(X)
     X = _apply_median_imputer(X, reg_medians)
 
-    _cb(25, "Trénuji RuleKit (indukce pravidel)...")
+    _cb(25, "Training RuleKit (rule induction)...")
     logger.info("Training RuleKit model...")
     rulekit_model = RuleRegressor()
     rulekit_model.fit(X, y)
@@ -649,7 +649,7 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
     rulekit_pred = rulekit_model.predict(X)
     rulekit_mse = round(float(mean_squared_error(y, rulekit_pred)), 6)
 
-    _cb(60, "Trénuji XGBoost...")
+    _cb(60, "Training XGBoost...")
     logger.info("Training XGBoost model...")
     xgb_model = XGBRegressor(
         n_estimators=100, max_depth=4, learning_rate=0.1,
@@ -663,7 +663,7 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
     ensemble_pred = RULEKIT_WEIGHT * rulekit_pred + XGB_WEIGHT * xgb_pred
     ensemble_mse = round(float(mean_squared_error(y, ensemble_pred)), 6)
 
-    _cb(80, "K-fold křížová validace...")
+    _cb(80, "K-fold cross-validation...")
     logger.info("Running %d-fold cross-validation...", min(5, len(X)))
     cv_results = _run_cross_validation(X, y)
     logger.info("CV results: %s", cv_results)
@@ -718,7 +718,7 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
     pipeline.warnings = warnings
 
     pipeline.save_state()
-    _cb(98, "Ukládám model...")
+    _cb(98, "Saving model...")
 
     return {
         "status": "success",
@@ -759,7 +759,7 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
     if pipeline.testing_X is None or pipeline.testing_X.empty:
         raise Exception("Missing testing dataset_X. Complete Phase 4 first.")
 
-    _cb(10, "Předzpracovávám testovací příznaky...")
+    _cb(10, "Preprocessing testing features...")
     feature_cols = [c for c in pipeline.feature_spec if c in pipeline.testing_X.columns]
     X_test = _preprocess_features(
         pipeline.testing_X[feature_cols],
@@ -769,7 +769,7 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
     target_mode = getattr(pipeline, "target_mode", "regression")
 
     if target_mode == "classification":
-        _cb(25, "RuleKit klasifikační predikce...")
+        _cb(25, "RuleKit classification predictions...")
         rulekit_classifier = getattr(pipeline, "model", None)
         xgb_classifier = getattr(pipeline, "xgb_model", None)
         legacy_xgb = rulekit_classifier is None and xgb_classifier is not None
@@ -813,13 +813,13 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
         pred_list: list[str] = []
         actual_list: list[str] = []
         total_items = len(pipeline.testing_X)
-        _cb(60, f"Sestavuji výsledky (0/{total_items})...")
+        _cb(60, ff"Building results (0/{total_items})...")
         report_every = max(1, total_items // 10)
 
         for row_num, (i, row) in enumerate(pipeline.testing_X.iterrows()):
             if row_num % report_every == 0:
                 pct = 60 + int(((row_num + 1) / total_items) * 28)
-                _cb(pct, f"Sestavuji výsledky ({row_num + 1}/{total_items})...")
+                _cb(pct, ff"Building results ({row_num + 1}/{total_items})...")
 
             media_name = str(row.get("media_name", f"object_{i}"))
             media_key = normalize_media_name(media_name)
@@ -853,7 +853,7 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
 
             results.append(item)
 
-        _cb(92, "Výpočet evaluačních metrik...")
+        _cb(92, "Computing evaluation metrics...")
         metrics = None
         if pred_list and actual_list:
             labels = sorted(set(actual_list) | set(pred_list))
@@ -928,16 +928,16 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
         return {"predictions": results, "metrics": metrics}
 
     # ---------------- Regression branch ----------------
-    _cb(25, "RuleKit predikce...")
+    _cb(25, "RuleKit predictions...")
     reg_medians = dict(zip(pipeline._training_columns, pipeline._scaler_mean))
     X_test = _apply_median_imputer(X_test, reg_medians)
     rulekit_pred = pipeline.model.predict(X_test)
     X_test_scaled = X_test
 
     if hasattr(pipeline, 'xgb_model') and pipeline.xgb_model is not None:
-        _cb(40, "XGBoost predikce...")
+        _cb(40, "XGBoost predictions...")
         xgb_pred = pipeline.xgb_model.predict(X_test_scaled)
-        _cb(55, "Ensemble kombinace (RuleKit + XGBoost)...")
+        _cb(55, "Ensemble combination (RuleKit + XGBoost)...")
         predictions = RULEKIT_WEIGHT * rulekit_pred + XGB_WEIGHT * xgb_pred
     else:
         predictions = rulekit_pred
@@ -956,13 +956,13 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
     pred_list: list[float] = []
     actual_list: list[float] = []
     total_items = len(pipeline.testing_X)
-    _cb(60, f"Sestavuji výsledky (0/{total_items})...")
+    _cb(60, ff"Building results (0/{total_items})...")
     report_every = max(1, total_items // 10)
 
     for row_num, (i, row) in enumerate(pipeline.testing_X.iterrows()):
         if row_num % report_every == 0:
             pct = 60 + int(((row_num + 1) / total_items) * 28)
-            _cb(pct, f"Sestavuji výsledky ({row_num + 1}/{total_items})...")
+            _cb(pct, ff"Building results ({row_num + 1}/{total_items})...")
         pred_score = float(predictions[row_num])
         media_name = str(row.get("media_name", f"object_{i}"))
         media_key = normalize_media_name(media_name)
@@ -984,7 +984,7 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
 
         results.append(item)
 
-    _cb(92, "Výpočet evaluačních metrik...")
+    _cb(92, "Computing evaluation metrics...")
     metrics = None
     if pred_list and actual_list:
         pred_arr = np.array(pred_list)

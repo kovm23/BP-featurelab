@@ -19,3 +19,7 @@ os.makedirs(DATASET_FOLDER, exist_ok=True)
 os.makedirs(CHECKPOINT_FOLDER, exist_ok=True)
 
 MAX_CONTENT_LENGTH = 2 * 1024 * 1024 * 1024  # 2 GB
+
+# How many media samples Phase 1 (Feature Discovery) analyses before synthesising the feature spec.
+# More samples → better feature spec, but longer discovery time.
+DISCOVERY_MAX_SAMPLES = int(os.getenv("DISCOVERY_MAX_SAMPLES", "10"))

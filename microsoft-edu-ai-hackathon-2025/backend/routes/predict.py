@@ -23,18 +23,18 @@ def api_predict():
     testing_Y_df = load_labels_from_request(request, UPLOAD_FOLDER)
 
     job_id = str(uuid.uuid4())
-    set_job(job_id, {"progress": 0, "stage": "Spouštím predikci...", "done": False})
+    set_job(job_id, {"progress": 0, "stage": "Starting prediction...", "done": False})
 
     def _run():
         try:
             def _pcb(pct: int, msg: str) -> None:
                 update_job(job_id, progress=pct, stage=msg)
 
-            _pcb(5, "Připravuji predikci...")
+            _pcb(5, "Preparing prediction...")
             result = pipeline.predict_batch(testing_Y_df, progress_cb=_pcb)
             set_job(job_id, {
                 "progress": 100,
-                "stage": "Predikce dokončena!",
+                "stage": "Prediction complete!",
                 "done": True,
                 "details": {
                     "status": "success",

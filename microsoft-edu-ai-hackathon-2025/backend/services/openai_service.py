@@ -27,15 +27,15 @@ def get_ollama_healthcheck_url() -> str:
         raw_base = raw_base[:-3]
     return f"{raw_base}/api/tags"
 
-# --- Konfigurace klienta (pouze lokální Ollama) ---
+# --- Client configuration (local Ollama only) ---
 local_client = openai.OpenAI(
     base_url=_ollama_api_base_url(),
     api_key="ollama",
     timeout=httpx.Timeout(120.0, connect=5.0),
 )
 
-# Ollama neumí zpracovat více požadavků najednou — serialace přes globální file-based lock
-# (sdílený mezi všemi worker procesy, na rozdíl od threading.Semaphore)
+# Ollama cannot handle concurrent requests — serialise via a global file-based lock
+# (shared across worker processes, unlike threading.Semaphore)
 _OLLAMA_LOCK_FILE = os.path.join(tempfile.gettempdir(), "ollama_model_load.lock")
 Path(_OLLAMA_LOCK_FILE).touch(exist_ok=True)
 
@@ -105,7 +105,7 @@ def image_to_base64(img_arr):
 
 
 def _clean_json_response(content):
-    """Vyčistí markdown obal z JSON odpovědi (časté u lokálních modelů)."""
+    """Strip the markdown wrapper from a JSON response (common with local models)."""
     content = content.strip()
     if "```json" in content:
         content = content.split("```json")[1].split("```")[0]

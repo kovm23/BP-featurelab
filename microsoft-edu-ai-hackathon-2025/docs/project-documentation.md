@@ -30,7 +30,7 @@ Prakticky je důležité rozlišit:
 
 Při psaní praktické části je vhodné explicitně uvést tato provozní omezení:
 
-- Discovery používá maximálně prvních 5 médií po načtení / rozbalení vstupu. Slouží k návrhu featur, ne k plné analýze datasetu.
+- Discovery analyzuje maximálně prvních `DISCOVERY_MAX_SAMPLES` médií (výchozí 10, konfigurovatelné env proměnnou). Slouží k návrhu featur, ne k plné analýze datasetu.
 - Všechna LLM volání jsou globálně serializována přes file lock (fcntl), takže při více uživatelích nebo více paralelních jobech roste latence kvůli frontě.
 - Extrakce nad větším datasetem může trvat minuty až desítky minut podle zvoleného modelu, velikosti vstupu a vytížení Ollamy.
 - Párování `dataset_X` a `dataset_Y` používá normalizované basename bez přípony; tolerují se cesty, přípony, uvozovky a velikost písmen, ale názvy musí stále odpovídat stejnému médiu.

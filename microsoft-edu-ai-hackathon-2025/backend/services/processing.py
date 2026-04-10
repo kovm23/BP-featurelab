@@ -136,7 +136,7 @@ def extract_key_frames_with_timestamps(
 
 
 # ================================================================
-# CORE: Zpracuj jedno médium s custom promptem
+# CORE: Process a single media file with a custom prompt
 # ================================================================
 
 def process_single_media(
@@ -144,13 +144,12 @@ def process_single_media(
     prompt: str,
     model_name: str = DEFAULT_MODEL,
 ) -> Dict[str, Any]:
-    """
-    Zpracuje jedno médium (video/obrázek) a pošle na LLM s daným promptem.
+    """Process a single media file (video or image) and send it to the LLM with the given prompt.
 
-    Pro video: extrahuje keyframes + audio transcript, přiloží je k promptu.
-    Pro obrázek: pošle obrázek přímo.
+    For video: extracts keyframes + audio transcript and appends them to the prompt.
+    For image: sends the image directly.
 
-    Vrací dict s klíči: filename, transcript, analysis (JSON z LLM), error (pokud nastala).
+    Returns a dict with keys: filename, transcript, analysis (JSON from LLM), error (if any).
     """
     filename = os.path.basename(media_path)
     result: Dict[str, Any] = {
@@ -161,7 +160,7 @@ def process_single_media(
 
     try:
         if _is_image_file(media_path):
-            # --- OBRÁZEK ---
+            # --- IMAGE ---
             img_b64 = _image_to_base64(media_path)
 
             llm_resp = extract_image_features_with_llm(

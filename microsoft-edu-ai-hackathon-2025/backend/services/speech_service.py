@@ -6,12 +6,12 @@ from faster_whisper import WhisperModel
 
 logger = logging.getLogger(__name__)
 
-# Globální proměnná pro uložení načteného modelu (Singleton)
+# Global variable holding the loaded model instance (Singleton)
 local_whisper_model = None
 
 
 def get_local_whisper():
-    """Načte model do VRAM pouze jednou."""
+    """Load the Whisper model into VRAM once (lazy singleton)."""
     global local_whisper_model
     if local_whisper_model is None:
         logger.info("Loading Local Whisper Large-v3 model to GPU (this may take a moment)...")
@@ -20,7 +20,7 @@ def get_local_whisper():
 
 
 def extract_audio_from_video(video_path: str, output_audio_path: str) -> bool:
-    """Vytáhne zvukovou stopu z videa a uloží ji jako MP3."""
+    """Extract the audio track from a video file and save it as MP3."""
     try:
         (
             ffmpeg
@@ -39,7 +39,7 @@ def extract_audio_from_video(video_path: str, output_audio_path: str) -> bool:
 
 
 def transcribe_with_timestamps(file_path: str) -> Dict[str, Any]:
-    """Provede lokální transkripci a vrátí strukturovaná data s časy."""
+    """Run local transcription and return structured data with timestamps."""
     try:
         model = get_local_whisper()
         segments, info = model.transcribe(file_path, beam_size=5, word_timestamps=True)
@@ -65,5 +65,5 @@ def transcribe_with_timestamps(file_path: str) -> Dict[str, Any]:
 
 
 def transcribe_video_file(file_path: str, model_choice: str = "local") -> Union[str, Dict[str, Any]]:
-    """Transkripce audio/video souboru pomocí lokálního Whisper modelu."""
+    """Transcribe an audio/video file using the local Whisper model."""
     return transcribe_with_timestamps(file_path)

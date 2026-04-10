@@ -25,8 +25,8 @@ def extract_zip_contents(zip_path: str, extract_path: str):
         total_size = sum(m.file_size for m in zf.infolist())
         if total_size > _MAX_UNZIPPED_BYTES:
             raise ValueError(
-                f"ZIP by po rozbalení překročil {_MAX_UNZIPPED_BYTES // 1024**3} GB "
-                f"(odhadovaná velikost: {total_size // 1024**3} GB)"
+                f"ZIP would exceed {_MAX_UNZIPPED_BYTES // 1024**3} GB when extracted "
+                f"(estimated size: {total_size // 1024**3} GB)"
             )
         zf.extractall(extract_path)
 

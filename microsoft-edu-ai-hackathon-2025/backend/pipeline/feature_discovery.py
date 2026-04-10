@@ -6,6 +6,7 @@ import re
 
 import pandas as pd
 
+from config import DISCOVERY_MAX_SAMPLES
 from pipeline.feature_schema import normalize_feature_spec
 from services.openai_service import (
     _tracked_ollama_lock,
@@ -95,7 +96,7 @@ def _warm_up_model(model_name: str, progress_cb=None) -> None:
             )
             if progress_cb:
                 try:
-                    progress_cb(3, f"Model se načítá ({attempt}. pokus)...")
+                    progress_cb(3, f"Model loading (attempt {attempt})...")
                 except Exception as cb_exc:
                     logger.debug("progress_cb failed: %s", cb_exc)
             time.sleep(actual_wait)
@@ -128,14 +129,14 @@ def discover_features(
 
     # Pre-warm the model so Ollama finishes loading before the observation loop.
     # Without this, the first inference call often returns EOF while the runner starts.
-    _cb(3, "Načítám model...")
+    _cb(3, "Loading model...")
     _warm_up_model(model_name, progress_cb=progress_cb)
 
     # Step 1: analyse each sample independently to gather observations
     observations = []
-    sample_paths = media_paths[:5]
+    sample_paths = media_paths[:DISCOVERY_MAX_SAMPLES]
     n_samples = len(sample_paths)
-    _cb(5, f"Připravuji analýzu {n_samples} vzorků...")
+    _cb(5, f"Preparing analysis of {n_samples} samples...")
     for idx, path in enumerate(sample_paths):
         file_name = os.path.basename(path)
         pct = 5 + int((idx / n_samples) * 55)
@@ -157,7 +158,7 @@ def discover_features(
     )
 
     # Step 2: ask LLM to derive a universal feature spec from the observations
-    _cb(65, f"LLM navrhuje feature spec z {len(observations)} vzorků...")
+    _cb(65, f"LLM synthesising feature spec from {len(observations)} samples...")
     mode_hint = (
         "Target type: regression (continuous numeric value). "
         "Prefer features that can be quantified on continuous scales."
@@ -222,14 +223,14 @@ def discover_features(
                 exc,
                 wait_s,
             )
-            _cb(70, f"Model se načítá, opakuji požadavek ({attempt + 2}/{max_retries})...")
+            _cb(70, f"Model loading, retrying request ({attempt + 2}/{max_retries})...")
             time.sleep(wait_s)
 
     if response is None:
         raise RuntimeError("LLM feature synthesis failed without response.")
     raw_content = response.choices[0].message.content or ""
     # Use json decoder to find the first valid JSON object
-    _cb(90, "Parsování feature specifikace...")
+    _cb(90, "Parsing feature specification...")
     all_features = {}
     start = raw_content.find("{")
     if start != -1:
