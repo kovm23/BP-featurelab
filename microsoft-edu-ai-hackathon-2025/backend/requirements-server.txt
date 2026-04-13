@@ -1,0 +1,22 @@
+# Server deployment requirements — Python 3.13, no local GPU.
+# torch / faster-whisper are intentionally excluded: Whisper needs a local GPU
+# which this server does not have. Audio transcription is gracefully skipped.
+# Ollama (LLM) runs remotely on llm.vse.cz.
+
+flask==3.1.0
+gunicorn==23.0.0
+werkzeug==3.1.3
+openai==1.51.2
+httpx==0.27.2
+requests==2.32.3
+python-dotenv==1.0.1
+pillow==11.0.0
+numpy==2.1.3
+pandas==2.2.3
+opencv-python==4.10.0.84
+ffmpeg-python==0.2.1
+PyPDF2==4.0.1
+flask-cors==5.0.0
+rulekit==0.0.22
+scikit-learn==1.5.2
+xgboost==2.1.3

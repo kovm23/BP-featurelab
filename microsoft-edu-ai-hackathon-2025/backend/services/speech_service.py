@@ -2,9 +2,15 @@ import logging
 import os
 import ffmpeg
 from typing import Dict, Any, Union
-from faster_whisper import WhisperModel
 
 logger = logging.getLogger(__name__)
+
+try:
+    from faster_whisper import WhisperModel
+    _WHISPER_AVAILABLE = True
+except ImportError:
+    _WHISPER_AVAILABLE = False
+    logger.warning("faster-whisper not installed — audio transcription disabled.")
 
 # Global variable holding the loaded model instance (Singleton)
 local_whisper_model = None
@@ -13,6 +19,8 @@ local_whisper_model = None
 def get_local_whisper():
     """Load the Whisper model into VRAM once (lazy singleton)."""
     global local_whisper_model
+    if not _WHISPER_AVAILABLE:
+        raise RuntimeError("faster-whisper is not installed on this server.")
     if local_whisper_model is None:
         logger.info("Loading Local Whisper Large-v3 model to GPU (this may take a moment)...")
         local_whisper_model = WhisperModel("large-v3", device="cuda", compute_type="float16")
