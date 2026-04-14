@@ -21,6 +21,28 @@ logger = logging.getLogger(__name__)
 
 _META_KEYS = {"summary", "classification", "reasoning"}
 
+_AUDIO_KEYWORDS = frozenset({
+    "audio", "sound", "speech", "voice", "music", "noise",
+    "loudness", "pitch", "tone", "tempo", "silence", "transcript",
+    "emotion",  # audio_emotion is the concrete offender
+})
+
+
+def _any_has_audio(paths: list[str]) -> bool:
+    """Return True if at least one file has an audio stream (uses ffprobe)."""
+    try:
+        import ffmpeg  # ffmpeg-python — already a project dependency
+        for p in paths:
+            try:
+                probe = ffmpeg.probe(p)
+                if any(s.get("codec_type") == "audio" for s in probe.get("streams", [])):
+                    return True
+            except Exception:
+                pass
+    except ImportError:
+        logger.debug("ffmpeg-python not available; skipping audio stream check")
+    return False
+
 
 def _is_transient_ollama_error(exc: Exception) -> bool:
     msg = str(exc).lower()
@@ -137,6 +159,24 @@ def discover_features(
     observations = []
     sample_paths = media_paths[:DISCOVERY_MAX_SAMPLES]
     n_samples = len(sample_paths)
+
+    media_has_audio = _any_has_audio(sample_paths)
+    if not media_has_audio:
+        logger.info("No audio streams detected in sample media — audio-based features will be suppressed.")
+    audio_note = (
+        ""
+        if media_has_audio
+        else (
+            "\nNOTE: This media clip does NOT contain an audio track. "
+            "Do not describe or infer any audio characteristics."
+        )
+    )
+    dim_note = (
+        "Cover DIVERSE perceptual dimensions (visual, temporal, semantic)"
+        if not media_has_audio
+        else "Cover DIVERSE perceptual dimensions (visual, audio, temporal, semantic)"
+    )
+
     _cb(5, f"Preparing analysis of {n_samples} samples...")
     for idx, path in enumerate(sample_paths):
         file_name = os.path.basename(path)
@@ -145,9 +185,10 @@ def discover_features(
         obs_prompt = (
             "You are a media analysis AI.\n"
             "Carefully observe this media clip and describe what you perceive — "
-            "visual content, motion, audio characteristics, mood, pacing, people, "
-            "objects, environment, and any other notable properties.\n"
-            "Be objective and specific. Output a concise bullet-point list of observations."
+            "visual content, motion, mood, pacing, people, "
+            "objects, environment, and any other notable properties."
+            + audio_note
+            + "\nBe objective and specific. Output a concise bullet-point list of observations."
         )
         result = process_single_media(path, prompt=obs_prompt, model_name=model_name)
         raw = result.get("analysis") or result.get("description") or str(result)
@@ -178,7 +219,7 @@ def discover_features(
         f"Based on these observations, define EXACTLY 5 to 8 measurable features that:\n"
         f"- Can be extracted from ANY media clip of this type (not just these samples)\n"
         f"- Are likely to correlate with '{target_variable}'\n"
-        f"- Cover DIVERSE perceptual dimensions (visual, audio, temporal, semantic) — do NOT repeat the same dimension multiple times\n"
+        f"- {dim_note} — do NOT repeat the same dimension multiple times\n"
         f"- Have clear, unambiguous measurement criteria\n"
         f"- Are independent from each other (avoid redundant or highly correlated features)\n\n"
         f"Output STRICTLY a JSON object with 5–8 keys. Keys are feature names "
@@ -246,6 +287,19 @@ def discover_features(
                 all_features = dict(list(all_features.items())[:8])
         except json.JSONDecodeError:
             logger.warning("Could not parse feature spec JSON from synthesis step")
+
+    if not media_has_audio and all_features:
+        audio_feats = [
+            k for k in all_features
+            if any(kw in k.lower() for kw in _AUDIO_KEYWORDS)
+        ]
+        if audio_feats:
+            logger.warning(
+                "Feature discovery proposed audio-based features for silent media — removing: %s",
+                audio_feats,
+            )
+            for k in audio_feats:
+                del all_features[k]
 
     if all_features:
         pipeline.feature_spec = all_features

@@ -133,47 +133,92 @@ def _preprocess_features(df: pd.DataFrame, training_columns: list[str] | None = 
 def _find_covering_rule(row: pd.Series, rules: list[str]) -> str:
     """Find the first RuleKit rule whose IF-conditions are satisfied by row values.
 
-    Rules have the format: IF feature >= val AND feature <= val THEN ...
+    Supports RuleKit's interval notation (Czech math convention):
+      feat = <lo, hi)   →  lo ≤ feat < hi   (< / [ = inclusive left)
+      feat = (lo, hi>   →  lo < feat ≤ hi   (> / ] = inclusive right)
+      feat = <lo, inf)  →  feat ≥ lo
+      feat = (-inf, hi) →  feat < hi
+      feat = {val}      →  exact match
+    Also handles simple operators: feat >= val, feat <= val, etc.
     Returns the full rule string or a fallback label.
     """
+    # interval: feat = <lo, hi)  or  (lo, hi>  etc.
+    _INTERVAL_RE = re.compile(
+        r"([^=]+?)\s*=\s*([<(\[])\s*(-inf|-?\d+(?:\.\d+)?)\s*,\s*(inf|-?\d+(?:\.\d+)?)\s*([>)\]])",
+        re.IGNORECASE,
+    )
+    # set/discrete: feat = {val}
+    _SET_RE = re.compile(r"([^=]+?)\s*=\s*\{([^}]+)\}")
+    # simple: feat >= val  (must come last so it doesn't shadow the above)
+    _SIMPLE_RE = re.compile(r"(.+?)\s*(>=|<=|>|<|=)\s*(.+)")
+
     for rule_str in rules:
-        # Extract the condition part (before THEN)
-        match = re.match(r"IF\s+(.+?)\s+THEN", rule_str, re.IGNORECASE)
-        if not match:
+        m = re.match(r"IF\s+(.+?)\s+THEN", rule_str, re.IGNORECASE)
+        if not m:
             continue
-        conditions_str = match.group(1)
-        # Split on AND
-        conditions = re.split(r"\s+AND\s+", conditions_str, flags=re.IGNORECASE)
+        conditions = re.split(r"\s+AND\s+", m.group(1), flags=re.IGNORECASE)
         all_met = True
         for cond in conditions:
             cond = cond.strip()
-            # Parse "feature op value"
-            m = re.match(r"(.+?)\s*(>=|<=|>|<|=)\s*(.+)", cond)
-            if not m:
-                all_met = False
-                break
-            feat, op, val_str = m.group(1).strip(), m.group(2), m.group(3).strip()
-            if feat not in row.index:
-                all_met = False
-                break
-            try:
-                row_val = float(row[feat])
-                threshold = float(val_str)
-            except (ValueError, TypeError):
-                all_met = False
-                break
-            if op == ">=" and not (row_val >= threshold):
-                all_met = False
-            elif op == "<=" and not (row_val <= threshold):
-                all_met = False
-            elif op == ">" and not (row_val > threshold):
-                all_met = False
-            elif op == "<" and not (row_val < threshold):
-                all_met = False
-            elif op == "=" and not (abs(row_val - threshold) < 1e-9):
-                all_met = False
-            if not all_met:
-                break
+
+            iv = _INTERVAL_RE.match(cond)
+            if iv:
+                feat = iv.group(1).strip()
+                l_br, lo_s, hi_s, r_br = iv.group(2), iv.group(3), iv.group(4), iv.group(5)
+                if feat not in row.index:
+                    all_met = False
+                    break
+                try:
+                    v = float(row[feat])
+                    lo = float("-inf") if lo_s.lower() == "-inf" else float(lo_s)
+                    hi = float("inf") if hi_s.lower() == "inf" else float(hi_s)
+                except (ValueError, TypeError):
+                    all_met = False
+                    break
+                # < and [ both mean closed/inclusive; ( means open/exclusive
+                lo_ok = (v >= lo) if l_br in ("<", "[") else (v > lo)
+                hi_ok = (v <= hi) if r_br in (">", "]") else (v < hi)
+                if not (lo_ok and hi_ok):
+                    all_met = False
+                continue
+
+            sv = _SET_RE.match(cond)
+            if sv:
+                feat, val_s = sv.group(1).strip(), sv.group(2).strip()
+                if feat not in row.index:
+                    all_met = False
+                    break
+                try:
+                    if abs(float(row[feat]) - float(val_s)) >= 1e-9:
+                        all_met = False
+                except (ValueError, TypeError):
+                    if str(row[feat]).strip() != val_s:
+                        all_met = False
+                continue
+
+            sm = _SIMPLE_RE.match(cond)
+            if sm:
+                feat, op, val_s = sm.group(1).strip(), sm.group(2), sm.group(3).strip()
+                if feat not in row.index:
+                    all_met = False
+                    break
+                try:
+                    v, thr = float(row[feat]), float(val_s)
+                except (ValueError, TypeError):
+                    all_met = False
+                    break
+                checks = {
+                    ">=": v >= thr, "<=": v <= thr,
+                    ">": v > thr, "<": v < thr,
+                    "=": abs(v - thr) < 1e-9,
+                }
+                if not checks.get(op, False):
+                    all_met = False
+                continue
+
+            all_met = False
+            break  # unparseable condition
+
         if all_met:
             return rule_str
     return "RuleKit (no single rule match)"

@@ -99,8 +99,14 @@ function rowsToCsv(rows: Record<string, unknown>[]) {
         .map((header) => {
           const value = row[header];
           if (value === null || value === undefined) return "";
-          const text = String(value);
-          return text.includes(",") ? `"${text}"` : text;
+          const text =
+            value !== null && typeof value === "object"
+              ? JSON.stringify(value)
+              : String(value);
+          if (text.includes(",") || text.includes('"') || text.includes("\n")) {
+            return `"${text.replace(/"/g, '""')}"`;
+          }
+          return text;
         })
         .join(",")
     ),
