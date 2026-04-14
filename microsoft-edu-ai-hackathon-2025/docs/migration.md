@@ -70,6 +70,21 @@ Poznámka:
 
 Frontend UI není nutné přesouvat na nový server, pokud ti stačí stávající `workers.dev`.
 
+## 8. Split Deploy: Backend Jinde, Frontend Na `llmfeatures.vse.cz`
+
+Pokud backend poběží na jednom serveru a `llmfeatures.vse.cz` bude hostovat jen webovou aplikaci, odděl to takto:
+
+- backend server: Python, Java, `ffmpeg`, Ollama, PM2
+- frontend server: Apache a statický build z `frontend/dist`
+
+Pro frontend-only server použij [frontend-llmfeatures-deploy.md](/home/kovm23/BP/microsoft-edu-ai-hackathon-2025/docs/frontend-llmfeatures-deploy.md) a Apache konfiguraci [apache-llmfeatures.vse.cz.conf](/home/kovm23/BP/microsoft-edu-ai-hackathon-2025/docs/apache-llmfeatures.vse.cz.conf).
+
+Důležitá poznámka:
+
+- na frontend serveru nepotřebuješ `python3.13-venv`, Java ani `ffmpeg`
+- pokud frontend buildneš jinde a nahraješ jen `frontend/dist`, nepotřebuješ tam ani `nodejs` a `npm`
+- backend pak musí mít v `ALLOWED_ORIGINS` alespoň `http://llmfeatures.vse.cz` a případně i `https://llmfeatures.vse.cz`
+
 ## 7. Nejkratší migrační checklist
 
 1. Přenes repo na nový server.

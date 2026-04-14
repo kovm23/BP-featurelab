@@ -1024,7 +1024,7 @@ cd backend
 pm2 start ecosystem.config.js
 ```
 
-Pro self-hosted variantu bez Cloudflare použij nginx konfiguraci z `docs/nginx-llmfeatures.vse.cz.conf` (viz `docs/migration.md`) a provozuj pouze backend.
+Pro split deploy variantu s frontendem na samostatném Apache hostu použij [frontend-llmfeatures-deploy.md](/home/kovm23/BP/microsoft-edu-ai-hackathon-2025/docs/frontend-llmfeatures-deploy.md) a konfiguraci [apache-llmfeatures.vse.cz.conf](/home/kovm23/BP/microsoft-edu-ai-hackathon-2025/docs/apache-llmfeatures.vse.cz.conf).
 ```
 
 ### 6.4 Reprodukovatelný experimentální scénář pro BP

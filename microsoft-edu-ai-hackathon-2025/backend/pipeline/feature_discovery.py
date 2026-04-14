@@ -177,19 +177,21 @@ def discover_features(
         else "Cover DIVERSE perceptual dimensions (visual, audio, temporal, semantic)"
     )
 
+    obs_prompt = (
+        "You are a media analysis AI.\n"
+        f"You are helping predict: '{target_variable}'.\n"
+        "Carefully observe this media clip and describe what you perceive — "
+        "visual content, motion, mood, pacing, people, "
+        "objects, environment, and any other notable properties."
+        + audio_note
+        + "\nBe objective and specific. Output a concise bullet-point list of observations."
+    )
+
     _cb(5, f"Preparing analysis of {n_samples} samples...")
     for idx, path in enumerate(sample_paths):
         file_name = os.path.basename(path)
         pct = 5 + int((idx / n_samples) * 55)
-        _cb(pct, f"Analyzuji vzorek {idx + 1}/{n_samples}: {file_name}...")
-        obs_prompt = (
-            "You are a media analysis AI.\n"
-            "Carefully observe this media clip and describe what you perceive — "
-            "visual content, motion, mood, pacing, people, "
-            "objects, environment, and any other notable properties."
-            + audio_note
-            + "\nBe objective and specific. Output a concise bullet-point list of observations."
-        )
+        _cb(pct, f"Analysing sample {idx + 1}/{n_samples}: {file_name}...")
         result = process_single_media(path, prompt=obs_prompt, model_name=model_name)
         raw = result.get("analysis") or result.get("description") or str(result)
         if raw:
