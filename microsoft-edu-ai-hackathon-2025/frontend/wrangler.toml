@@ -10,6 +10,8 @@ binding = "ASSETS"
 command = "npm install && npm run build"
 
 [vars]
-# Update BACKEND_URL whenever the cloudflared quick tunnel restarts
-# (pm2 logs backend-tunnel | grep trycloudflare to get the new address).
-BACKEND_URL = "https://saints-clear-plate-biographies.trycloudflare.com"
+# Update BACKEND_URL whenever the cloudflared quick tunnel restarts,
+# then redeploy the Worker so API routes keep proxying correctly.
+# Current quick tunnel created on 2026-04-13:
+#   https://occasional-cheque-practice-fluid.trycloudflare.com
+BACKEND_URL = "https://occasional-cheque-practice-fluid.trycloudflare.com"
