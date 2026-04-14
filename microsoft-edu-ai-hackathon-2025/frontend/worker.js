@@ -71,6 +71,25 @@ function applyCommonResponseHeaders(headers, request) {
   );
 }
 
+function shouldStreamRequestBody(request, backendCandidates) {
+  if (request.method === 'GET' || request.method === 'HEAD') {
+    return false;
+  }
+
+  // Streaming large multipart uploads avoids buffering the entire payload in
+  // the Worker before forwarding to the backend/tunnel, which can otherwise
+  // trigger edge timeouts on /discover and /extract.
+  if (backendCandidates.length !== 1) {
+    return false;
+  }
+
+  const contentType = (request.headers.get('Content-Type') || '').toLowerCase();
+  return (
+    contentType.includes('multipart/form-data') ||
+    contentType.includes('application/octet-stream')
+  );
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -104,11 +123,14 @@ export default {
         });
       }
 
-      // Read the body into a buffer so it survives the new Request() constructor.
-      // Streaming bodies (request.body) can be silently dropped in some CF runtime versions.
       let body = undefined;
       if (request.method !== 'GET' && request.method !== 'HEAD') {
-        body = await request.arrayBuffer();
+        if (shouldStreamRequestBody(request, backendCandidates)) {
+          body = request.body;
+        } else {
+          // Buffer small request bodies so retries across backend candidates stay possible.
+          body = await request.arrayBuffer();
+        }
       }
 
       // Copy headers, removing 'host' so the backend sees its own host.
