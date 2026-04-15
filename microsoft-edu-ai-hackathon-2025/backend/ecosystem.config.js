@@ -19,12 +19,5 @@ module.exports = {
         EXTRACTION_PASSES: "1",
       },
     },
-    {
-      name: "backend-tunnel",
-      script: "/usr/local/bin/cloudflared",
-      args: "tunnel --url http://127.0.0.1:5000",
-      cwd: repoRoot,
-      interpreter: "none",
-    },
   ],
 };
