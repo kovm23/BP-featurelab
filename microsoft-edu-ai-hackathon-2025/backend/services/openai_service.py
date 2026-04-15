@@ -18,6 +18,8 @@ load_backend_env()
 
 from config import OLLAMA_REQUEST_TIMEOUT, OLLAMA_CONNECT_TIMEOUT  # noqa: E402
 
+logger = logging.getLogger(__name__)
+
 
 def _ollama_api_base_url() -> str:
     raw_base = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
