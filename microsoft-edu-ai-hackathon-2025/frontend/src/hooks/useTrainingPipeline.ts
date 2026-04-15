@@ -153,10 +153,13 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
 
   // --- Restore from backend on mount ---
   const restoredRef = useRef(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [restoredWithData, setRestoredWithData] = useState(false);
   useEffect(() => {
     if (restoredRef.current) return;
     restoredRef.current = true;
 
+    setIsRestoring(true);
     let cancelled = false;
     fetchJson<PipelineState>(STATE_URL, { headers: sessionHeaders() })
       .then((state: PipelineState) => {
@@ -164,10 +167,14 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
         applyBackendPipelineState(state, {
           ...pipelineRuntimeSetters,
         });
+        if (state.completed_phases && state.completed_phases.length > 0) {
+          setRestoredWithData(true);
+        }
       })
       .catch(() => {
         /* backend unreachable — continue with localStorage state */
-      });
+      })
+      .finally(() => { if (!cancelled) setIsRestoring(false); });
     return () => { cancelled = true; };
   }, []);
 
@@ -657,5 +664,7 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
     queueBusy,
     queuedCount,
     recheckOllama,
+    isRestoring,
+    restoredWithData,
   };
 }

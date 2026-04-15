@@ -17,7 +17,8 @@ def api_health():
     try:
         r = requests.get(get_ollama_healthcheck_url(), timeout=2)
         ollama_ok = r.status_code == 200
-    except Exception:
+    except requests.RequestException as e:
+        logger.debug("Ollama health check failed: %s", e)
         ollama_ok = False
 
     return jsonify({"ok": True, "ollama": ollama_ok})

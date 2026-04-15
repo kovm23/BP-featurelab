@@ -97,8 +97,8 @@ def api_discover():
             for p in saved_paths:
                 try:
                     os.remove(p)
-                except OSError:
-                    pass
+                except OSError as e:
+                    logger.debug("Failed to remove temp file %s: %s", p, e)
 
     threading.Thread(target=_run, daemon=False).start()
     return jsonify({"job_id": job_id})

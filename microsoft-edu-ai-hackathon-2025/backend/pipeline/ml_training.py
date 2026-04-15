@@ -41,6 +41,7 @@ from pipeline.ml_preprocessing import (
 )
 from pipeline.ml_rules import _count_rule_features, _extract_rules, _find_covering_rule
 from utils.csv_utils import normalize_media_name
+from config import XGB_N_ESTIMATORS, XGB_MAX_DEPTH, XGB_LEARNING_RATE, XGB_RANDOM_STATE
 
 logger = logging.getLogger(__name__)
 
@@ -50,151 +51,106 @@ CLASSIFICATION_POSITIVE_THRESHOLD = float(os.getenv("CLASSIFICATION_POSITIVE_THR
 
 
 # ---------------------------------------------------------------------------
-# Training
+# Training — private branch helpers
 # ---------------------------------------------------------------------------
 
-def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
-    """Train a model from stored training_X + training_Y_df.
-
-    *progress_cb(pct: int, msg: str)* is called at key stages (optional).
-    Updates pipeline state in-place and persists to disk.
-    Returns a result dict suitable for JSON serialisation.
-    """
-    if pipeline.training_X is None:
-        raise Exception("Phase 2 (feature extraction) must be completed first.")
-    if pipeline.training_Y_df is None:
-        raise Exception("Missing dataset_Y (CSV with labels). It must be included in the training ZIP.")
-
-    df_gt = pipeline.training_Y_df.copy()
-    df_gt = df_gt.rename(columns={df_gt.columns[0]: "media_name"})
-
-    df_x = pipeline.training_X.copy()
-    df_x["media_name"] = df_x["media_name"].astype(str).str.strip()
-    df_gt["media_name"] = df_gt["media_name"].astype(str).str.strip()
-    df_x["_media_join_key"] = df_x["media_name"].apply(normalize_media_name)
-    df_gt["_media_join_key"] = df_gt["media_name"].apply(normalize_media_name)
-
-    df_merged = pd.merge(df_x, df_gt, on="_media_join_key", how="inner", suffixes=("_x", "_y"))
-    if "media_name_x" in df_merged.columns:
-        df_merged["media_name"] = df_merged["media_name_x"]
-    if df_merged.empty:
-        raise Exception(
-            "No data remained after joining dataset_X with dataset_Y. "
-            "Check that the file names in the CSV match the media names (without extension)."
-        )
-
-    feature_cols = [c for c in pipeline.feature_spec if c in df_merged.columns]
-    if not feature_cols:
-        raise Exception("None of the features were found in the data.")
-    X = _preprocess_features(df_merged[feature_cols])
-
-    if target_column in df_merged.columns:
-        y_raw = df_merged[target_column]
-    else:
-        found = [c for c in df_merged.columns if c.lower() == target_column.lower()]
-        if found:
-            y_raw = df_merged[found[0]]
-        else:
-            raise Exception(
-                f"Column '{target_column}' not found in CSV. "
-                f"Available columns: {list(df_gt.columns)}"
-            )
-
+def _make_progress_cb(progress_cb):
+    """Wrap an optional progress callback so it can be called safely."""
     def _cb(pct: int, msg: str) -> None:
         if progress_cb:
             try:
                 progress_cb(pct, msg)
             except Exception as e:
                 logger.debug("progress_cb failed: %s", e)
+    return _cb
 
-    target_mode = getattr(pipeline, "target_mode", "regression")
-    _cb(15, "Features ready (no scaling)...")
-    warnings = []
 
-    # ------------------------------------------------------------------ classification
-    if target_mode == "classification":
-        y = _validate_classification_target(y_raw)
-        X = X.loc[y.index]
-        medians = _fit_median_imputer(X)
-        X = _apply_median_imputer(X, medians)
-        label_classes = [str(c) for c in pd.Index(pd.unique(y)).tolist()]
-        positive_label = _resolve_positive_label(label_classes, y_reference=y)
-        X_fit, y_fit = _oversample_minority(X, y)
+def _train_classification_branch(pipeline, X, y_raw, target_column, _cb, warnings: list) -> dict:
+    """Train RuleKit classifier and update pipeline state in-place."""
+    y = _validate_classification_target(y_raw)
+    X = X.loc[y.index]
+    medians = _fit_median_imputer(X)
+    X = _apply_median_imputer(X, medians)
+    label_classes = [str(c) for c in pd.Index(pd.unique(y)).tolist()]
+    positive_label = _resolve_positive_label(label_classes, y_reference=y)
+    X_fit, y_fit = _oversample_minority(X, y)
 
-        _cb(25, "Training RuleKit classifier...")
-        rulekit_model = RuleClassifier()
-        rulekit_model.fit(X_fit, y_fit)
+    _cb(25, "Training RuleKit classifier...")
+    rulekit_model = RuleClassifier()
+    rulekit_model.fit(X_fit, y_fit)
 
-        _cb(60, "RuleKit classification predictions...")
-        y_pred, _ = _rulekit_classification_predict(
-            rulekit_model, X,
-            positive_label=positive_label,
-            positive_threshold=CLASSIFICATION_POSITIVE_THRESHOLD,
-            label_classes=label_classes,
+    _cb(60, "RuleKit classification predictions...")
+    y_pred, _ = _rulekit_classification_predict(
+        rulekit_model, X,
+        positive_label=positive_label,
+        positive_threshold=CLASSIFICATION_POSITIVE_THRESHOLD,
+        label_classes=label_classes,
+    )
+    rules = _extract_rules(rulekit_model)
+    rulekit_importance = _count_rule_features(rules, list(X.columns))
+
+    _cb(80, "K-fold classification validation...")
+    cv_results = _run_cross_validation_classification(
+        X, y, positive_threshold=CLASSIFICATION_POSITIVE_THRESHOLD
+    )
+    if cv_results.get("note"):
+        warnings.append(cv_results["note"])
+    if positive_label:
+        warnings.append(
+            f"Classification threshold policy active: "
+            f"positive_label='{positive_label}', threshold={CLASSIFICATION_POSITIVE_THRESHOLD:.2f}"
         )
-        rules = _extract_rules(rulekit_model)
-        rulekit_importance = _count_rule_features(rules, list(X.columns))
 
-        _cb(80, "K-fold classification validation...")
-        cv_results = _run_cross_validation_classification(
-            X, y, positive_threshold=CLASSIFICATION_POSITIVE_THRESHOLD
-        )
-        if cv_results.get("note"):
-            warnings.append(cv_results["note"])
-        if positive_label:
-            warnings.append(
-                f"Classification threshold policy active: "
-                f"positive_label='{positive_label}', threshold={CLASSIFICATION_POSITIVE_THRESHOLD:.2f}"
-            )
+    pipeline.model = rulekit_model
+    pipeline.xgb_model = None
+    pipeline.rules = rules
+    pipeline.mse = pipeline.rulekit_mse = pipeline.xgb_mse = None
+    pipeline.cv_mse = pipeline.cv_std = pipeline.cv_mae = None
+    pipeline.train_accuracy = round(float(accuracy_score(y, y_pred)), 6)
+    pipeline.train_balanced_accuracy = round(float(balanced_accuracy_score(y, y_pred)), 6)
+    pipeline.train_f1_macro = round(float(f1_score(y, y_pred, average="macro", zero_division=0)), 6)
+    pipeline.train_mcc = round(float(matthews_corrcoef(y, y_pred)), 6)
+    pipeline.cv_accuracy = cv_results.get("cv_accuracy")
+    pipeline.cv_balanced_accuracy = cv_results.get("cv_balanced_accuracy")
+    pipeline.cv_f1_macro = cv_results.get("cv_f1_macro")
+    pipeline.cv_precision_macro = cv_results.get("cv_precision_macro")
+    pipeline.cv_recall_macro = cv_results.get("cv_recall_macro")
+    pipeline.cv_mcc = cv_results.get("cv_mcc")
+    pipeline.cv_folds = cv_results.get("n_folds")
+    pipeline.warnings = warnings
+    pipeline.feature_importance = {"rulekit": rulekit_importance}
+    pipeline.is_trained = True
+    pipeline.target_variable = target_column
+    pipeline.predictions = pipeline.prediction_metrics = None
+    pipeline._training_columns = list(X.columns)
+    pipeline._scaler_mean = [medians.get(col, 0.0) for col in pipeline._training_columns]
+    pipeline._scaler_scale = []
+    pipeline._label_classes = label_classes
+    pipeline._positive_label = positive_label
 
-        pipeline.model = rulekit_model
-        pipeline.xgb_model = None
-        pipeline.rules = rules
-        pipeline.mse = pipeline.rulekit_mse = pipeline.xgb_mse = None
-        pipeline.cv_mse = pipeline.cv_std = pipeline.cv_mae = None
-        pipeline.train_accuracy = round(float(accuracy_score(y, y_pred)), 6)
-        pipeline.train_balanced_accuracy = round(float(balanced_accuracy_score(y, y_pred)), 6)
-        pipeline.train_f1_macro = round(float(f1_score(y, y_pred, average="macro", zero_division=0)), 6)
-        pipeline.train_mcc = round(float(matthews_corrcoef(y, y_pred)), 6)
-        pipeline.cv_accuracy = cv_results.get("cv_accuracy")
-        pipeline.cv_balanced_accuracy = cv_results.get("cv_balanced_accuracy")
-        pipeline.cv_f1_macro = cv_results.get("cv_f1_macro")
-        pipeline.cv_precision_macro = cv_results.get("cv_precision_macro")
-        pipeline.cv_recall_macro = cv_results.get("cv_recall_macro")
-        pipeline.cv_mcc = cv_results.get("cv_mcc")
-        pipeline.cv_folds = cv_results.get("n_folds")
-        pipeline.warnings = warnings
-        pipeline.feature_importance = {"rulekit": rulekit_importance}
-        pipeline.is_trained = True
-        pipeline.target_variable = target_column
-        pipeline.predictions = pipeline.prediction_metrics = None
-        pipeline._training_columns = list(X.columns)
-        pipeline._scaler_mean = [medians.get(col, 0.0) for col in pipeline._training_columns]
-        pipeline._scaler_scale = []
-        pipeline._label_classes = label_classes
-        pipeline._positive_label = positive_label
+    pipeline.save_state()
+    _cb(98, "Saving model...")
+    return {
+        "status": "success",
+        "target_mode": "classification",
+        "train_accuracy": pipeline.train_accuracy,
+        "train_balanced_accuracy": pipeline.train_balanced_accuracy,
+        "train_f1_macro": pipeline.train_f1_macro,
+        "train_mcc": pipeline.train_mcc,
+        **{k: cv_results.get(k) for k in ("cv_accuracy", "cv_balanced_accuracy", "cv_f1_macro",
+                                            "cv_precision_macro", "cv_recall_macro", "cv_mcc")},
+        "cv_folds": cv_results.get("n_folds"),
+        "rules_count": len(rules),
+        "rules": rules,
+        "feature_spec": pipeline.feature_spec,
+        "feature_importance": {"rulekit": rulekit_importance},
+        "warnings": warnings,
+        "training_data_X": json.loads(pipeline.training_X.to_json(orient="records")),
+    }
 
-        pipeline.save_state()
-        _cb(98, "Saving model...")
-        return {
-            "status": "success",
-            "target_mode": "classification",
-            "train_accuracy": pipeline.train_accuracy,
-            "train_balanced_accuracy": pipeline.train_balanced_accuracy,
-            "train_f1_macro": pipeline.train_f1_macro,
-            "train_mcc": pipeline.train_mcc,
-            **{k: cv_results.get(k) for k in ("cv_accuracy", "cv_balanced_accuracy", "cv_f1_macro",
-                                                "cv_precision_macro", "cv_recall_macro", "cv_mcc")},
-            "cv_folds": cv_results.get("n_folds"),
-            "rules_count": len(rules),
-            "rules": rules,
-            "feature_spec": pipeline.feature_spec,
-            "feature_importance": {"rulekit": rulekit_importance},
-            "warnings": warnings,
-            "training_data_X": json.loads(pipeline.training_X.to_json(orient="records")),
-        }
 
-    # ------------------------------------------------------------------ regression
+def _train_regression_branch(pipeline, X, y_raw, target_column, _cb, warnings: list) -> dict:
+    """Train RuleKit + XGBoost ensemble regressor and update pipeline state in-place."""
     y = pd.to_numeric(y_raw, errors="coerce")
     valid_mask = ~y.isna()
     if not valid_mask.any():
@@ -211,12 +167,18 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
     rulekit_mse = round(float(mean_squared_error(y, rulekit_pred)), 6)
 
     _cb(60, "Training XGBoost...")
-    xgb_model = XGBRegressor(n_estimators=100, max_depth=4, learning_rate=0.1, random_state=42, verbosity=0)
+    xgb_model = XGBRegressor(
+        n_estimators=XGB_N_ESTIMATORS,
+        max_depth=XGB_MAX_DEPTH,
+        learning_rate=XGB_LEARNING_RATE,
+        random_state=XGB_RANDOM_STATE,
+        verbosity=0,
+    )
     xgb_model.fit(X, y)
     xgb_pred = xgb_model.predict(X)
     xgb_mse = round(float(mean_squared_error(y, xgb_pred)), 6)
 
-    _cb(75, "Ensemble predikce...")
+    _cb(75, "Ensemble prediction...")
     ensemble_pred = RULEKIT_WEIGHT * rulekit_pred + XGB_WEIGHT * xgb_pred
     ensemble_mse = round(float(mean_squared_error(y, ensemble_pred)), 6)
 
@@ -281,6 +243,67 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
         "warnings": warnings,
         "training_data_X": json.loads(pipeline.training_X.to_json(orient="records")),
     }
+
+
+# ---------------------------------------------------------------------------
+# Training — public entry point
+# ---------------------------------------------------------------------------
+
+def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
+    """Train a model from stored training_X + training_Y_df.
+
+    *progress_cb(pct: int, msg: str)* is called at key stages (optional).
+    Updates pipeline state in-place and persists to disk.
+    Returns a result dict suitable for JSON serialisation.
+    """
+    if pipeline.training_X is None:
+        raise Exception("Phase 2 (feature extraction) must be completed first.")
+    if pipeline.training_Y_df is None:
+        raise Exception("Missing dataset_Y (CSV with labels). It must be included in the training ZIP.")
+
+    df_gt = pipeline.training_Y_df.copy()
+    df_gt = df_gt.rename(columns={df_gt.columns[0]: "media_name"})
+
+    df_x = pipeline.training_X.copy()
+    df_x["media_name"] = df_x["media_name"].astype(str).str.strip()
+    df_gt["media_name"] = df_gt["media_name"].astype(str).str.strip()
+    df_x["_media_join_key"] = df_x["media_name"].apply(normalize_media_name)
+    df_gt["_media_join_key"] = df_gt["media_name"].apply(normalize_media_name)
+
+    df_merged = pd.merge(df_x, df_gt, on="_media_join_key", how="inner", suffixes=("_x", "_y"))
+    if "media_name_x" in df_merged.columns:
+        df_merged["media_name"] = df_merged["media_name_x"]
+    if df_merged.empty:
+        raise Exception(
+            "No data remained after joining dataset_X with dataset_Y. "
+            "Check that the file names in the CSV match the media names (without extension)."
+        )
+
+    feature_cols = [c for c in pipeline.feature_spec if c in df_merged.columns]
+    if not feature_cols:
+        raise Exception("None of the features were found in the data.")
+    X = _preprocess_features(df_merged[feature_cols])
+
+    if target_column in df_merged.columns:
+        y_raw = df_merged[target_column]
+    else:
+        found = [c for c in df_merged.columns if c.lower() == target_column.lower()]
+        if found:
+            y_raw = df_merged[found[0]]
+        else:
+            raise Exception(
+                f"Column '{target_column}' not found in CSV. "
+                f"Available columns: {list(df_gt.columns)}"
+            )
+
+    _cb = _make_progress_cb(progress_cb)
+    target_mode = getattr(pipeline, "target_mode", "regression")
+    _cb(15, "Features ready (no scaling)...")
+    warnings: list = []
+
+    if target_mode == "classification":
+        return _train_classification_branch(pipeline, X, y_raw, target_column, _cb, warnings)
+    return _train_regression_branch(pipeline, X, y_raw, target_column, _cb, warnings)
 
 
 # ---------------------------------------------------------------------------

@@ -1,3 +1,4 @@
+import logging
 import os
 import openai
 import httpx
@@ -15,6 +16,8 @@ from env_loader import load_backend_env
 
 load_backend_env()
 
+from config import OLLAMA_REQUEST_TIMEOUT, OLLAMA_CONNECT_TIMEOUT  # noqa: E402
+
 
 def _ollama_api_base_url() -> str:
     raw_base = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
@@ -30,8 +33,8 @@ def get_ollama_healthcheck_url() -> str:
 # --- Client configuration (local Ollama only) ---
 local_client = openai.OpenAI(
     base_url=_ollama_api_base_url(),
-    api_key="ollama",
-    timeout=httpx.Timeout(120.0, connect=5.0),
+    api_key=os.getenv("OLLAMA_API_KEY", "ollama"),
+    timeout=httpx.Timeout(OLLAMA_REQUEST_TIMEOUT, connect=OLLAMA_CONNECT_TIMEOUT),
 )
 
 # Ollama cannot handle concurrent requests — serialise via a global file-based lock

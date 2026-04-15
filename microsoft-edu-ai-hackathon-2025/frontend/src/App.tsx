@@ -1,13 +1,16 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AppHeader } from "@/components/AppHeader";
 import { Guide } from "@/components/Guide";
 import { TrainingView } from "@/components/TrainingView";
 import { useAppUi } from "@/hooks/useAppUi";
 import { useSessionTransfer } from "@/hooks/useSessionTransfer";
 import { useTrainingPipeline } from "@/hooks/useTrainingPipeline";
+import { loadPersisted } from "@/hooks/trainingPipelineUtils";
 
 export default function MediaFeatureLabPro() {
   const [resetKey, setResetKey] = useState(0);
+  const [showRestoredToast, setShowRestoredToast] = useState(false);
+  const savedPipeline = loadPersisted();
   const { lang, setLang, deluxe, setDeluxe, showGuide, setShowGuide, closeGuide } = useAppUi();
 
   const i18n = {
@@ -47,6 +50,14 @@ export default function MediaFeatureLabPro() {
     t.transferError,
     t.importOk,
   );
+
+  useEffect(() => {
+    if (!pipeline.isRestoring && pipeline.restoredWithData) {
+      setShowRestoredToast(true);
+      const timer = setTimeout(() => setShowRestoredToast(false), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [pipeline.isRestoring, pipeline.restoredWithData]);
 
   function handleReset() {
     if (!window.confirm(t.resetConfirm)) return;
@@ -96,6 +107,13 @@ export default function MediaFeatureLabPro() {
           t={t}
         />
 
+        {pipeline.isRestoring && (savedPipeline?.trainingStep ?? 1) > 1 && (
+          <div className="flex items-center gap-2 text-sm text-slate-400 mb-4">
+            <span className="inline-block w-3 h-3 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
+            {lang === "cs" ? "Obnovuji relaci..." : "Restoring session..."}
+          </div>
+        )}
+
         <TrainingView
           key={resetKey}
           deluxe={deluxe}
@@ -141,6 +159,12 @@ export default function MediaFeatureLabPro() {
       </div>
 
       {showGuide && <Guide deluxe={deluxe} onClose={closeGuide} uiLanguage={lang} />}
+
+      {showRestoredToast && (
+        <div className="fixed bottom-4 right-4 bg-slate-700 text-white text-sm px-4 py-2 rounded-lg shadow-lg z-50">
+          {lang === "cs" ? "Relace obnovena" : "Session restored"}
+        </div>
+      )}
     </div>
   );
 }

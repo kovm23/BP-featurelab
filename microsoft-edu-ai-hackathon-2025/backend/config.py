@@ -23,3 +23,13 @@ MAX_CONTENT_LENGTH = 2 * 1024 * 1024 * 1024  # 2 GB
 # How many media samples Phase 1 (Feature Discovery) analyses before synthesising the feature spec.
 # More samples → better feature spec, but longer discovery time.
 DISCOVERY_MAX_SAMPLES = int(os.getenv("DISCOVERY_MAX_SAMPLES", "10"))
+
+# XGBoost hyperparameters
+XGB_N_ESTIMATORS = int(os.getenv("XGB_N_ESTIMATORS", "100"))
+XGB_MAX_DEPTH = int(os.getenv("XGB_MAX_DEPTH", "4"))
+XGB_LEARNING_RATE = float(os.getenv("XGB_LEARNING_RATE", "0.1"))
+XGB_RANDOM_STATE = int(os.getenv("XGB_RANDOM_STATE", "42"))
+
+# Ollama client timeouts (seconds)
+OLLAMA_REQUEST_TIMEOUT = float(os.getenv("OLLAMA_REQUEST_TIMEOUT", "120.0"))
+OLLAMA_CONNECT_TIMEOUT = float(os.getenv("OLLAMA_CONNECT_TIMEOUT", "5.0"))
