@@ -85,6 +85,8 @@ Důležitá poznámka:
 - pokud frontend buildneš jinde a nahraješ jen `frontend/dist`, nepotřebuješ tam ani `nodejs` a `npm`
 - frontend build má v tomto režimu používat `VITE_API_BASE=/api`
 - Apache na `llmfeatures.vse.cz` pak přeposílá `/api/*` na interní backend, takže backend nemusí být veřejně dostupný z internetu
+- veřejné HTTPS na `llmfeatures.vse.cz` můžeš zapnout přes `certbot --apache -d llmfeatures.vse.cz`
+- pokud `www.llmfeatures.vse.cz` nemá DNS záznam, nevystavuj certifikát pro `www`
 - backend může mít v `ALLOWED_ORIGINS` alespoň `http://llmfeatures.vse.cz` a případně i `https://llmfeatures.vse.cz`
 
 ## 7. Nejkratší migrační checklist
