@@ -216,7 +216,6 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
                 clearActiveJob();
                 if (tick.suggested_features) {
                   setFeatureSpec(tick.suggested_features);
-                  setTrainingStep(2);
                   persistDiscoveryOutcome({
                     featureSpec: tick.suggested_features,
                     targetVariableRef,
@@ -386,7 +385,6 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
               clearActiveJob();
               if (s.suggested_features) {
                 setFeatureSpec(s.suggested_features);
-                setTrainingStep(2);
                 persistDiscoveryOutcome({
                   featureSpec: s.suggested_features,
                   targetVariableRef,
