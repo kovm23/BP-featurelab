@@ -25,5 +25,7 @@ jobs:
           sudo chown -R www-data:www-data /var/www/llmfeatures
 
       - name: Reload backend
-        working-directory: microsoft-edu-ai-hackathon-2025/backend
-        run: pm2 reload ecosystem.config.js --update-env
+        run: |
+          eval "$(ssh-agent -s)"
+          ssh-add - <<< "${{ secrets.BACKEND_SSH_KEY }}"
+          ssh -o StrictHostKeyChecking=no kovm23@llm.vse.cz "cd ~/BP-featurelab/microsoft-edu-ai-hackathon-2025/backend && git pull && pm2 reload ecosystem.config.js --update-env"
