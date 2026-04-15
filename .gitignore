@@ -1,0 +1,5 @@
+# GitHub Actions self-hosted runner
+actions-runner/
+
+# macOS
+.DS_Store

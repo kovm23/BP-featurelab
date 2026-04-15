@@ -6,16 +6,10 @@ on:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: microsoft-edu-ai-hackathon-2025/frontend/package-lock.json
 
       - name: Build frontend
         working-directory: microsoft-edu-ai-hackathon-2025/frontend
@@ -23,31 +17,13 @@ jobs:
         env:
           VITE_API_BASE: /api
 
-      - name: Setup SSH key
+      - name: Deploy frontend
         run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H llmfeatures.vse.cz >> ~/.ssh/known_hosts
-
-      - name: Deploy frontend (rsync)
-        run: |
-          rsync -az --delete \
+          sudo rsync -az --delete \
             microsoft-edu-ai-hackathon-2025/frontend/dist/ \
-            ${{ secrets.DEPLOY_USER }}@llmfeatures.vse.cz:/var/www/llmfeatures/current/
+            /var/www/llmfeatures/current/
+          sudo chown -R www-data:www-data /var/www/llmfeatures
 
-      - name: Deploy backend (git pull + pm2 reload)
-        run: |
-          ssh ${{ secrets.DEPLOY_USER }}@llmfeatures.vse.cz '
-            cd ~/BP-featurelab/microsoft-edu-ai-hackathon-2025 &&
-            git fetch origin &&
-            git checkout prod &&
-            git pull origin prod &&
-            cd backend &&
-            pm2 reload ecosystem.config.js --update-env
-          '
-
-      - name: Fix webroot permissions
-        run: |
-          ssh ${{ secrets.DEPLOY_USER }}@llmfeatures.vse.cz \
-            'sudo chown -R www-data:www-data /var/www/llmfeatures'
+      - name: Reload backend
+        working-directory: microsoft-edu-ai-hackathon-2025/backend
+        run: pm2 reload ecosystem.config.js --update-env

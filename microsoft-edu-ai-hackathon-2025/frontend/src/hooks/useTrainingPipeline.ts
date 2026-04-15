@@ -605,6 +605,10 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
   /*  Reset                                                            */
   /* ---------------------------------------------------------------- */
   function resetPipeline() {
+    if (activeCtrl) {
+      activeCtrl.abort();
+      setActiveCtrl(null);
+    }
     resetPipelineLocalState(pipelineRuntimeSetters);
     clearPersisted();
     clearActiveJob();
