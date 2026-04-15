@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import pickle
+from typing import Any
 
 import pandas as pd
 
@@ -15,16 +16,16 @@ from pipeline.ml_training import train_model, predict_batch
 logger = logging.getLogger(__name__)
 
 
-def _json_default(value):
+def _json_default(value: Any) -> Any:
     if hasattr(value, "item"):
         try:
             return value.item()
-        except Exception:
+        except (ValueError, TypeError):
             pass
     if hasattr(value, "isoformat"):
         try:
             return value.isoformat()
-        except Exception:
+        except (ValueError, TypeError):
             pass
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 

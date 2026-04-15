@@ -1,22 +1,26 @@
-import logging
-import os
-import openai
-import httpx
-import numpy as np
-from PIL import Image
 import base64
+import fcntl
 import io
 import json
-import time
-import threading
-import fcntl
+import logging
+import os
 import tempfile
+import threading
+import time
+from contextlib import contextmanager
 from pathlib import Path
+
+import httpx
+import numpy as np
+import openai
+from PIL import Image
+
 from env_loader import load_backend_env
 
 load_backend_env()
 
 from config import OLLAMA_REQUEST_TIMEOUT, OLLAMA_CONNECT_TIMEOUT  # noqa: E402
+from utils.ollama_errors import is_gpu_load_error, is_transient_ollama_error  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -57,22 +61,6 @@ OLLAMA_CPU_FALLBACK = os.getenv("OLLAMA_CPU_FALLBACK", "1").strip().lower() in (
 def ollama_request_options() -> dict:
     return dict(_OLLAMA_OPTIONS)
 
-
-def _is_gpu_load_error(exc: Exception) -> bool:
-    msg = str(exc).lower()
-    return any(
-        token in msg
-        for token in (
-            "unable to allocate cuda",
-            "cuda0 buffer",
-            "do load request",
-            "/load\": eof",
-            "connection reset",
-        )
-    )
-
-
-from contextlib import contextmanager
 
 @contextmanager
 def _tracked_ollama_lock():
@@ -160,7 +148,7 @@ def extract_image_features_with_llm(image_base64_list, prompt=None, deployment_n
 
                 try:
                     features = json.loads(clean_content)
-                except Exception:
+                except (json.JSONDecodeError, ValueError):
                     features = {"features": clean_content, "error": "JSON parse error", "raw": content}
 
                 features_list.append(features)
@@ -173,16 +161,12 @@ def extract_image_features_with_llm(image_base64_list, prompt=None, deployment_n
                 else:
                     features_list.append({"error": "Rate limit exceeded."})
             except Exception as e:
-                msg = str(e).lower()
-                is_transient = any(
-                    t in msg for t in ("eof", "load request", "connection reset", "timed out", "connection refused")
-                )
-                if OLLAMA_CPU_FALLBACK and not use_cpu_fallback and _is_gpu_load_error(e):
+                if OLLAMA_CPU_FALLBACK and not use_cpu_fallback and is_gpu_load_error(e):
                     use_cpu_fallback = True
                     logger.warning("GPU model load failed, retrying on CPU fallback: %s", e)
                     time.sleep(2)
                     continue
-                if is_transient and attempt < max_retries - 1:
+                if is_transient_ollama_error(e) and attempt < max_retries - 1:
                     wait = backoff * (attempt + 1)
                     logger.warning("Transient Ollama error on image extraction attempt %s, retrying in %ss: %s", attempt + 1, wait, e)
                     time.sleep(wait)
@@ -229,12 +213,12 @@ def extract_text_features_with_llm(text_list, prompt=None, deployment_name=None,
 
                 try:
                     features = json.loads(clean_content)
-                except Exception:
+                except (json.JSONDecodeError, ValueError):
                     features = {"features": clean_content}
                 features_list.append(features)
                 break
             except Exception as e:
-                if OLLAMA_CPU_FALLBACK and not use_cpu_fallback and _is_gpu_load_error(e):
+                if OLLAMA_CPU_FALLBACK and not use_cpu_fallback and is_gpu_load_error(e):
                     use_cpu_fallback = True
                     logger.warning("GPU model load failed, retrying text extraction on CPU fallback: %s", e)
                     time.sleep(2)

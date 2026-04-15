@@ -15,6 +15,7 @@ from services.openai_service import (
     ollama_request_options,
 )
 from services.processing import process_single_media
+from utils.ollama_errors import is_gpu_load_error, is_transient_ollama_error
 from utils.target_context import build_labels_context
 
 logger = logging.getLogger(__name__)
@@ -32,42 +33,18 @@ def _any_has_audio(paths: list[str]) -> bool:
     """Return True if at least one file has an audio stream (uses ffprobe)."""
     try:
         import ffmpeg  # ffmpeg-python — already a project dependency
-        for p in paths:
-            try:
-                probe = ffmpeg.probe(p)
-                if any(s.get("codec_type") == "audio" for s in probe.get("streams", [])):
-                    return True
-            except Exception:
-                pass
     except ImportError:
         logger.debug("ffmpeg-python not available; skipping audio stream check")
+        return False
+    for p in paths:
+        try:
+            probe = ffmpeg.probe(p)
+        except ffmpeg.Error as exc:
+            logger.debug("ffprobe failed for %s: %s", p, exc)
+            continue
+        if any(s.get("codec_type") == "audio" for s in probe.get("streams", [])):
+            return True
     return False
-
-
-def _is_transient_ollama_error(exc: Exception) -> bool:
-    msg = str(exc).lower()
-    transient_tokens = (
-        "eof",
-        "load request",
-        "connection reset",
-        "remoteprotocolerror",
-        "timed out",
-        "connection refused",
-    )
-    return any(token in msg for token in transient_tokens)
-
-
-def _is_gpu_load_error(exc: Exception) -> bool:
-    msg = str(exc).lower()
-    return any(
-        token in msg
-        for token in (
-            "unable to allocate cuda",
-            "cuda0 buffer",
-            "do load request",
-            "/load\": eof",
-        )
-    )
 
 
 def _warm_up_model(model_name: str, progress_cb=None) -> None:
@@ -77,7 +54,6 @@ def _warm_up_model(model_name: str, progress_cb=None) -> None:
     while that runner is still initialising. Retrying here with generous backoff
     absorbs the load latency so downstream calls succeed on the first try.
     """
-    import time
     max_wait = 120
     deadline = time.monotonic() + max_wait
     attempt = 0
@@ -97,11 +73,11 @@ def _warm_up_model(model_name: str, progress_cb=None) -> None:
                 )
             return
         except Exception as exc:
-            if not use_cpu_fallback and _is_gpu_load_error(exc):
+            if not use_cpu_fallback and is_gpu_load_error(exc):
                 use_cpu_fallback = True
                 logger.warning("GPU load failed during warm-up, switching to CPU fallback: %s", exc)
                 continue
-            if not _is_transient_ollama_error(exc):
+            if not is_transient_ollama_error(exc):
                 raise
             attempt += 1
             wait_s = min(15 * attempt, 45)
@@ -236,7 +212,6 @@ def discover_features(
     response = None
     max_retries = 4
     backoff_s = 20  # model cold-load takes 20-30 s; each wait must exceed that
-    import time
     use_cpu_fallback = False
     for attempt in range(max_retries):
         try:
@@ -252,12 +227,12 @@ def discover_features(
                 )
             break
         except Exception as exc:
-            if not use_cpu_fallback and _is_gpu_load_error(exc):
+            if not use_cpu_fallback and is_gpu_load_error(exc):
                 use_cpu_fallback = True
                 logger.warning("GPU load failed during synthesis, switching to CPU fallback: %s", exc)
                 continue
             is_last = attempt >= max_retries - 1
-            if is_last or not _is_transient_ollama_error(exc):
+            if is_last or not is_transient_ollama_error(exc):
                 raise
             wait_s = backoff_s * (attempt + 1)
             logger.warning(

@@ -116,7 +116,11 @@ backend/
 │   ├── feature_extraction.py   # Fáze 2/4: Multi-pass feature extraction
 │   ├── feature_schema.py       # Normalizace feature_spec do strukturovaného tvaru
 │   ├── feature_validation.py   # Validace a clamping extrahovaných hodnot
-│   └── ml_training.py          # Fáze 3/5: trénink a predikce
+│   ├── ml_training.py          # Fáze 3/5: dispatcher train/predict, ensemble prahy
+│   ├── ml_classification.py    # Klasifikační větev (validace cíle, metriky, CV)
+│   ├── ml_regression.py        # Regresní větev (RuleKit + XGBoost ensemble, CV)
+│   ├── ml_preprocessing.py     # One-hot, imputace, oversampling menšinové třídy
+│   └── ml_rules.py             # Extrakce pravidel z RuleKitu + covering-rule lookup
 ├── routes/
 │   ├── discover.py             # POST /discover
 │   ├── extract.py              # POST /extract, POST /extract-local
@@ -129,11 +133,15 @@ backend/
 │   └── session_transfer.py     # GET /export-session, POST /import-session
 ├── services/
 │   ├── processing.py           # Media processing (video → keyframes + audio)
-│   ├── openai_service.py       # LLM API client (Ollama OpenAI-compatible)
+│   ├── openai_service.py       # LLM API client (Ollama OpenAI-compatible) + GPU lock
 │   └── speech_service.py       # Whisper transcription (faster-whisper)
+├── tests/                      # Pytest unit testy pro čisté util funkce
 └── utils/
     ├── file_utils.py           # ZIP extraction, media file discovery
-    └── csv_utils.py            # CSV/labels loading utilities
+    ├── csv_utils.py            # CSV/labels loading utilities
+    ├── target_context.py       # Resolver target sloupce napříč moduly
+    ├── ollama_errors.py        # Detekce GPU load / transient Ollama chyb
+    └── retry.py                # Exponential backoff retry helper
 ```
 
 ### 2.2 Centrální stavový objekt — `MachineLearningPipeline`
@@ -994,9 +1002,22 @@ Pro srovnávací experiment v bakalářské práci doporučuji následující de
 | `ALLOWED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173,https://bpfeaturelab.kovm23.workers.dev` | CORS allowlist backendu pro browser requesty a Worker frontend |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Base URL lokálního Ollama serveru |
 | `OLLAMA_MODEL` | `qwen2.5vl:7b` | Výchozí Ollama model pro discovery/extrakci |
+| `OLLAMA_API_KEY` | `ollama` | API klíč pro OpenAI-kompatibilní endpoint Ollamy (ve většině instalací stačí default) |
+| `OLLAMA_NUM_CTX` | `4096` | Context window Ollamy (tokeny) |
+| `OLLAMA_REQUEST_TIMEOUT` | `120.0` | HTTP request timeout proti Ollamě (sekundy) |
+| `OLLAMA_CONNECT_TIMEOUT` | `5.0` | HTTP connect timeout proti Ollamě (sekundy) |
+| `OLLAMA_CPU_FALLBACK` | `1` | Povolit CPU fallback (`num_gpu=0`) při selhání GPU loadu |
 | `FLASK_DEBUG` | `0` | Debug mode (0 = production) |
-| `EXTRACTION_PASSES` | `1` | Počet LLM callů per médium při extrakci |
+| `PORT` | `5000` | Port, na kterém poslouchá backend |
+| `DISCOVERY_MAX_SAMPLES` | `10` | Počet vzorků analyzovaných LLM při Phase 1 — vyšší znamená bohatší feature spec, ale delší discovery |
+| `EXTRACTION_PASSES` | `1` | Počet LLM callů per médium při extrakci (více = stabilnější hodnoty, vyšší cena) |
 | `CV_MAX_FOLDS` | `3` | Horní limit počtu CV foldů |
+| `XGB_N_ESTIMATORS` | `100` | Počet stromů XGBoostu |
+| `XGB_MAX_DEPTH` | `4` | Maximální hloubka stromů XGBoostu |
+| `XGB_LEARNING_RATE` | `0.1` | Learning rate XGBoostu |
+| `XGB_RANDOM_STATE` | `42` | Seed pro reprodukovatelnost XGBoostu |
+| `CLASSIFICATION_POSITIVE_LABEL` | — (neuvedeno) | Explicitní positive label pro binární klasifikaci; jinak se odvozuje heuristikou ze jmen tříd (`positive`, `yes`, `true`, `1`) nebo z méně četné třídy |
+| `CLASSIFICATION_POSITIVE_THRESHOLD` | `0.45` | Práh pro positive prediction v binární klasifikaci |
 | `SECRET_KEY` | náhodný `token_hex(32)` při každém startu | Flask session secret — pro stabilitu sessions mezi restarty nastavit jako perzistentní hodnotu |
 
 **Poznámka k PM2 konfiguraci:** `EXTRACTION_PASSES` a `CV_MAX_FOLDS` jsou nastaveny přímo v `backend/ecosystem.config.js` (sekce `env`). Při použití PM2 tedy jejich hodnota vychází z tohoto souboru, nikoliv z `backend/.env`. Změna hodnot vyžaduje úpravu `ecosystem.config.js` a restart procesů přes `pm2 reload ecosystem.config.js`.
@@ -1376,3 +1397,247 @@ Při psaní závěrečné interpretace je vhodné zdůraznit:
 - že i menší počet respondentů je pro odhalení hlavních UX problémů u tohoto typu aplikace dostatečně informativní.
 
 Takový způsob interpretace je pro bakalářskou práci metodicky obhajitelný a odpovídá rozsahu studentského prototypu.
+
+---
+
+## 9. Backend services v detailu
+
+Sekce 2 dokumentovala celkovou pipeline; tato sekce doplňuje popis tří klíčových servisních modulů, které se stejně dotýkají více fází a mají vlastní provozní charakteristiky.
+
+### 9.1 `services/openai_service.py` — Ollama klient a GPU serializace
+
+Modul je jediné místo, kde backend volá Ollama API. Vše ostatní (discovery, extraction) používá tento wrapper.
+
+**Hlavní odpovědnosti:**
+
+- OpenAI-kompatibilní klient nad lokální Ollamou (`OLLAMA_BASE_URL`, `OLLAMA_API_KEY`, `OLLAMA_MODEL`)
+- Timeouty: `OLLAMA_CONNECT_TIMEOUT` (default 5 s) a `OLLAMA_REQUEST_TIMEOUT` (default 120 s) — oddělené, aby krátká síťová nedostupnost nezatížila stejnou čekací dobou jako dlouhý LLM call
+- Context window: `OLLAMA_NUM_CTX` (default 4096 tokenů) se posílá v `options.num_ctx`
+- CPU fallback: pokud `OLLAMA_CPU_FALLBACK=1` a GPU selže, retry se provede s `options.num_gpu=0`
+- Global file lock (`fcntl.flock`) přes soubor `_OLLAMA_LOCK_FILE` serializuje všechny LLM cally napříč Gunicorn workery i vlákny (viz sekce 2.9)
+- Detekce transient chyb: deleguje na `utils.ollama_errors.is_transient_ollama_error` (EOF, `load request`, connection refused) a `is_gpu_load_error` (GPU OOM)
+
+**API:**
+
+```python
+with ollama_exclusive():
+    response = local_client.chat.completions.create(
+        model=OLLAMA_MODEL,
+        messages=[...],
+        response_format={"type": "json_object"},
+    )
+```
+
+`ollama_exclusive()` je context manager, který drží file lock po celou dobu LLM callu. Nedostaneme se do stavu, kdy dva procesy chtějí načíst stejný model v tentýž okamžik (ollama EOF).
+
+### 9.2 `services/processing.py` — zpracování médií
+
+Abstrakce nad zpracováním multimediálních souborů pro LLM extrakci.
+
+**Odpovědnosti:**
+
+- Vyextrahuje upload ZIP do `UPLOAD_FOLDER/<session_id>/`
+- U videí vybere keyframes přes scene detection (`scenedetect` knihovna) nebo fixní interval jako fallback
+- Audio track extrahuje přes `ffmpeg` do WAV a předá `speech_service`
+- Obrázky se posílají LLM jako `image_url` content part
+- Každý mediální soubor transformuje na strukturu `{"keyframes": [...], "transcript": "..."}` konzumovanou fází Discovery i Extraction
+
+Výstup je deterministický: stejný vstupní soubor → stejné keyframes → stejný prompt pro LLM. Díky tomu jsou extrakční pokusy porovnatelné.
+
+### 9.3 `services/speech_service.py` — Whisper STT
+
+Wrapper nad `faster-whisper`.
+
+- Lazy-inicializovaný model (načte se při prvním volání)
+- Vstup: cesta k audio souboru (WAV)
+- Výstup: `{"text": "...", "segments": [...]}`
+- Rekurzivně ošetřuje prázdný audio track (např. video bez zvuku) — vrací prázdný transcript, nikoliv exception
+- Podporované formáty vstupu: jakýkoli formát, který zvládne předchozí `ffmpeg` demux (dle instalace)
+
+---
+
+## 10. ML subsystém v detailu
+
+Po refaktoru byl původní monolitický `ml_training.py` rozdělen do pěti modulů. Sekce 2.6 popisuje algoritmické detaily; tato sekce popisuje strukturu souborů.
+
+### 10.1 `ml_training.py` — dispatcher
+
+Tenká orchestrační vrstva:
+
+- `train_model(pipeline, target_column, target_mode, progress_cb=...)` — volá klasifikační nebo regresní větev podle `target_mode`
+- `predict_batch(pipeline, testing_df, progress_cb=...)` — stejný dispatcher pro predikci
+- `_make_progress_cb(...)` — helper pro publikaci progressu do `jobs` registru
+- Konstanty: `RULEKIT_WEIGHT = 0.4`, `XGB_WEIGHT = 0.6`, `CLASSIFICATION_POSITIVE_THRESHOLD = 0.45`
+
+Neobsahuje trénovací logiku. Pokud se mění preprocessing nebo metriky, editují se níže uvedené moduly.
+
+### 10.2 `ml_classification.py` — klasifikační větev
+
+- `_validate_classification_target(df, column)` — odmítne numerické vysokokardinalitní sloupce (pravděpodobně regrese), ID-like sloupce (většina tříd = singleton) a prázdné cíle
+- `_resolve_positive_label(classes)` — určí positive label (env `CLASSIFICATION_POSITIVE_LABEL` > heuristika `positive/yes/true/1` > méně četná třída)
+- `_compute_classification_metrics(y_true, y_pred, y_proba)` — vrací accuracy, balanced_accuracy, f1_macro, precision_macro, recall_macro, mcc, confusion_matrix, per-class breakdown
+- `_run_cross_validation(X, y, model_factory, n_folds)` — `StratifiedKFold`, aggregátor CV metrik
+
+### 10.3 `ml_regression.py` — regresní větev
+
+- `_train_regression_branch(...)` — fit RuleKit `RuleRegressor` + XGBoost `XGBRegressor`, ensemble s váhami `RULEKIT_WEIGHT/XGB_WEIGHT`
+- Feature importance ze dvou zdrojů (`feature_importances_` z XGB, frekvence v pravidlech z RuleKitu)
+- K-fold CV (ne stratifikovaný — klasifikační stratifikace je v `ml_classification`)
+- Overfitting check: pokud `cv_mse > 2 × training_mse`, přidá warning do výsledků
+
+### 10.4 `ml_preprocessing.py` — feature pipeline
+
+- Median imputer pro numerické featury (zachová distribuci lépe než mean)
+- One-hot encoding kategoriálních featur (`pd.get_dummies` s `drop_first=False`)
+- `_oversample_minority(X, y, strategy)` — pro silně nevyvážené klasifikační úlohy; prahy nastaveny tak, aby se neaplikovalo zbytečně na mírnou nerovnováhu
+- Alignment testovacích features na training columns (chybějící = 0, přebývající se dropnou)
+
+### 10.5 `ml_rules.py` — interpretabilita pravidel
+
+- `_extract_rules(model)` — převede RuleKit Java objekt na seznam lidsky čitelných stringů
+- `_count_rule_features(rules)` — frekvence každé featury v conditions pravidel (alternativní feature importance)
+- `_find_covering_rule(rules, feature_row)` — pro každou predikci najde pravidlo, které řádek pokrývá; zobrazuje se ve frontend sloupci `rule_applied`
+
+---
+
+## 11. Utility moduly
+
+Malé, testovatelné funkce používané napříč backendem. Jsou pokryty unit testy (viz sekce 13).
+
+### 11.1 `utils/csv_utils.py`
+
+- `normalize_media_name(name)` — normalizuje název média (strip, lowercase, odstranění přípony), používá se při párování CSV labels s extrahovanými featurami
+- `load_labels_csv(path)` — robustní CSV loader (automatická detekce separátoru, ošetření BOM)
+
+### 11.2 `utils/target_context.py`
+
+- `find_target_column(df, requested)` — case-insensitive resolver; pokud uživatel uvede `"Score"` a CSV má `"score"`, najde ho
+- `build_labels_context(df, target_column)` — vrátí `{media_name → label}` dict s normalizovanými klíči (používá `normalize_media_name`)
+- Používá se v train i predict větvi, aby párování extraction ↔ labels bylo deterministické
+
+### 11.3 `utils/ollama_errors.py`
+
+Konsoliduje detekční predikáty, které byly dříve duplikované v `openai_service.py` i `feature_discovery.py`:
+
+- `is_gpu_load_error(exc)` — `True` pro chyby typu GPU OOM, `load request`, konkrétní EOF patterns
+- `is_transient_ollama_error(exc)` — nadmnožina zahrnující i dočasnou nedostupnost (connection refused)
+
+Tento modul je jediné správné místo, kde se rozhoduje, jestli chybu retry-ovat.
+
+### 11.4 `utils/retry.py`
+
+- `retry_with_backoff(fn, *, max_attempts=3, base_delay=5.0, max_delay=60.0, should_retry=None, on_retry=None)`
+- Exponenciální doubling (5 s → 10 s → 20 s, …) s horním stropem `max_delay`
+- `should_retry` predikát (default `None` = retry na každou `Exception`); typicky se předá `is_gpu_load_error`
+- `on_retry(attempt, delay, exc)` callback pro logování
+- Po vyčerpání `max_attempts` propaguje poslední výjimku s kontextem
+
+### 11.5 `utils/file_utils.py`
+
+ZIP extrakce a iterace médií v uploadu — bez speciálního chování hodného detailní dokumentace.
+
+---
+
+## 12. Error handling a retry strategie
+
+Tato sekce shrnuje, jak backend řeší chyby napříč pipeline.
+
+### 12.1 Transient Ollama chyby
+
+Detekce: `utils.ollama_errors.is_gpu_load_error` / `is_transient_ollama_error`.
+
+Příklady chyb považovaných za transient:
+
+- `do load request: ... EOF` — souběžný load stejného modelu
+- `CUDA out of memory`, `GPU load failed` — dočasné přetížení VRAM
+- `connection refused` — Ollama právě startuje / restartuje
+
+**Strategie:**
+
+1. `ollama_exclusive()` lock zabrání většině collision chyb
+2. Zbylé transient chyby se retryujou přes `retry_with_backoff(..., should_retry=is_gpu_load_error)`
+3. Po `max_attempts=3` se výjimka propaguje nahoru — job selže s chybovou hláškou ve `status.details.error`
+4. CPU fallback (`OLLAMA_CPU_FALLBACK=1`) poskytuje degradovaný režim místo plného selhání
+
+### 12.2 Strukturované logování
+
+Každý modul používá `logging.getLogger(__name__)`. Místo tichého `except Exception: pass` se používá `logger.exception(...)`, aby byla traceback dohledatelná.
+
+Log levely:
+
+- `DEBUG` — per-médium progress, prompty
+- `INFO` — start/konec fáze, session ID, target column
+- `WARNING` — overfitting warning, retry s backoffem
+- `ERROR` / `EXCEPTION` — hard failure s traceback
+
+V produkci (Gunicorn + PM2) se logy posílají do `pm2 logs backend`.
+
+### 12.3 Frontend error propagace
+
+Backend `/status/<job_id>` vrací `{"done": true, "error": "..."}` při selhání jobu. Frontend:
+
+- Zobrazí banner s chybou (`errorHelpers.ts` formátuje user-friendly hlášku)
+- Zachová vstupní data ve fázi, aby uživatel mohl zkusit znovu bez nahrávání
+- Pro transient Ollama chyby nabízí explicit retry button (nevolá `/reset`)
+
+### 12.4 State recovery po reloadu
+
+Pokud uživatel provede F5 během async jobu:
+
+1. Frontend načte `GET /state` → získá aktuální `step`, `target_column`, `feature_spec`, atd.
+2. Pokud state obsahuje `active_job_id`, frontend se napojí na stávající polling (neuresetuje progress)
+3. Po dokončení jobu se UI vrátí do správného kroku pipeline
+
+Tento mechanismus je robustní vůči restartu backendu, pokud checkpoint soubor (`checkpoints/sessions/<session_id>/state.json`) existuje.
+
+---
+
+## 13. Vývoj a testování
+
+### 13.1 Lokální dev setup
+
+Viz kořenový [README.md](../README.md) — obsahuje quick-start pro backend, frontend i Ollamu.
+
+### 13.2 Pytest — unit testy util modulů
+
+Konfigurace:
+
+- `backend/pytest.ini` — základní nastavení (test paths, collect pattern)
+- `backend/requirements-dev.txt` — `pytest>=7.4` (instaluje se zvlášť od `requirements-server.txt`)
+- `backend/tests/conftest.py` — přidává backend root do `sys.path`, aby testy viděly `utils/`, `pipeline/`, atd.
+
+Spuštění:
+
+```bash
+cd backend
+pip install -r requirements-dev.txt
+pytest
+```
+
+### 13.3 Pokrytí testy
+
+| Test soubor | Testovaný modul | Počet testů |
+|---|---|---|
+| `tests/test_csv_utils.py` | `utils.csv_utils.normalize_media_name` | 9 |
+| `tests/test_feature_schema.py` | `pipeline.feature_schema.normalize_feature_spec` | 12 |
+| `tests/test_target_context.py` | `utils.target_context.find_target_column`, `build_labels_context` | 11 |
+| `tests/test_retry.py` | `utils.retry.retry_with_backoff` | 8 |
+
+Testy jsou úmyslně omezené na čisté (deterministické, side-effect-free) funkce. Integrační testy s Ollamou a RuleKitem by vyžadovaly reálný runtime a jsou mimo scope.
+
+### 13.4 Manuální smoke test před nasazením
+
+1. `cd backend && python -c "from app import create_app; create_app()"` — import sanity
+2. `cd backend && pytest` — unit testy
+3. `cd backend && flask --app app run --port 5000` + `curl http://localhost:5000/health` — liveness
+4. `cd frontend && npm run build` — TypeScript + Vite build bez chyb
+5. `cd frontend && npm run dev` — projít celou 5-fázovou pipeline na malém datasetu
+6. F5 během aktivní fáze — ověřit state recovery
+
+### 13.5 Rozšíření testů — co stojí za úvahu
+
+- `pipeline/feature_validation.py` — clamping numerických hodnot do `[min, max]` rozsahu je čistá funkce
+- `pipeline/ml_preprocessing._align_columns(...)` — alignment training vs. testing columns
+- `utils/ollama_errors` — predikáty na pre-kanonizované exception payloady
+
+Frontend testy (Vitest, RTL) nejsou v repozitáři nastavené; byla by to samostatná iterace.
