@@ -28,4 +28,4 @@ jobs:
         run: |
           eval "$(ssh-agent -s)"
           ssh-add - <<< "${{ secrets.BACKEND_SSH_KEY }}"
-          ssh -o StrictHostKeyChecking=no kovm23@llm.vse.cz "cd ~/BP-featurelab/microsoft-edu-ai-hackathon-2025/backend && git pull && pm2 reload ecosystem.config.js --update-env"
+          ssh -o StrictHostKeyChecking=no kovm23@llm.vse.cz "cd ~/BP/microsoft-edu-ai-hackathon-2025/backend && git pull && pm2 reload ecosystem.config.js --update-env"
