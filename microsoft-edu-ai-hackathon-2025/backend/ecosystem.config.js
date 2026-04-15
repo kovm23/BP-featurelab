@@ -9,7 +9,7 @@ module.exports = {
     {
       name: "backend",
       script: gunicornPath,
-      args: "-w 1 -b 0.0.0.0:5000 --timeout 1200 --graceful-timeout 60 app:app",
+      args: "-w 2 -b 0.0.0.0:5000 --timeout 1200 --graceful-timeout 60 --max-requests 200 --max-requests-jitter 50 app:app",
       cwd: __dirname,
       interpreter: "none",
       env: {

@@ -4,7 +4,8 @@ Tento scénář počítá s tím, že:
 
 - backend běží na jiném serveru
 - `llmfeatures.vse.cz` hostuje pouze statický frontend build
-- Apache zde neslouží jako reverse proxy na Flask, jen servíruje `frontend/dist`
+- backend není běžně dostupný z internetu
+- Apache servíruje `frontend/dist` a zároveň proxyuje `/api/*` na interní backend
 
 ## Co na frontend serveru opravdu potřebuješ
 
@@ -37,13 +38,7 @@ cp .env.example .env.production.local
 Do `frontend/.env.production.local` nastav:
 
 ```bash
-VITE_API_BASE=https://BACKEND_PUBLIC_ORIGIN
-```
-
-Příklad:
-
-```bash
-VITE_API_BASE=https://llm-backend.vse.cz
+VITE_API_BASE=/api
 ```
 
 Pak frontend buildni:
@@ -69,21 +64,30 @@ Konfigurace je připravena v [apache-llmfeatures.vse.cz.conf](/home/kovm23/BP/mi
 
 ```bash
 sudo cp ~/BP/microsoft-edu-ai-hackathon-2025/docs/apache-llmfeatures.vse.cz.conf /etc/apache2/sites-available/llmfeatures.vse.cz.conf
-sudo a2enmod rewrite
+sudo a2enmod rewrite proxy proxy_http
 sudo a2ensite llmfeatures.vse.cz.conf
 sudo apache2ctl configtest
 sudo systemctl reload apache2
 ```
 
-## 4. CORS na backend serveru
+Apache pak bude:
 
-Protože frontend poběží na jiné doméně, backend musí povolit:
+- servírovat SPA z `/var/www/llmfeatures/current`
+- přeposílat `/api/*` na `http://llm.vse.cz:5000/*`
+
+Tím pádem browser už nebude volat backend napřímo a nepotřebuje veřejnou backend URL.
+
+## 4. Backend server `llm.vse.cz`
+
+Na backend serveru musí běžet aplikace na portu `5000` a frontend server na ni musí mít síťový přístup.
+
+V `backend/.env` doporučuji ponechat:
 
 ```bash
 ALLOWED_ORIGINS=http://llmfeatures.vse.cz,https://llmfeatures.vse.cz
 ```
 
-Pokud backend poběží jen přes HTTP, ponech jen HTTP variantu. Pokud bude přidané HTTPS, nech obě.
+V proxy režimu to není hlavní integrační mechanismus, protože browser komunikuje se stejným originem `llmfeatures.vse.cz`, ale tato allowlist hodnota je pořád bezpečná a použitelná.
 
 ## 5. Co dělat s chybou `Temporary failure resolving 'proxy.vse.cz'`
 
@@ -100,5 +104,6 @@ Důležité pro split deploy:
 Po těchto krocích bude:
 
 - `http://llmfeatures.vse.cz/` servírovat frontend SPA
-- frontend posílat API requesty na backend server přes `VITE_API_BASE`
-- backend a frontend nasazené odděleně
+- frontend posílat API requesty na `http://llmfeatures.vse.cz/api/*`
+- Apache na `llmfeatures.vse.cz` tyto requesty přepošle na interní backend `http://llm.vse.cz:5000/*`
+- backend a frontend nasazené odděleně bez nutnosti zveřejnit backend přímo do internetu
