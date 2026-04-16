@@ -166,6 +166,10 @@ export const TRAINING_TRANSLATIONS = {
     possibleOverfitting: "possible overfitting",
     queueBusyMessage:
       "Model is currently busy. Additional requests are waiting in the queue ({count}), so processing may take longer than usual.",
+    csvFormatHint:
+      'CSV format: first column = filename without extension. E.g. file "video.mp4" → CSV value "video".',
+    extractionStallWarning:
+      "Extraction is taking longer than usual — the model may be busy or processing a large file.",
   },
   cs: {
     phaseTitle1: "Fáze 1: Objevování featur",
@@ -334,11 +338,16 @@ export const TRAINING_TRANSLATIONS = {
     possibleOverfitting: "možné přetrénování",
     queueBusyMessage:
       "Model je momentálně vytížený. Ve frontě čekají další požadavky ({count}), takže zpracování může trvat déle než obvykle.",
+    csvFormatHint:
+      'Formát CSV: první sloupec = název souboru bez přípony. Např. soubor "video.mp4" → hodnota v CSV "video".',
+    extractionStallWarning:
+      "Extrakce trvá déle než obvykle — model je pravděpodobně zaneprázdněn nebo se zpracovává velký soubor.",
   },
 } as const;
 
 export type TrainingTranslations = (typeof TRAINING_TRANSLATIONS)["cs"];
 
 export function getTrainingTranslations(uiLanguage: "cs" | "en" = "cs"): TrainingTranslations {
-  return TRAINING_TRANSLATIONS[uiLanguage];
+  // Cast is safe: EN and CS share the same keys with string values.
+  return TRAINING_TRANSLATIONS[uiLanguage] as unknown as TrainingTranslations;
 }

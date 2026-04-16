@@ -169,8 +169,11 @@ export function tileBg(type: FileType | null) {
 // =====================================================
 // COPY BUTTON COMPONENT
 // =====================================================
-export function CopyButton({ getText }: { getText: () => string }) {
+export function CopyButton({ getText, uiLanguage = "cs" }: { getText: () => string; uiLanguage?: "cs" | "en" }) {
   const [copied, setCopied] = useState(false);
+  const labelCopy = uiLanguage === "en" ? "Copy" : "Kopírovat";
+  const labelCopied = uiLanguage === "en" ? "Copied!" : "Zkopírováno";
+  const titleLabel = uiLanguage === "en" ? "Copy to clipboard" : "Zkopírovat do schránky";
   return (
     <button
       className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs hover:bg-slate-100 dark:hover:bg-white/10"
@@ -183,14 +186,15 @@ export function CopyButton({ getText }: { getText: () => string }) {
           /* clipboard unavailable */
         }
       }}
-      title="Zkopírovat do schránky"
+      title={titleLabel}
+      aria-label={titleLabel}
     >
       {copied ? (
-        <Check className="h-3.5 w-3.5" />
+        <Check className="h-3.5 w-3.5" aria-hidden="true" />
       ) : (
-        <Copy className="h-3.5 w-3.5" />
+        <Copy className="h-3.5 w-3.5" aria-hidden="true" />
       )}
-      {copied ? "Zkopírováno" : "Kopírovat"}
+      {copied ? labelCopied : labelCopy}
     </button>
   );
 }

@@ -45,7 +45,7 @@ def api_predict():
             })
         except Exception as e:
             logger.exception("Prediction failed: %s", e)
-            set_job(job_id, {"progress": 0, "done": True, "error": str(e)})
+            set_job(job_id, {"progress": 100, "done": True, "error": str(e)})
 
     threading.Thread(target=_run, daemon=True).start()
     return jsonify({"job_id": job_id})

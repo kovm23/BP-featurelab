@@ -65,28 +65,34 @@ export function TrainingResultsCard({
                 {tr.crossValF1Macro}: <strong>{Number(trainResult.cv_f1_macro).toFixed(4)}</strong>
               </p>
             )}
-            {trainResult.cv_precision_macro != null && (
-              <p>
-                {tr.crossValPrecision}:{" "}
-                <strong>{Number(trainResult.cv_precision_macro).toFixed(4)}</strong>
-              </p>
-            )}
-            {trainResult.cv_recall_macro != null && (
-              <p>
-                {tr.crossValRecall}: <strong>{Number(trainResult.cv_recall_macro).toFixed(4)}</strong>
-              </p>
-            )}
             {trainResult.cv_mcc != null && (
               <p>
                 {tr.matthews} CV: <strong>{Number(trainResult.cv_mcc).toFixed(4)}</strong>
               </p>
             )}
+            {/* Secondary metrics — collapsed */}
             {hasAdvancedClassificationMetrics && (
               <details className={`mt-2 rounded border p-2 ${cls(deluxe, "border-slate-200", "border-slate-700")}`}>
                 <summary className={`cursor-pointer font-medium ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>
                   {tr.advancedMetrics}
                 </summary>
                 <div className="mt-2 space-y-0.5">
+                  {trainResult.cv_precision_macro != null && (
+                    <p>
+                      {tr.crossValPrecision}:{" "}
+                      <strong>{Number(trainResult.cv_precision_macro).toFixed(4)}</strong>
+                    </p>
+                  )}
+                  {trainResult.cv_recall_macro != null && (
+                    <p>
+                      {tr.crossValRecall}: <strong>{Number(trainResult.cv_recall_macro).toFixed(4)}</strong>
+                    </p>
+                  )}
+                  {trainResult.cv_accuracy != null && (
+                    <p>
+                      {tr.crossValAccuracy}: <strong>{Number(trainResult.cv_accuracy).toFixed(4)}</strong>
+                    </p>
+                  )}
                   {trainResult.train_accuracy != null && (
                     <p>
                       {tr.trainAccuracy}: <strong>{Number(trainResult.train_accuracy).toFixed(4)}</strong>
@@ -105,21 +111,6 @@ export function TrainingResultsCard({
                   {trainResult.train_mcc != null && (
                     <p>
                       {tr.matthews}: <strong>{Number(trainResult.train_mcc).toFixed(4)}</strong>
-                    </p>
-                  )}
-                  {trainResult.cv_accuracy != null && (
-                    <p>
-                      {tr.crossValAccuracy}: <strong>{Number(trainResult.cv_accuracy).toFixed(4)}</strong>
-                    </p>
-                  )}
-                  {trainResult.cv_precision_macro != null && (
-                    <p>
-                      {tr.crossValPrecision}: <strong>{Number(trainResult.cv_precision_macro).toFixed(4)}</strong>
-                    </p>
-                  )}
-                  {trainResult.cv_recall_macro != null && (
-                    <p>
-                      {tr.crossValRecall}: <strong>{Number(trainResult.cv_recall_macro).toFixed(4)}</strong>
                     </p>
                   )}
                 </div>

@@ -241,7 +241,7 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
             onProgress: (tick: StatusPayload) => {
               setProgress(Math.max(0, Math.min(100, tick.progress ?? 0)));
               setProgressLabel(tick.stage || "");
-              if (tick.done && tick.details?.status === "success") {
+              if (tick.done && tick.details?.status === "success" && 'dataset_X' in tick.details) {
                 clearActiveJob();
                 setData(tick.details.dataset_X);
                 if (isTraining) setDatasetYColumns(tick.details.dataset_Y_columns || null);
@@ -455,7 +455,7 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
           onProgress: (s: StatusPayload) => {
             setProgress(Math.max(0, Math.min(100, s.progress ?? 0)));
             setProgressLabel(s.stage || "");
-            if (s.done && s.details?.status === "success") {
+            if (s.done && s.details?.status === "success" && 'dataset_X' in s.details) {
               clearActiveJob();
               setData(s.details.dataset_X);
               if (isTraining) setDatasetYColumns(s.details.dataset_Y_columns || null);

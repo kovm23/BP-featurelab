@@ -97,11 +97,17 @@ export function TestingExtractionPhasePanel(props: {
             type="text"
             value={serverPathTest}
             onChange={(e) => setServerPathTest(e.target.value)}
-            placeholder="/home/kovm23/test.zip"
+            placeholder="/path/to/test.zip"
             className={`w-full px-3 py-2 rounded border text-sm font-mono ${cls(deluxe, "bg-white border-slate-300 text-slate-800", "bg-slate-900 border-slate-600 text-slate-200")}`}
           />
         </div>
       )}
+
+      <div className={`p-3 rounded-lg border ${cls(deluxe, "bg-blue-50/70 border-blue-200", "bg-blue-900/20 border-blue-800/50")}`}>
+        <p className={`text-xs font-mono ${cls(deluxe, "text-blue-700", "text-blue-300/80")}`}>
+          {tr.csvFormatHint}
+        </p>
+      </div>
 
       {ollamaOk === false && <OllamaWarning deluxe={deluxe} tr={tr} recheckOllama={recheckOllama} />}
 
@@ -133,9 +139,10 @@ export function TestingExtractionPhasePanel(props: {
         <div className="space-y-2">
           <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel} etaText={etaText} />
           {testExtractStalled && (
-            <p className={`text-xs ${cls(deluxe, "text-slate-500", "text-slate-400")}`}>
-              ℹ {tr.processingMayTakeLong}
-            </p>
+            <div className={`flex items-start gap-2 p-2 rounded-lg border text-xs ${cls(deluxe, "bg-amber-50 border-amber-200 text-amber-800", "bg-amber-900/20 border-amber-700/50 text-amber-300")}`}>
+              <span aria-hidden="true">⏳</span>
+              <span>{tr.extractionStallWarning}</span>
+            </div>
           )}
           {onCancel && (
             <Button variant="outline" size="sm" onClick={onCancel} className="text-xs">

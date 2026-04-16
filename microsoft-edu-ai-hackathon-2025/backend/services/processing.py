@@ -189,6 +189,8 @@ def process_single_media(
             # 3. Build full prompt with transcript + timestamps context
             full_prompt = prompt
             if transcript_text:
+                if len(transcript_text) > 12000:
+                    logger.warning("Transcript truncated to 12000 chars for %s", media_path)
                 full_prompt += f"\n\nAudio transcript:\n{transcript_text[:12000]}"
             if timestamps:
                 full_prompt += f"\n\nVisual frame timestamps: {', '.join(timestamps)}"

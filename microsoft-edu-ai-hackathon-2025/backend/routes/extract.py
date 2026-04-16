@@ -52,7 +52,7 @@ def _start_extraction(pipeline, media_files, feature_spec, model_name,
                 except OSError:
                     pass
 
-    threading.Thread(target=_run, daemon=False).start()
+    threading.Thread(target=_run, daemon=True).start()
     return job_id
 
 

@@ -49,5 +49,37 @@ export function enrichError(raw: string, uiLanguage: "cs" | "en" = "cs"): { mess
       hint: t.missingLabelsHint,
     };
   }
+  if (raw.toLowerCase().includes("minimum 2") || raw.toLowerCase().includes("not enough samples") || raw.toLowerCase().includes("at least 2")) {
+    return {
+      message: raw,
+      hint: uiLanguage === "en"
+        ? "Add at least 2 training samples to the training ZIP."
+        : "Přidejte alespoň 2 trénovací vzorky do trénovacího ZIPu.",
+    };
+  }
+  if (raw.toLowerCase().includes("rulekit") || raw.toLowerCase().includes("java")) {
+    return {
+      message: raw,
+      hint: uiLanguage === "en"
+        ? "RuleKit model error. Try reducing the number of features or adding more training samples."
+        : "Chyba v RuleKit modelu. Zkuste snížit počet featur nebo přidat více trénovacích vzorků.",
+    };
+  }
+  if (raw.toLowerCase().includes("whisper") || raw.toLowerCase().includes("transcription") || raw.toLowerCase().includes("stt")) {
+    return {
+      message: raw,
+      hint: uiLanguage === "en"
+        ? "Audio transcription error. Check that the audio track is accessible and in a supported format (MP4, AVI, MOV, MKV)."
+        : "Chyba při přepisu audia. Zkontrolujte, zda je audio stopa dostupná a ve podporovaném formátu (MP4, AVI, MOV, MKV).",
+    };
+  }
+  if (raw.toLowerCase().includes("timeout") || raw.toLowerCase().includes("timed out") || raw.toLowerCase().includes("eof")) {
+    return {
+      message: raw,
+      hint: uiLanguage === "en"
+        ? "Ollama did not respond in time. Try again — if the issue persists, increase OLLAMA_REQUEST_TIMEOUT in backend .env."
+        : "Ollama neodpověděla včas. Zkuste to znovu — pokud problém přetrvává, zvyšte OLLAMA_REQUEST_TIMEOUT v backend .env.",
+    };
+  }
   return { message: raw };
 }

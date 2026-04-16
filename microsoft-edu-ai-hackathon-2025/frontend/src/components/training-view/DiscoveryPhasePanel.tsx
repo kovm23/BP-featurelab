@@ -141,7 +141,7 @@ export function DiscoveryPhasePanel(props: {
           multiple
           onChange={(e) => {
             if (e.target.files?.length) {
-              setDiscoveryFiles((prev) => [...prev, ...Array.from(e.target.files)]);
+              setDiscoveryFiles((prev) => [...prev, ...Array.from(e.target.files!)]);
             }
           }}
           accept=".zip,video/*,image/*,.mp4,.avi,.mov,.mkv,.png,.jpg,.jpeg"

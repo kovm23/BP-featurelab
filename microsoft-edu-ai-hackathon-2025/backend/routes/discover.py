@@ -90,7 +90,7 @@ def api_discover():
             })
         except Exception as e:
             logger.exception("Discovery failed: %s", e)
-            set_job(job_id, {"progress": 0, "done": True, "error": str(e)})
+            set_job(job_id, {"progress": 100, "done": True, "error": str(e)})
         finally:
             if extract_path:
                 shutil.rmtree(extract_path, ignore_errors=True)
@@ -100,5 +100,5 @@ def api_discover():
                 except OSError as e:
                     logger.debug("Failed to remove temp file %s: %s", p, e)
 
-    threading.Thread(target=_run, daemon=False).start()
+    threading.Thread(target=_run, daemon=True).start()
     return jsonify({"job_id": job_id})

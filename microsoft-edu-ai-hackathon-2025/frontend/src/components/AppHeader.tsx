@@ -53,10 +53,12 @@ export function AppHeader({
       </div>
 
       <div className="flex items-center gap-3">
-        <div className={`p-1 rounded-lg flex ${deluxe ? "bg-white/10" : "bg-slate-200"}`}>
+        <div className={`p-1 rounded-lg flex ${deluxe ? "bg-white/10" : "bg-slate-200"}`} role="group" aria-label={t.language}>
           <button
             onClick={() => setLang("cs")}
-            className={`px-2 py-1 text-xs font-medium rounded-md transition-all ${
+            aria-pressed={lang === "cs"}
+            aria-label="Přepnout jazyk na češtinu"
+            className={`px-2 py-1 text-xs font-medium rounded-md transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${
               lang === "cs"
                 ? deluxe
                   ? "bg-slate-700 text-white shadow"
@@ -65,13 +67,14 @@ export function AppHeader({
                   ? "text-slate-400 hover:text-white"
                   : "text-slate-600 hover:text-slate-900"
             }`}
-            title={t.language}
           >
             CZ
           </button>
           <button
             onClick={() => setLang("en")}
-            className={`px-2 py-1 text-xs font-medium rounded-md transition-all ${
+            aria-pressed={lang === "en"}
+            aria-label="Switch language to English"
+            className={`px-2 py-1 text-xs font-medium rounded-md transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 ${
               lang === "en"
                 ? deluxe
                   ? "bg-slate-700 text-white shadow"
@@ -80,7 +83,6 @@ export function AppHeader({
                   ? "text-slate-400 hover:text-white"
                   : "text-slate-600 hover:text-slate-900"
             }`}
-            title={t.language}
           >
             EN
           </button>
@@ -92,8 +94,9 @@ export function AppHeader({
           className="rounded-full"
           onClick={() => setDeluxe((v) => !v)}
           title={t.toggleTheme}
+          aria-label={t.toggleTheme}
         >
-          {deluxe ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          {deluxe ? <Sun className="h-4 w-4" aria-hidden="true" /> : <Moon className="h-4 w-4" aria-hidden="true" />}
         </Button>
 
         <Button
@@ -102,8 +105,9 @@ export function AppHeader({
           className="rounded-full"
           onClick={() => setShowGuide(true)}
           title={t.guide}
+          aria-label={t.guide}
         >
-          <HelpCircle className="h-4 w-4" />
+          <HelpCircle className="h-4 w-4" aria-hidden="true" />
         </Button>
 
         <Button variant="outline" onClick={handleReset}>

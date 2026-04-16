@@ -55,7 +55,7 @@ def api_train():
             })
         except Exception as e:
             logger.exception("Training failed: %s", e)
-            set_job(job_id, {"progress": 0, "done": True, "error": str(e)})
+            set_job(job_id, {"progress": 100, "done": True, "error": str(e)})
 
     threading.Thread(target=_run, daemon=True).start()
     return jsonify({"job_id": job_id})

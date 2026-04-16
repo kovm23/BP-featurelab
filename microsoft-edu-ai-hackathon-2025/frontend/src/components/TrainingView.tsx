@@ -104,7 +104,9 @@ function PhaseStepper({
               type="button"
               disabled={!canClick}
               onClick={() => canClick && onGoToStep?.(phase.num)}
-              className={`text-xs px-2 py-1 rounded-full font-medium transition-colors ${
+              aria-current={isCurrent ? "step" : undefined}
+              aria-label={`${isCompleted ? "✓ " : ""}Phase ${phase.num}: ${phase.short}${isCurrent ? " (current)" : ""}`}
+              className={`text-xs px-2 py-1 rounded-full font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-1 ${
                 isCurrent
                   ? "bg-blue-500 text-white"
                   : isCompleted
@@ -116,7 +118,7 @@ function PhaseStepper({
                     : cls(deluxe, "bg-slate-100 text-slate-400", "bg-slate-700 text-slate-500")
               } disabled:cursor-default`}
             >
-              {isCompleted && <CheckCircle2 className="inline h-3 w-3 mr-0.5 -mt-0.5" />}
+              {isCompleted && <CheckCircle2 className="inline h-3 w-3 mr-0.5 -mt-0.5" aria-hidden="true" />}
               {phase.num}. {phase.short}
             </button>
           </React.Fragment>
@@ -247,13 +249,25 @@ export function TrainingView({
       {error && (() => {
         const { message, hint } = enrichError(error, uiLanguage);
         return (
-          <div ref={errorRef} className={`mb-4 flex items-start gap-2 p-3 rounded-lg border ${cls(deluxe, "bg-red-50 border-red-200 text-red-800", "bg-red-900/30 border-red-800/50 text-red-300")}`}>
-            <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+          <div
+            ref={errorRef}
+            role="alert"
+            aria-live="assertive"
+            className={`mb-4 flex items-start gap-2 p-3 rounded-lg border ${cls(deluxe, "bg-red-50 border-red-200 text-red-800", "bg-red-900/30 border-red-800/50 text-red-300")}`}
+          >
+            <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" aria-hidden="true" />
             <div className="flex-1">
               <p className="text-sm">{message}</p>
               {hint && <p className="text-xs mt-1 italic opacity-80">{hint}</p>}
+              <p className="text-xs mt-1 opacity-60">
+                {uiLanguage === "en" ? "Dismiss this message and try the action again." : "Zavřete tuto zprávu a zkuste akci znovu."}
+              </p>
             </div>
-            <button onClick={clearError} className="p-0.5 rounded hover:bg-red-100">
+            <button
+              onClick={clearError}
+              aria-label={uiLanguage === "en" ? "Dismiss error" : "Zavřít chybu"}
+              className={`p-0.5 rounded ${cls(deluxe, "hover:bg-red-100", "hover:bg-red-900/50")} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400`}
+            >
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
