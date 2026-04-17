@@ -88,7 +88,7 @@ Testy pokrývají `utils/csv_utils.py`, `pipeline/feature_schema.py`, `utils/tar
 
 Viz [docs/migration.md](microsoft-edu-ai-hackathon-2025/docs/migration.md). Ve zkratce:
 
-- Backend běží na stroji s GPU pod Gunicornem (1 worker, 8 threads, gthread, timeout 1200 s, max-requests 200)
+- Backend běží na stroji s GPU pod Gunicornem (1 worker, 8 threads, gthread, timeout 1200 s)
 - Frontend je statický build servírovaný přes Apache na `llmfeatures.vse.cz`
 - Cloudflare Worker směruje `/discover`, `/extract`, `/train`, `/predict`, `/status/*`, `/state`, `/queue-info`, `/health` na backend tunel
 - Sessions se izolují přes `X-Session-ID` header

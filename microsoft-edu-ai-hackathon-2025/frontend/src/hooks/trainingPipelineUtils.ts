@@ -91,6 +91,8 @@ const TRAINING_PIPELINE_TEXT = {
     predictionFailed: "Prediction failed",
     predictingInProgress: "Predicting...",
     phase5Failed: "Phase 5 failed",
+    reconnecting: "Reconnecting to server…",
+    connectionLost: "connection to server was lost",
   },
   cs: {
     restoring: "Obnovuji...",
@@ -109,6 +111,8 @@ const TRAINING_PIPELINE_TEXT = {
     predictionFailed: "Predikce selhala",
     predictingInProgress: "Predikuji...",
     phase5Failed: "Fáze 5 selhala",
+    reconnecting: "Obnovuji spojení se serverem…",
+    connectionLost: "spojení se serverem bylo přerušeno",
   },
 } as const;
 

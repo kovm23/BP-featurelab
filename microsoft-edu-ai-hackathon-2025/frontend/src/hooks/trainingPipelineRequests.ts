@@ -14,7 +14,7 @@ import {
   TRAIN_URL,
   sessionHeaders,
 } from "@/lib/api";
-import { pollProgress } from "@/hooks/usePollProgress";
+import { pollProgress, type PollReason } from "@/hooks/usePollProgress";
 
 export interface ExtractRequestConfig {
   datasetType: "training" | "testing";
@@ -60,8 +60,9 @@ export async function pollDiscoveryJob(params: {
   jobId: string;
   signal: AbortSignal;
   onProgress: (payload: StatusPayload) => void;
-}) {
-  await pollProgress(params.jobId, params.onProgress, params.signal);
+  onReconnecting?: (attempts: number) => void;
+}): Promise<PollReason> {
+  return pollProgress(params.jobId, params.onProgress, params.signal, params.onReconnecting);
 }
 
 export async function submitExtractRequest(config: ExtractRequestConfig) {
@@ -105,8 +106,9 @@ export async function pollExtractJob(params: {
   jobId: string;
   signal: AbortSignal;
   onProgress: (payload: StatusPayload) => void;
-}) {
-  await pollProgress(params.jobId, params.onProgress, params.signal);
+  onReconnecting?: (attempts: number) => void;
+}): Promise<PollReason> {
+  return pollProgress(params.jobId, params.onProgress, params.signal, params.onReconnecting);
 }
 
 export async function submitTrainRequest(params: {
@@ -130,8 +132,9 @@ export async function pollTrainJob(params: {
   jobId: string;
   signal: AbortSignal;
   onProgress: (payload: StatusPayload) => void;
-}) {
-  await pollProgress(params.jobId, params.onProgress, params.signal);
+  onReconnecting?: (attempts: number) => void;
+}): Promise<PollReason> {
+  return pollProgress(params.jobId, params.onProgress, params.signal, params.onReconnecting);
 }
 
 export async function submitPredictRequest(params: {
@@ -165,8 +168,9 @@ export async function pollPredictJob(params: {
   jobId: string;
   signal: AbortSignal;
   onProgress: (payload: StatusPayload) => void;
-}) {
-  await pollProgress(params.jobId, params.onProgress, params.signal);
+  onReconnecting?: (attempts: number) => void;
+}): Promise<PollReason> {
+  return pollProgress(params.jobId, params.onProgress, params.signal, params.onReconnecting);
 }
 
 export type TrainPollResult = StatusPayload & { details?: TrainResult };

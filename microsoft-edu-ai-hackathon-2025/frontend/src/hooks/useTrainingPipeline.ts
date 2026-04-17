@@ -204,11 +204,29 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
         setProgress(Math.max(0, Math.min(100, s.progress ?? 0)));
         setProgressLabel(s.stage || tx.restoring);
 
+        const resumeReconnecting = (attempts: number) => {
+          if (attempts > 0) setProgressLabel(tx.reconnecting);
+        };
+        const resumeRecover = async (reason: "done" | "aborted" | "lost") => {
+          if (reason !== "lost") return;
+          try {
+            const st = await fetchJson<PipelineState>(STATE_URL, {
+              headers: sessionHeaders(),
+              cache: "no-store",
+            });
+            applyBackendPipelineState(st, pipelineRuntimeSetters);
+          } catch {
+            /* ignore — user-facing error already cleared via clearActiveJob below */
+          }
+          clearActiveJob();
+        };
+
         if (saved.phase === "discover") {
           setIsDiscovering(true);
           pollDiscoveryJob({
             jobId: saved.job_id,
             signal: ctrl.signal,
+            onReconnecting: resumeReconnecting,
             onProgress: (tick) => {
               setProgress(Math.max(0, Math.min(100, tick.progress ?? 0)));
               setProgressLabel(tick.stage || "");
@@ -229,7 +247,7 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
                 setError(tx.phase1Failed + ": " + tick.error);
               }
             },
-          }).finally(() => { setIsDiscovering(false); setActiveCtrl(null); });
+          }).then(resumeRecover).finally(() => { setIsDiscovering(false); setActiveCtrl(null); });
         } else if (saved.phase === "extract_training" || saved.phase === "extract_testing") {
           const isTraining = saved.phase === "extract_training";
           const setBusy = isTraining ? setExtractionBusy : setTestExtractionBusy;
@@ -238,6 +256,7 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
           pollExtractJob({
             jobId: saved.job_id,
             signal: ctrl.signal,
+            onReconnecting: resumeReconnecting,
             onProgress: (tick: StatusPayload) => {
               setProgress(Math.max(0, Math.min(100, tick.progress ?? 0)));
               setProgressLabel(tick.stage || "");
@@ -251,12 +270,13 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
                 setError(`${tx.extractFailed}: ${tick.error}`);
               }
             },
-          }).finally(() => { setBusy(false); setActiveCtrl(null); });
+          }).then(resumeRecover).finally(() => { setBusy(false); setActiveCtrl(null); });
         } else if (saved.phase === "train") {
           setTrainingBusy(true);
           pollTrainJob({
             jobId: saved.job_id,
             signal: ctrl.signal,
+            onReconnecting: resumeReconnecting,
             onProgress: (tick) => {
               setProgress(Math.max(0, Math.min(100, tick.progress ?? 0)));
               setProgressLabel(tick.stage || tx.trainingInProgress);
@@ -269,12 +289,13 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
                 setError(tx.phase3Failed + ": " + tick.error);
               }
             },
-          }).finally(() => { setTrainingBusy(false); setActiveCtrl(null); });
+          }).then(resumeRecover).finally(() => { setTrainingBusy(false); setActiveCtrl(null); });
         } else if (saved.phase === "predict") {
           setPredictBusy(true);
           pollPredictJob({
             jobId: saved.job_id,
             signal: ctrl.signal,
+            onReconnecting: resumeReconnecting,
             onProgress: (tick) => {
               setProgress(Math.max(0, Math.min(100, tick.progress ?? 0)));
               setProgressLabel(tick.stage || tx.predictingInProgress);
@@ -289,7 +310,7 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
                 setError(tx.phase5Failed + ": " + tick.error);
               }
             },
-          }).finally(() => { setPredictBusy(false); setActiveCtrl(null); });
+          }).then(resumeRecover).finally(() => { setPredictBusy(false); setActiveCtrl(null); });
         }
       })
       .catch(() => {
@@ -299,6 +320,29 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
 
   const anyBusy = isDiscovering || extractionBusy || trainingBusy || testExtractionBusy || predictBusy;
   const { ollamaOk, queueBusy, queuedCount, recheckOllama } = usePipelineRuntime(anyBusy);
+
+  // Called when pollProgress returns "lost": the backend lost the job handle
+  // (worker restart, TTL cleanup, etc.). We try to hydrate the final outcome
+  // from the persisted /state snapshot so the user doesn't have to refresh.
+  async function tryRecoverFromState(): Promise<boolean> {
+    clearActiveJob();
+    try {
+      const state = await fetchJson<PipelineState>(STATE_URL, {
+        headers: sessionHeaders(),
+        cache: "no-store",
+      });
+      applyBackendPipelineState(state, pipelineRuntimeSetters);
+      return !!state.completed_phases && state.completed_phases.length > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  function handleReconnecting(attempts: number) {
+    if (attempts > 0) {
+      setProgressLabel(tx.reconnecting);
+    }
+  }
 
   // --- Persistence (lightweight — only metadata, no large datasets) ---
   function persist() {
@@ -375,9 +419,10 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
         saveActiveJob({ job_id: data.job_id, phase: "discover" });
         const ctrl = new AbortController();
         setActiveCtrl(ctrl);
-        await pollDiscoveryJob({
+        const reason = await pollDiscoveryJob({
           jobId: data.job_id,
           signal: ctrl.signal,
+          onReconnecting: handleReconnecting,
           onProgress: (s) => {
             setProgress(Math.max(0, Math.min(100, s.progress ?? 0)));
             setProgressLabel(s.stage || "");
@@ -399,6 +444,10 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
             }
           },
         });
+        if (reason === "lost") {
+          const recovered = await tryRecoverFromState();
+          if (!recovered) setError(tx.connectionLost);
+        }
       } else if (data.suggested_features) {
         setFeatureSpec(data.suggested_features);
       }
@@ -449,9 +498,10 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
         });
         const ctrl = new AbortController();
         setActiveCtrl(ctrl);
-        await pollExtractJob({
+        const reason = await pollExtractJob({
           jobId: data.job_id,
           signal: ctrl.signal,
+          onReconnecting: handleReconnecting,
           onProgress: (s: StatusPayload) => {
             setProgress(Math.max(0, Math.min(100, s.progress ?? 0)));
             setProgressLabel(s.stage || "");
@@ -466,6 +516,10 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
             }
           },
         });
+        if (reason === "lost") {
+          const recovered = await tryRecoverFromState();
+          if (!recovered) setError(`${config.phaseLabel} ${tx.phaseFailed}: ${tx.connectionLost}`);
+        }
       }
     } catch (e: unknown) {
       setError(`${config.phaseLabel} ${tx.phaseFailed}: ${getErrorMessage(e)}`);
@@ -515,9 +569,10 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
         signal: ctrl.signal,
       });
       saveActiveJob({ job_id, phase: "train" });
-      await pollTrainJob({
+      const reason = await pollTrainJob({
         jobId: job_id,
         signal: ctrl.signal,
+        onReconnecting: handleReconnecting,
         onProgress: (tick) => {
           setProgress(Math.max(0, Math.min(100, tick.progress ?? 0)));
           setProgressLabel(tick.stage || tx.trainingInProgress);
@@ -531,6 +586,10 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
           }
         },
       });
+      if (reason === "lost") {
+        const recovered = await tryRecoverFromState();
+        if (!recovered) setError(tx.phase3Failed + ": " + tx.connectionLost);
+      }
     } catch (e: unknown) {
       if (!ctrl.signal.aborted) {
         setError(tx.phase3Failed + ": " + getErrorMessage(e));
@@ -561,9 +620,10 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
         signal: ctrl.signal,
       });
       saveActiveJob({ job_id, phase: "predict" });
-      await pollPredictJob({
+      const reason = await pollPredictJob({
         jobId: job_id,
         signal: ctrl.signal,
+        onReconnecting: handleReconnecting,
         onProgress: (tick) => {
           setProgress(Math.max(0, Math.min(100, tick.progress ?? 0)));
           setProgressLabel(tick.stage || tx.predictingInProgress);
@@ -579,6 +639,10 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
           }
         },
       });
+      if (reason === "lost") {
+        const recovered = await tryRecoverFromState();
+        if (!recovered) setError(tx.phase5Failed + ": " + tx.connectionLost);
+      }
     } catch (e: unknown) {
       if (!ctrl.signal.aborted) {
         setError(tx.phase5Failed + ": " + getErrorMessage(e));
