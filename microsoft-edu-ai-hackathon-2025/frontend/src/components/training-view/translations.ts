@@ -49,6 +49,8 @@ export const TRAINING_TRANSLATIONS = {
     selectedCsv: "CSV",
     pickTargetColumn: "Select target column",
     uploadSamples: "Upload sample media",
+    uploadSamplesHint: "Upload sample media — more samples (up to 10) give better feature proposals, but take longer to process.",
+    chooseFiles: "Choose files from disk",
     addLabelsFile: "Add labels file (dataset_Y)",
     downloadPredCsv: "Predictions (CSV)",
     rerunPrediction: "Run prediction again",
@@ -217,6 +219,8 @@ export const TRAINING_TRANSLATIONS = {
     selectedCsv: "CSV",
     pickTargetColumn: "Vyberte cílový sloupec",
     uploadSamples: "Nahrajte ukázková média",
+    uploadSamplesHint: "Nahrajte ukázková média — čím více vzorků (max 10), tím kvalitnější návrh featur, ale delší zpracování.",
+    chooseFiles: "Vybrat soubory z disku",
     addLabelsFile: "Přidat soubor s labely (dataset_Y)",
     downloadPredCsv: "Predikce (CSV)",
     rerunPrediction: "Spustit predikci znovu",
@@ -342,4 +346,50 @@ export type TrainingTranslations = (typeof TRAINING_TRANSLATIONS)["cs"];
 export function getTrainingTranslations(uiLanguage: "cs" | "en" = "cs"): TrainingTranslations {
   // Cast is safe: EN and CS share the same keys with string values.
   return TRAINING_TRANSLATIONS[uiLanguage] as unknown as TrainingTranslations;
+}
+
+const _CS_STAGE_MAP: Record<string, string> = {
+  "Starting discovery...": "Spouštím objevování...",
+  "Preparing files...": "Připravuji soubory...",
+  "Loading model...": "Načítám model...",
+  "Parsing feature specification...": "Zpracovávám specifikaci featur...",
+  "Discovery complete!": "Objevování dokončeno!",
+  "Starting extraction...": "Spouštím extrakci...",
+  "Starting training...": "Spouštím trénink...",
+  "Starting prediction...": "Spouštím predikci...",
+  "Features ready (no scaling)...": "Featury připraveny...",
+  "K-fold cross-validation...": "K-fold křížová validace...",
+  "K-fold classification validation...": "K-fold klasifikační validace...",
+  "Training RuleKit (rule induction)...": "Trénuji RuleKit (indukce pravidel)...",
+  "Training RuleKit classifier...": "Trénuji RuleKit klasifikátor...",
+  "Training XGBoost...": "Trénuji XGBoost...",
+  "Ensemble combination (RuleKit + XGBoost)...": "Ensemble kombinace (RuleKit + XGBoost)...",
+  "Saving model...": "Ukládám model...",
+  "Preparing prediction...": "Připravuji predikci...",
+  "Preprocessing testing features...": "Předzpracovávám testovací featury...",
+  "RuleKit predictions...": "RuleKit predikce...",
+  "RuleKit classification predictions...": "RuleKit klasifikační predikce...",
+  "XGBoost predictions...": "XGBoost predikce...",
+  "Ensemble prediction...": "Ensemble predikce...",
+  "Computing evaluation metrics...": "Počítám evaluační metriky...",
+  "Error": "Chyba",
+};
+
+const _CS_STAGE_PATTERNS: [RegExp, (...m: string[]) => string][] = [
+  [/^Model loading \(attempt (\d+)\)\.\.\./, (n) => `Načítám model (pokus ${n})...`],
+  [/^Model loading, retrying request \((\d+)\/(\d+)\)\.\.\./, (a, b) => `Načítám model, opakuji požadavek (${a}/${b})...`],
+  [/^Preparing analysis of (\d+) samples?\.\.\./, (n) => `Připravuji analýzu ${n} vzorků...`],
+  [/^Analysing sample (\d+)\/(\d+): (.+)\.\.\./, (a, b, f) => `Analyzuji vzorek ${a}/${b}: ${f}...`],
+  [/^LLM synthesising feature spec from (\d+) samples?\.\.\./, (n) => `LLM sestavuje specifikaci featur z ${n} vzorků...`],
+  [/^Building results \((\d+)\/(\d+)\)\.\.\./, (a, b) => `Sestavuji výsledky (${a}/${b})...`],
+];
+
+export function translateStage(stage: string, uiLanguage: "cs" | "en"): string {
+  if (!stage || uiLanguage === "en") return stage;
+  if (_CS_STAGE_MAP[stage]) return _CS_STAGE_MAP[stage];
+  for (const [re, fn] of _CS_STAGE_PATTERNS) {
+    const m = stage.match(re);
+    if (m) return fn(...m.slice(1));
+  }
+  return stage;
 }

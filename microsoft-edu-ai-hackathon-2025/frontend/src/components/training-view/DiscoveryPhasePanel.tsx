@@ -6,6 +6,7 @@ import { downloadFeatureSpec } from "@/lib/pipelineDownloads";
 import { cls, FeatureSpecBox, ProgressBar } from "./shared";
 import { OllamaWarning } from "./OllamaWarning";
 import type { TrainingTranslations } from "./translations";
+import { translateStage } from "./translations";
 
 export function DiscoveryPhasePanel(props: {
   deluxe: boolean;
@@ -130,9 +131,7 @@ export function DiscoveryPhasePanel(props: {
       >
         <UploadCloud className={`h-8 w-8 mx-auto mb-3 ${cls(deluxe, "text-slate-400", "text-slate-500")}`} />
         <p className={`text-sm font-medium mb-1 ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>
-          {uiLanguage === "en"
-            ? "Upload sample media (recommended 3-5 samples for better feature proposals)"
-            : "Nahrajte ukázková média (doporučeno 3-5 vzorků = lepší návrh featur)"}
+          {tr.uploadSamplesHint}
         </p>
         <input
           type="file"
@@ -147,7 +146,7 @@ export function DiscoveryPhasePanel(props: {
           accept=".zip,video/*,image/*,.mp4,.avi,.mov,.mkv,.png,.jpg,.jpeg"
         />
         <label htmlFor="discovery-upload" className="cursor-pointer text-blue-500 hover:text-blue-600 text-sm font-medium">
-          {uiLanguage === "en" ? "Choose files from disk" : "Vybrat soubory z disku"}
+          {tr.chooseFiles}
         </label>
         {discoveryFiles.length > 0 && (
           <div className="mt-2 space-y-1">
@@ -229,7 +228,7 @@ export function DiscoveryPhasePanel(props: {
 
       {isDiscovering && (
         <div className="space-y-2">
-          <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel || tr.discoveryAnalyzing} etaText={etaText} />
+          <ProgressBar deluxe={deluxe} progress={progress} label={translateStage(progressLabel, uiLanguage) || tr.discoveryAnalyzing} etaText={etaText} />
           {onCancel && (
             <div className="flex justify-center">
               <Button variant="outline" size="sm" onClick={onCancel} className="text-xs">

@@ -5,10 +5,12 @@ import type { FeatureSpec, PredictionItem, PredictionMetrics, TrainResult } from
 import { cls, DatasetTable, ProgressBar } from "./shared";
 import { PredictionResults } from "./PredictionResults";
 import type { TrainingTranslations } from "./translations";
+import { translateStage } from "./translations";
 
 export function PredictionPhasePanel(props: {
   deluxe: boolean;
   tr: TrainingTranslations;
+  uiLanguage?: "cs" | "en";
   testingDataX: Record<string, unknown>[] | null;
   showPredictForm: boolean;
   useTestingLabels: boolean;
@@ -33,6 +35,7 @@ export function PredictionPhasePanel(props: {
   const {
     deluxe,
     tr,
+    uiLanguage = "cs",
     testingDataX,
     showPredictForm,
     useTestingLabels,
@@ -112,7 +115,7 @@ export function PredictionPhasePanel(props: {
 
       {isPredicting && (
         <div className="space-y-2 mt-4">
-          <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel || tr.predictionInProgressLabel} etaText={etaText} />
+          <ProgressBar deluxe={deluxe} progress={progress} label={translateStage(progressLabel, uiLanguage) || tr.predictionInProgressLabel} etaText={etaText} />
           {onCancel && (
             <div className="flex justify-center">
               <Button variant="outline" size="sm" onClick={onCancel} className="text-xs">

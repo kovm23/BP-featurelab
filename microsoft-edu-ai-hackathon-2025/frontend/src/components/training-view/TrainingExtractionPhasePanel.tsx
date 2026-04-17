@@ -6,6 +6,7 @@ import { downloadTrainingDataCSV } from "@/lib/pipelineDownloads";
 import { cls, DatasetTable, FeatureSpecBox, FileDropZone, ProgressBar } from "./shared";
 import { OllamaWarning } from "./OllamaWarning";
 import type { TrainingTranslations } from "./translations";
+import { translateStage } from "./translations";
 
 export function TrainingExtractionPhasePanel(props: {
   deluxe: boolean;
@@ -151,7 +152,7 @@ export function TrainingExtractionPhasePanel(props: {
 
       {isExtracting && (
         <div className="space-y-2">
-          <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel} etaText={etaText} />
+          <ProgressBar deluxe={deluxe} progress={progress} label={translateStage(progressLabel, uiLanguage)} etaText={etaText} />
           {extractStalled && (
             <div className={`flex items-start gap-2 p-2 rounded-lg border text-xs ${cls(deluxe, "bg-amber-50 border-amber-200 text-amber-800", "bg-amber-900/20 border-amber-700/50 text-amber-300")}`}>
               <span aria-hidden="true">⏳</span>

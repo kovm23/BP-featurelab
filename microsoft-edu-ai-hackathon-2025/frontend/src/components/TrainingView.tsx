@@ -415,6 +415,7 @@ export function TrainingView({
         <PredictionPhasePanel
           deluxe={deluxe}
           tr={tr}
+          uiLanguage={uiLanguage}
           testingDataX={testingDataX}
           showPredictForm={showPredictForm}
           useTestingLabels={useTestingLabels}

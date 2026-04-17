@@ -4,6 +4,7 @@ import type { FeatureSpec, TrainResult } from "@/lib/api";
 import { cls, DatasetTable, FeatureSpecBox, ProgressBar } from "./shared";
 import { TrainingResultsCard } from "./TrainingResultsCard";
 import type { TrainingTranslations } from "./translations";
+import { translateStage } from "./translations";
 
 export function TrainingPhasePanel(props: {
   deluxe: boolean;
@@ -106,7 +107,7 @@ export function TrainingPhasePanel(props: {
 
       {isTraining && (
         <div className="space-y-2 mt-4">
-          <ProgressBar deluxe={deluxe} progress={progress} label={progressLabel || tr.trainingInProgressLabel} etaText={etaText} />
+          <ProgressBar deluxe={deluxe} progress={progress} label={translateStage(progressLabel, uiLanguage) || tr.trainingInProgressLabel} etaText={etaText} />
           {onCancel && (
             <div className="flex justify-center">
               <Button variant="outline" size="sm" onClick={onCancel} className="text-xs">
