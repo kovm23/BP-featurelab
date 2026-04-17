@@ -22,7 +22,6 @@ export interface TrainingViewProps {
   featureSpec: FeatureSpec | null;
   setFeatureSpec: (spec: FeatureSpec) => void;
   onExtractTraining: (file: File, labelsFile?: File | null) => void;
-  onExtractTrainingLocal: (zipPath: string, labelsPath?: string) => void;
   isExtracting: boolean;
   trainingDataX: Record<string, unknown>[] | null;
   datasetYColumns: string[] | null;
@@ -30,7 +29,6 @@ export interface TrainingViewProps {
   isTraining: boolean;
   trainResult: TrainResult | null;
   onExtractTesting: (file: File) => void;
-  onExtractTestingLocal: (zipPath: string) => void;
   isExtractingTest: boolean;
   testingDataX: Record<string, unknown>[] | null;
   onPredict: (labelsFile?: File | null) => void;
@@ -140,7 +138,6 @@ export function TrainingView({
   featureSpec,
   setFeatureSpec,
   onExtractTraining,
-  onExtractTrainingLocal,
   isExtracting,
   trainingDataX,
   datasetYColumns,
@@ -148,7 +145,6 @@ export function TrainingView({
   isTraining,
   trainResult,
   onExtractTesting,
-  onExtractTestingLocal,
   isExtractingTest,
   testingDataX,
   onPredict,
@@ -198,11 +194,6 @@ export function TrainingView({
   const [discoveryFiles, setDiscoveryFiles] = useState<File[]>([]);
   const [trainZipFile, setTrainZipFile] = useState<File | null>(null);
   const [testZipFile, setTestZipFile] = useState<File | null>(null);
-  const [useServerPathTrain, setUseServerPathTrain] = useState(false);
-  const [serverPathTrain, setServerPathTrain] = useState("");
-  const [serverLabelsPathTrain, setServerLabelsPathTrain] = useState("");
-  const [useServerPathTest, setUseServerPathTest] = useState(false);
-  const [serverPathTest, setServerPathTest] = useState("");
   const [targetColumn, setTargetColumn] = useState("");
   const [discoveryLabels, setDiscoveryLabels] = useState<File | null>(null);
   const [useDiscoveryLabels, setUseDiscoveryLabels] = useState(false);
@@ -357,20 +348,13 @@ export function TrainingView({
           featureSpec={featureSpec}
           targetVariable={targetVariable}
           setFeatureSpec={setFeatureSpec}
-          useServerPathTrain={useServerPathTrain}
-          setUseServerPathTrain={setUseServerPathTrain}
           trainZipFile={trainZipFile}
           setTrainZipFile={setTrainZipFile}
-          serverPathTrain={serverPathTrain}
-          setServerPathTrain={setServerPathTrain}
-          serverLabelsPathTrain={serverLabelsPathTrain}
-          setServerLabelsPathTrain={setServerLabelsPathTrain}
           useExtractionLabels={useExtractionLabels}
           setUseExtractionLabels={setUseExtractionLabels}
           extractionLabels={extractionLabels}
           setExtractionLabels={setExtractionLabels}
           onExtractTraining={onExtractTraining}
-          onExtractTrainingLocal={onExtractTrainingLocal}
           isExtracting={isExtracting}
           trainingDataX={trainingDataX}
           ollamaOk={ollamaOk}
@@ -412,14 +396,9 @@ export function TrainingView({
           tr={tr}
           featureSpec={featureSpec}
           targetVariable={targetVariable}
-          useServerPathTest={useServerPathTest}
-          setUseServerPathTest={setUseServerPathTest}
           testZipFile={testZipFile}
           setTestZipFile={setTestZipFile}
-          serverPathTest={serverPathTest}
-          setServerPathTest={setServerPathTest}
           onExtractTesting={onExtractTesting}
-          onExtractTestingLocal={onExtractTestingLocal}
           isExtractingTest={isExtractingTest}
           testingDataX={testingDataX}
           ollamaOk={ollamaOk}

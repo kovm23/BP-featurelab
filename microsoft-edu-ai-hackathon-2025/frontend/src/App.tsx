@@ -127,7 +127,6 @@ export default function MediaFeatureLabPro() {
           featureSpec={pipeline.featureSpec}
           setFeatureSpec={pipeline.setFeatureSpec}
           onExtractTraining={pipeline.handleExtractTraining}
-          onExtractTrainingLocal={pipeline.handleExtractTrainingLocal}
           isExtracting={pipeline.extractionBusy}
           trainingDataX={pipeline.trainingDataX}
           datasetYColumns={pipeline.datasetYColumns}
@@ -135,7 +134,6 @@ export default function MediaFeatureLabPro() {
           isTraining={pipeline.trainingBusy}
           trainResult={pipeline.trainResult}
           onExtractTesting={pipeline.handleExtractTesting}
-          onExtractTestingLocal={pipeline.handleExtractTestingLocal}
           isExtractingTest={pipeline.testExtractionBusy}
           testingDataX={pipeline.testingDataX}
           onPredict={pipeline.handlePredict}

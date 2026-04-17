@@ -484,31 +484,12 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
     });
   }
 
-  /* Phase 2: server path */
-  async function handleExtractTrainingLocal(zipPath: string, labelsPath?: string) {
-    return _runExtract({
-      datasetType: "training",
-      phaseLabel: tx.phase2,
-      zipPath,
-      labelsPath,
-    });
-  }
-
   /* Phase 4: upload */
   async function handleExtractTesting(zipFile: File) {
     return _runExtract({
       datasetType: "testing",
       phaseLabel: tx.phase4,
       zipFile,
-    });
-  }
-
-  /* Phase 4: server path */
-  async function handleExtractTestingLocal(zipPath: string) {
-    return _runExtract({
-      datasetType: "testing",
-      phaseLabel: tx.phase4,
-      zipPath,
     });
   }
 
@@ -636,7 +617,6 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
     trainingDataX,
     datasetYColumns,
     handleExtractTraining,
-    handleExtractTrainingLocal,
     // Phase 3
     trainingBusy,
     trainResult,
@@ -645,7 +625,6 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
     testExtractionBusy,
     testingDataX,
     handleExtractTesting,
-    handleExtractTestingLocal,
     // Phase 5
     predictBusy,
     predictions,

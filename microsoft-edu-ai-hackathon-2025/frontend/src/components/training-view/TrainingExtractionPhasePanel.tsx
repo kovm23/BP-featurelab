@@ -14,20 +14,13 @@ export function TrainingExtractionPhasePanel(props: {
   featureSpec: FeatureSpec | null;
   targetVariable: string;
   setFeatureSpec: (spec: FeatureSpec) => void;
-  useServerPathTrain: boolean;
-  setUseServerPathTrain: React.Dispatch<React.SetStateAction<boolean>>;
   trainZipFile: File | null;
   setTrainZipFile: (file: File | null) => void;
-  serverPathTrain: string;
-  setServerPathTrain: React.Dispatch<React.SetStateAction<string>>;
-  serverLabelsPathTrain: string;
-  setServerLabelsPathTrain: React.Dispatch<React.SetStateAction<string>>;
   useExtractionLabels: boolean;
   setUseExtractionLabels: React.Dispatch<React.SetStateAction<boolean>>;
   extractionLabels: File | null;
   setExtractionLabels: React.Dispatch<React.SetStateAction<File | null>>;
   onExtractTraining: (file: File, labelsFile?: File | null) => void;
-  onExtractTrainingLocal: (zipPath: string, labelsPath?: string) => void;
   isExtracting: boolean;
   trainingDataX: Record<string, unknown>[] | null;
   ollamaOk?: boolean | null;
@@ -46,20 +39,13 @@ export function TrainingExtractionPhasePanel(props: {
     featureSpec,
     targetVariable,
     setFeatureSpec,
-    useServerPathTrain,
-    setUseServerPathTrain,
     trainZipFile,
     setTrainZipFile,
-    serverPathTrain,
-    setServerPathTrain,
-    serverLabelsPathTrain,
-    setServerLabelsPathTrain,
     useExtractionLabels,
     setUseExtractionLabels,
     extractionLabels,
     setExtractionLabels,
     onExtractTraining,
-    onExtractTrainingLocal,
     isExtracting,
     trainingDataX,
     ollamaOk,
@@ -85,54 +71,19 @@ export function TrainingExtractionPhasePanel(props: {
         />
       )}
 
-      <div className={`p-3 rounded-lg border ${cls(deluxe, "bg-slate-50 border-slate-200", "bg-slate-800/50 border-slate-700")}`}>
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={useServerPathTrain}
-            onChange={(e) => setUseServerPathTrain(e.target.checked)}
-            className="rounded"
-          />
-          <span className={`text-sm font-medium ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>
-            {tr.uploadAlreadyOnServer}
-          </span>
-        </label>
-      </div>
+      <FileDropZone
+        deluxe={deluxe}
+        uiLanguage={uiLanguage}
+        file={trainZipFile}
+        onFile={setTrainZipFile}
+        accept=".zip"
+        inputId="train-zip-upload"
+        label={tr.uploadTrainingZip}
+        pickLabel={tr.pickTrainingZip}
+        selectedLabel={tr.selected}
+      />
 
-      {!useServerPathTrain ? (
-        <FileDropZone
-          deluxe={deluxe}
-          uiLanguage={uiLanguage}
-          file={trainZipFile}
-          onFile={setTrainZipFile}
-          accept=".zip"
-          inputId="train-zip-upload"
-          label={tr.uploadTrainingZip}
-          pickLabel={tr.pickTrainingZip}
-          selectedLabel={tr.selected}
-        />
-      ) : (
-        <div className="space-y-2">
-          <label className={`text-sm font-medium ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>{tr.serverZipPath}</label>
-          <input
-            type="text"
-            value={serverPathTrain}
-            onChange={(e) => setServerPathTrain(e.target.value)}
-            placeholder="/path/to/train.zip"
-            className={`w-full px-3 py-2 rounded border text-sm font-mono ${cls(deluxe, "bg-white border-slate-300 text-slate-800", "bg-slate-900 border-slate-600 text-slate-200")}`}
-          />
-          <label className={`text-sm font-medium ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>{tr.serverLabelsPath}</label>
-          <input
-            type="text"
-            value={serverLabelsPathTrain}
-            onChange={(e) => setServerLabelsPathTrain(e.target.value)}
-            placeholder={tr.serverLabelsPathPlaceholder}
-            className={`w-full px-3 py-2 rounded border text-sm font-mono ${cls(deluxe, "bg-white border-slate-300 text-slate-800", "bg-slate-900 border-slate-600 text-slate-200")}`}
-          />
-        </div>
-      )}
-
-      {!useServerPathTrain && (
+      {(
         <div className={`p-3 rounded-lg border ${cls(deluxe, "bg-amber-50/50 border-amber-200", "bg-amber-900/20 border-amber-800/50")}`}>
           <label className="flex items-center gap-2 cursor-pointer">
             <input
@@ -179,14 +130,12 @@ export function TrainingExtractionPhasePanel(props: {
       <div className="flex justify-center mt-6">
         <Button
           onClick={() => {
-            if (useServerPathTrain) {
-              onExtractTrainingLocal(serverPathTrain, serverLabelsPathTrain || undefined);
-            } else if (trainZipFile) {
+            if (trainZipFile) {
               onExtractTraining(trainZipFile, useExtractionLabels ? extractionLabels : null);
             }
           }}
-          disabled={(useServerPathTrain ? !serverPathTrain : !trainZipFile) || isExtracting}
-          title={!useServerPathTrain && !trainZipFile ? tr.uploadTrainingFirst : undefined}
+          disabled={!trainZipFile || isExtracting}
+          title={!trainZipFile ? tr.uploadTrainingFirst : undefined}
         >
           {isExtracting ? (
             <>

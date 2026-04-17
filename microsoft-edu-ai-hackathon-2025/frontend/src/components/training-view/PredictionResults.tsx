@@ -74,8 +74,8 @@ function downloadPredictionsCsv(predictions: PredictionItem[], featureSpec: Feat
       [
         escapeCsvCell(prediction.media_name),
         ...(hasLabelPredictions
-          ? [escapeCsvCell(prediction.predicted_label), escapeCsvCell(prediction.confidence)]
-          : [escapeCsvCell(prediction.predicted_score)]),
+          ? [escapeCsvCell(prediction.predicted_label), escapeCsvCell(typeof prediction.confidence === 'number' ? prediction.confidence.toFixed(4) : prediction.confidence)]
+          : [escapeCsvCell(typeof prediction.predicted_score === 'number' ? prediction.predicted_score.toFixed(4) : prediction.predicted_score)]),
         ...(hasActualPredictionValues
           ? [escapeCsvCell(prediction.actual_label ?? (prediction.actual_score !== undefined ? prediction.actual_score : ""))]
           : []),

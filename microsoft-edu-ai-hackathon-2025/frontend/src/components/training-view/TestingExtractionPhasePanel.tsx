@@ -1,4 +1,3 @@
-import React from "react";
 import { CheckCircle2, ChevronRight, Download, Loader2, PlayCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { FeatureSpec } from "@/lib/api";
@@ -13,14 +12,9 @@ export function TestingExtractionPhasePanel(props: {
   tr: TrainingTranslations;
   featureSpec: FeatureSpec | null;
   targetVariable: string;
-  useServerPathTest: boolean;
-  setUseServerPathTest: React.Dispatch<React.SetStateAction<boolean>>;
   testZipFile: File | null;
   setTestZipFile: (file: File | null) => void;
-  serverPathTest: string;
-  setServerPathTest: React.Dispatch<React.SetStateAction<string>>;
   onExtractTesting: (file: File) => void;
-  onExtractTestingLocal: (zipPath: string) => void;
   isExtractingTest: boolean;
   testingDataX: Record<string, unknown>[] | null;
   ollamaOk?: boolean | null;
@@ -38,14 +32,9 @@ export function TestingExtractionPhasePanel(props: {
     tr,
     featureSpec,
     targetVariable,
-    useServerPathTest,
-    setUseServerPathTest,
     testZipFile,
     setTestZipFile,
-    serverPathTest,
-    setServerPathTest,
     onExtractTesting,
-    onExtractTestingLocal,
     isExtractingTest,
     testingDataX,
     ollamaOk,
@@ -64,44 +53,17 @@ export function TestingExtractionPhasePanel(props: {
         <FeatureSpecBox deluxe={deluxe} uiLanguage={uiLanguage} featureSpec={featureSpec} targetVariable={targetVariable} />
       )}
 
-      <div className={`p-3 rounded-lg border ${cls(deluxe, "bg-slate-50 border-slate-200", "bg-slate-800/50 border-slate-700")}`}>
-        <label className="flex items-center gap-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={useServerPathTest}
-            onChange={(e) => setUseServerPathTest(e.target.checked)}
-            className="rounded"
-          />
-          <span className={`text-sm font-medium ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>
-            {tr.uploadAlreadyOnServer}
-          </span>
-        </label>
-      </div>
-
-      {!useServerPathTest ? (
-        <FileDropZone
-          deluxe={deluxe}
-          uiLanguage={uiLanguage}
-          file={testZipFile}
-          onFile={setTestZipFile}
-          accept=".zip"
-          inputId="test-zip-upload"
-          label={tr.uploadTestingZip}
-          pickLabel={tr.pickTestingZip}
-          selectedLabel={tr.selected}
-        />
-      ) : (
-        <div className="space-y-2">
-          <label className={`text-sm font-medium ${cls(deluxe, "text-slate-700", "text-slate-300")}`}>{tr.serverZipPath}</label>
-          <input
-            type="text"
-            value={serverPathTest}
-            onChange={(e) => setServerPathTest(e.target.value)}
-            placeholder="/path/to/test.zip"
-            className={`w-full px-3 py-2 rounded border text-sm font-mono ${cls(deluxe, "bg-white border-slate-300 text-slate-800", "bg-slate-900 border-slate-600 text-slate-200")}`}
-          />
-        </div>
-      )}
+      <FileDropZone
+        deluxe={deluxe}
+        uiLanguage={uiLanguage}
+        file={testZipFile}
+        onFile={setTestZipFile}
+        accept=".zip"
+        inputId="test-zip-upload"
+        label={tr.uploadTestingZip}
+        pickLabel={tr.pickTestingZip}
+        selectedLabel={tr.selected}
+      />
 
       <div className={`p-3 rounded-lg border ${cls(deluxe, "bg-blue-50/70 border-blue-200", "bg-blue-900/20 border-blue-800/50")}`}>
         <p className={`text-xs font-mono ${cls(deluxe, "text-blue-700", "text-blue-300/80")}`}>
@@ -114,14 +76,12 @@ export function TestingExtractionPhasePanel(props: {
       <div className="flex justify-center mt-6">
         <Button
           onClick={() => {
-            if (useServerPathTest) {
-              onExtractTestingLocal(serverPathTest);
-            } else if (testZipFile) {
+            if (testZipFile) {
               onExtractTesting(testZipFile);
             }
           }}
-          disabled={(useServerPathTest ? !serverPathTest : !testZipFile) || isExtractingTest}
-          title={!useServerPathTest && !testZipFile ? tr.uploadTestingFirst : undefined}
+          disabled={!testZipFile || isExtractingTest}
+          title={!testZipFile ? tr.uploadTestingFirst : undefined}
         >
           {isExtractingTest ? (
             <>
