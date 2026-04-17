@@ -9,7 +9,7 @@ Projekt vznikl na Microsoft × VŠE Edu AI Hackathonu 2025 a dále se rozvíjí 
 | Vrstva | Technologie |
 |---|---|
 | Frontend | React 18 + TypeScript, Vite, TailwindCSS, Radix UI |
-| Backend | Python 3.11+, Flask, Gunicorn (2 workers) |
+| Backend | Python 3.11+, Flask, Gunicorn (1 worker, 8 threads) |
 | LLM | Lokální Ollama (Qwen 2.5 VL 7B) + Whisper pro STT |
 | ML | RuleKit (JPype/Java), XGBoost, scikit-learn |
 | Proxy | Cloudflare Worker (frontend `llmfeatures.vse.cz`) |
@@ -35,7 +35,7 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements-server.txt
 cp .env.example .env             # edituj dle potřeby
-flask --app app run --port 5000  # nebo: gunicorn app:app --workers 2
+flask --app app run --port 5000  # nebo: gunicorn app:app -w 1 --threads 8 -k gthread
 
 # 3) Frontend (v novém terminálu)
 cd ../frontend
@@ -88,7 +88,7 @@ Testy pokrývají `utils/csv_utils.py`, `pipeline/feature_schema.py`, `utils/tar
 
 Viz [docs/migration.md](microsoft-edu-ai-hackathon-2025/docs/migration.md). Ve zkratce:
 
-- Backend běží na stroji s GPU pod Gunicornem (2 workery, timeout 1200 s, max-requests 200)
+- Backend běží na stroji s GPU pod Gunicornem (1 worker, 8 threads, gthread, timeout 1200 s, max-requests 200)
 - Frontend je statický build servírovaný přes Apache na `llmfeatures.vse.cz`
 - Cloudflare Worker směruje `/discover`, `/extract`, `/train`, `/predict`, `/status/*`, `/state`, `/queue-info`, `/health` na backend tunel
 - Sessions se izolují přes `X-Session-ID` header

@@ -74,7 +74,7 @@ Tato sekce doplňuje historický popis níže o aktuální chování aplikace:
 │ /discover,/extract,/train,/predict,… → backend    │
 ├─────────────────────────────────────────────────┤
 │                   Backend                         │
-│          Flask + Gunicorn (2 workers)              │
+│     Flask + Gunicorn (1 worker, 8 threads)         │
 │    Routes → Pipeline logic → Services            │
 ├─────────────────────────────────────────────────┤
 │               Služby (Services)                   │
