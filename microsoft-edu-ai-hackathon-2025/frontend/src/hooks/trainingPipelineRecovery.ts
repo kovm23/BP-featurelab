@@ -57,10 +57,11 @@ export function applyBackendPipelineState(
   if (state.prediction_metrics) {
     setters.setPredictionMetrics(state.prediction_metrics);
   }
-  setters.setTrainingStep((prev) => {
-    const suggested = Math.min(state.suggested_step as Step, 5) as Step;
-    return suggested > prev ? suggested : prev;
-  });
+  // Intentionally do NOT touch trainingStep: backend data is hydrated into
+  // the UI, but the user stays on the step they had before the refresh
+  // (from localStorage). They advance via the stepper or "Continue" buttons.
+  // Silently jumping to `suggested_step` was confusing after a discovery run
+  // that the user had not yet acknowledged.
 }
 
 export function persistDiscoveryOutcome(params: {
@@ -69,8 +70,11 @@ export function persistDiscoveryOutcome(params: {
   targetModeRef: MutableRefObject<TargetMode>;
   modelProviderRef: MutableRefObject<string>;
 }) {
+  // Keep the step in localStorage aligned with whatever the user is currently
+  // looking at — the useEffect in the pipeline hook already persists
+  // `trainingStep`. Persisting step 2 here eagerly caused refresh-after-
+  // discovery to jump to step 2 silently.
   savePersisted({
-    trainingStep: 2,
     targetVariable: params.targetVariableRef.current,
     targetMode: params.targetModeRef.current,
     featureSpec: params.featureSpec,
