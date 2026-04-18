@@ -89,17 +89,6 @@ export function DiscoveryPhasePanel(props: {
         <div className="flex gap-2">
           <button
             type="button"
-            onClick={() => setTargetMode("regression")}
-            className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
-              targetMode === "regression"
-                ? "bg-blue-500 text-white border-blue-500"
-                : cls(deluxe, "bg-white text-slate-700 border-slate-300", "bg-slate-900 text-slate-300 border-slate-700")
-            }`}
-          >
-            {tr.regression}
-          </button>
-          <button
-            type="button"
             onClick={() => setTargetMode("classification")}
             className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
               targetMode === "classification"
@@ -108,6 +97,17 @@ export function DiscoveryPhasePanel(props: {
             }`}
           >
             {tr.classification}
+          </button>
+          <button
+            type="button"
+            onClick={() => setTargetMode("regression")}
+            className={`px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
+              targetMode === "regression"
+                ? "bg-blue-500 text-white border-blue-500"
+                : cls(deluxe, "bg-white text-slate-700 border-slate-300", "bg-slate-900 text-slate-300 border-slate-700")
+            }`}
+          >
+            {tr.regression}
           </button>
         </div>
         <p className={`mt-2 text-xs ${cls(deluxe, "text-slate-500", "text-slate-400")}`}>

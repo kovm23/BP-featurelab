@@ -79,8 +79,8 @@ export function clearActivePipelineRuntime(setters: Pick<
 export function resetPipelineLocalState(
   setters: PipelineRuntimeSetters,
   defaults = {
-    targetVariable: "movie memorability score",
-    targetMode: "regression" as TargetMode,
+    targetVariable: "",
+    targetMode: "classification" as TargetMode,
   }
 ) {
   setters.setTrainingStep(1);
