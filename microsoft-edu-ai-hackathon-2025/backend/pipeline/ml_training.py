@@ -32,11 +32,7 @@ from pipeline.ml_preprocessing import (
     _oversample_minority,
     _preprocess_features,
 )
-from pipeline.ml_regression import (
-    RULEKIT_WEIGHT,
-    XGB_WEIGHT,
-    _train_regression_branch,
-)
+from pipeline.ml_regression import _train_regression_branch
 from pipeline.ml_rules import _count_rule_features, _extract_rules, _find_covering_rule
 from utils.csv_utils import normalize_media_name
 
@@ -321,13 +317,7 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
     X_test = _apply_median_imputer(X_test, reg_medians)
     rulekit_pred = pipeline.model.predict(X_test)
 
-    if hasattr(pipeline, "xgb_model") and pipeline.xgb_model is not None:
-        _cb(40, "XGBoost predictions...")
-        xgb_pred = pipeline.xgb_model.predict(X_test)
-        _cb(55, "Ensemble combination (RuleKit + XGBoost)...")
-        predictions = RULEKIT_WEIGHT * rulekit_pred + XGB_WEIGHT * xgb_pred
-    else:
-        predictions = rulekit_pred
+    predictions = rulekit_pred
 
     actual_values = _load_actual_values(testing_Y_df, pipeline.target_variable, numeric=True)
 
