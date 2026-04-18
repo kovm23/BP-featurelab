@@ -656,7 +656,7 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
   /* ---------------------------------------------------------------- */
   /*  Reset                                                            */
   /* ---------------------------------------------------------------- */
-  function resetPipeline() {
+  function resetPipeline(): Promise<void> {
     if (activeCtrl) {
       activeCtrl.abort();
       setActiveCtrl(null);
@@ -664,7 +664,9 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
     resetPipelineLocalState(pipelineRuntimeSetters);
     clearPersisted();
     clearActiveJob();
-    fetch(RESET_URL, { method: "POST", headers: sessionHeaders() }).catch(() => {});
+    return fetch(RESET_URL, { method: "POST", headers: sessionHeaders() })
+      .then(() => undefined)
+      .catch(() => undefined);
   }
 
   return {

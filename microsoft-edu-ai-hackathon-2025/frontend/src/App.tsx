@@ -8,7 +8,6 @@ import { useTrainingPipeline } from "@/hooks/useTrainingPipeline";
 import { loadPersisted } from "@/hooks/trainingPipelineUtils";
 
 export default function MediaFeatureLabPro() {
-  const [resetKey, setResetKey] = useState(0);
   const [showRestoredToast, setShowRestoredToast] = useState(false);
   const savedPipeline = loadPersisted();
   const { lang, setLang, deluxe, setDeluxe, showGuide, setShowGuide, closeGuide } = useAppUi();
@@ -59,9 +58,8 @@ export default function MediaFeatureLabPro() {
     }
   }, [pipeline.isRestoring, pipeline.restoredWithData]);
 
-  function handleReset() {
+  async function handleReset() {
     if (!window.confirm(t.resetConfirm)) return;
-    pipeline.resetPipeline();
     try {
       localStorage.removeItem("mflFilesMeta");
       localStorage.removeItem("mflFileType");
@@ -69,7 +67,8 @@ export default function MediaFeatureLabPro() {
     } catch {
       // localStorage unavailable
     }
-    setResetKey((k) => k + 1);
+    await pipeline.resetPipeline();
+    window.location.reload();
   }
 
   return (
@@ -115,7 +114,6 @@ export default function MediaFeatureLabPro() {
         )}
 
         <TrainingView
-          key={resetKey}
           deluxe={deluxe}
           onCancel={pipeline.handleCancelActive}
           onDiscoverStart={pipeline.handleDiscover}
