@@ -26,6 +26,12 @@ from pipeline.ml_classification import (
     _rulekit_classification_predict,
     _validate_classification_target,
 )
+from sklearn.metrics import (
+    accuracy_score,
+    balanced_accuracy_score,
+    f1_score,
+    matthews_corrcoef,
+)
 from pipeline.ml_preprocessing import (
     _apply_median_imputer,
     _fit_median_imputer,
