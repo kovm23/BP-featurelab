@@ -11,6 +11,7 @@ Training pipeline:
   4. Cross-validation for realistic error estimate
   5. Feature importance from XGBoost + rule frequency from RuleKit
 """
+import json
 import logging
 import os
 
