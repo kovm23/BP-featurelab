@@ -78,7 +78,7 @@ export function DiscoveryPhasePanel(props: {
             "bg-slate-50 border-slate-200 text-slate-900 focus:border-blue-400",
             "bg-slate-900 border-slate-700 text-white"
           )}`}
-          placeholder="např. movie memorability score"
+          placeholder={tr.targetPlaceholder}
         />
       </div>
 

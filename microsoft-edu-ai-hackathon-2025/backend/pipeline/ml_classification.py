@@ -18,7 +18,6 @@ from sklearn.metrics import (
     recall_score,
 )
 from sklearn.model_selection import KFold, StratifiedKFold
-from xgboost import XGBRegressor
 
 from pipeline.ml_preprocessing import _apply_median_imputer, _fit_median_imputer, _oversample_minority
 from utils.csv_utils import normalize_media_name
@@ -188,55 +187,6 @@ def _rulekit_classification_predict(
 # ---------------------------------------------------------------------------
 # Cross-validation
 # ---------------------------------------------------------------------------
-
-def _run_cross_validation(
-    X: pd.DataFrame,
-    y: pd.Series,
-    n_splits: int = CV_MAX_FOLDS,
-    rulekit_weight: float = 0.4,
-    xgb_weight: float = 0.6,
-) -> dict:
-    """Run K-fold CV with the regression ensemble. Returns CV metrics."""
-    from rulekit.regression import RuleRegressor
-
-    n_splits = min(n_splits, len(X))
-    if n_splits < 2:
-        return {"cv_mse": None, "cv_std": None, "cv_mae": None, "note": "Too few samples for CV"}
-
-    kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
-    fold_mse, fold_mae = [], []
-
-    for train_idx, val_idx in kf.split(X):
-        X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
-        y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
-
-        medians = _fit_median_imputer(X_train)
-        X_train = _apply_median_imputer(X_train, medians)
-        X_val = _apply_median_imputer(X_val, medians)
-
-        rk = RuleRegressor()
-        try:
-            rk.fit(X_train, y_train)
-            rk_pred = rk.predict(X_val)
-        except Exception as e:
-            logger.warning("RuleRegressor CV fold failed, using mean fallback: %s", e)
-            rk_pred = np.full(len(X_val), y_train.mean())
-
-        xgb = XGBRegressor(n_estimators=100, max_depth=4, learning_rate=0.1, random_state=42, verbosity=0)
-        xgb.fit(X_train, y_train)
-        xgb_pred = xgb.predict(X_val)
-
-        ensemble_pred = rulekit_weight * rk_pred + xgb_weight * xgb_pred
-        fold_mse.append(float(mean_squared_error(y_val, ensemble_pred)))
-        fold_mae.append(float(mean_absolute_error(y_val, ensemble_pred)))
-
-    return {
-        "cv_mse": round(float(np.mean(fold_mse)), 6),
-        "cv_std": round(float(np.std(fold_mse)), 6),
-        "cv_mae": round(float(np.mean(fold_mae)), 6),
-        "n_folds": n_splits,
-    }
-
 
 def _run_cross_validation_classification(
     X: pd.DataFrame, y_labels: pd.Series, n_splits: int = CV_MAX_FOLDS,

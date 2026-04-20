@@ -79,7 +79,7 @@ export function ClassificationMetricsPanel({
               <p className={`mb-2 text-[10px] ${cls(deluxe, "text-slate-500", "text-slate-400")}`}>
                 {tr.actualAxis} × {tr.predictedAxis}
               </p>
-              <ConfusionMatrix deluxe={deluxe} labels={predictionMetrics.labels} matrix={predictionMetrics.confusion_matrix} />
+              <ConfusionMatrix labels={predictionMetrics.labels} matrix={predictionMetrics.confusion_matrix} />
             </div>
           </details>
         )}

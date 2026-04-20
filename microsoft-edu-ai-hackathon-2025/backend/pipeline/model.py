@@ -89,6 +89,7 @@ class MachineLearningPipeline:
         self._training_columns: list[str] = []
         self._scaler_mean: list[float] = []
         self._scaler_scale: list[float] = []
+        self._positive_label: str | None = None
 
     def _clear_model_outputs(self) -> None:
         self.model = None
@@ -207,6 +208,7 @@ class MachineLearningPipeline:
                 "_training_columns": self._training_columns,
                 "_scaler_mean": self._scaler_mean,
                 "_scaler_scale": self._scaler_scale,
+                "_positive_label": self._positive_label,
             }
             with open(self._state_json, "w", encoding="utf-8") as f:
                 json.dump(state, f, ensure_ascii=False, indent=2, default=_json_default)
@@ -285,6 +287,7 @@ class MachineLearningPipeline:
             self._training_columns = state.get("_training_columns", [])
             self._scaler_mean = state.get("_scaler_mean", [])
             self._scaler_scale = state.get("_scaler_scale", [])
+            self._positive_label = state.get("_positive_label")
 
             self.training_X = self._load_df(self._training_x_csv)
             self.training_Y = self._load_series(self._training_y_csv)

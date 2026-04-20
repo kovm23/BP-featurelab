@@ -22,11 +22,7 @@ export function TrainingResultsCard({
 }) {
   if (trainResult.status !== "success") return null;
 
-  const featureImportance =
-    trainResult.feature_importance?.xgboost &&
-    Object.keys(trainResult.feature_importance.xgboost).length > 0
-      ? trainResult.feature_importance.xgboost
-      : (trainResult.feature_importance?.rulekit ?? {});
+  const featureImportance = trainResult.feature_importance?.rulekit ?? {};
   const hasAdvancedClassificationMetrics =
     trainResult.target_mode === "classification" && (
       trainResult.train_accuracy != null ||
@@ -122,12 +118,6 @@ export function TrainingResultsCard({
             <p>
               {tr.ensembleMse}: <strong>{trainResult.mse != null ? Number(trainResult.mse).toFixed(4) : "—"}</strong>
             </p>
-            {trainResult.rulekit_mse != null && (
-              <p>{tr.rulekitMse}: <strong>{Number(trainResult.rulekit_mse).toFixed(4)}</strong></p>
-            )}
-            {trainResult.xgb_mse != null && (
-              <p>{tr.xgboostMse}: <strong>{Number(trainResult.xgb_mse).toFixed(4)}</strong></p>
-            )}
             {trainResult.cv_mse != null && (
               <p>
                 {tr.crossValMse} ({trainResult.cv_folds ?? 5}-fold):{" "}

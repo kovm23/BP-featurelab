@@ -14,7 +14,7 @@ train_bp = Blueprint("train", __name__)
 
 @train_bp.route("/train", methods=["POST"])
 def api_train():
-    """Phase 3: Train RuleKit+XGBoost ensemble – async, returns job_id for polling."""
+    """Phase 3: Train RuleKit model – async, returns job_id for polling."""
     from app import get_pipeline
     pipeline = get_pipeline()
 

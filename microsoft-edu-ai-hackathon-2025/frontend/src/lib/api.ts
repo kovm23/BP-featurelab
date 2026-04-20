@@ -117,8 +117,6 @@ export interface TrainResult {
   status: string;
   target_mode?: TargetMode;
   mse?: number;
-  rulekit_mse?: number;
-  xgb_mse?: number;
   cv_mse?: number;
   cv_std?: number;
   cv_mae?: number;
@@ -137,7 +135,6 @@ export interface TrainResult {
   rules?: string[];
   feature_spec?: FeatureSpec;
   feature_importance?: {
-    xgboost?: Record<string, number>;
     rulekit?: Record<string, number>;
   };
   warnings?: string[];

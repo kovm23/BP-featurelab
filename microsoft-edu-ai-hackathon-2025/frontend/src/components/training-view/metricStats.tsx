@@ -58,7 +58,6 @@ export function ConfusionMatrix({
 }: {
   labels: string[];
   matrix: number[][];
-  deluxe: boolean;
 }) {
   const maxCell = Math.max(1, ...matrix.flat());
   return (

@@ -6,10 +6,10 @@ the regression branch (`pipeline.ml_regression`) or classification branch
 
 Training pipeline:
   1. Preprocess features (one-hot encoding, null handling)
-  2. Regression: RuleKit + XGBoost ensemble (see `ml_regression.py`)
+  2. Regression: RuleKit RuleRegressor (see `ml_regression.py`)
   3. Classification: RuleKit classifier with interpretable rules (see `ml_classification.py`)
-  4. Cross-validation for realistic error estimate
-  5. Feature importance from XGBoost + rule frequency from RuleKit
+  4. Cross-validation for classification (K-fold stratified)
+  5. Feature importance from rule frequency (RuleKit)
 """
 import json
 import logging

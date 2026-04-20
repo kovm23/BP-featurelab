@@ -1,10 +1,6 @@
 # Migrace Na Jiný Server
 
-Nejjednodušší doporučený scénář:
-
-- frontend ponechat na `workers.dev`
-- přesouvat jen backend + Ollama
-- po migraci přepnout pouze `BACKEND_URL` ve Workeru
+Doporučený scénář pro produkci: frontend na `llmfeatures.vse.cz` (Apache), backend + Ollama na serveru `llm.vse.cz`.
 
 ## 1. Co musí být na novém serveru
 
@@ -59,16 +55,11 @@ Backend poběží na portu `5000`.
 
 ## 6. Přepnutí frontendu
 
-Pokud používáš Cloudflare Worker frontend:
+Aktualizuj `ALLOWED_ORIGINS` v `backend/.env` na novou frontend doménu. Pak znovu načti konfiguraci:
 
-1. nastav nový `BACKEND_URL`
-2. redeployni Worker
-
-Poznámka:
-- `trycloudflare.com` URL je dočasná. Po restartu tunelu se změní a stará adresa přestane fungovat.
-- Nekomituj do `frontend/wrangler.toml` starou tunelovou URL jako trvalou hodnotu. Před deployem ji vždy přepiš na aktuální backend origin.
-
-Frontend UI není nutné přesouvat na nový server, pokud ti stačí stávající `workers.dev`.
+```bash
+pm2 reload ecosystem.config.js
+```
 
 ## 8. Split Deploy: Backend Jinde, Frontend Na `llmfeatures.vse.cz`
 
@@ -77,7 +68,7 @@ Pokud backend poběží na jednom serveru a `llmfeatures.vse.cz` bude hostovat j
 - backend server: Python, Java, `ffmpeg`, Ollama, PM2
 - frontend server: Apache, statický build z `frontend/dist` a reverse proxy `/api/*` na interní backend
 
-Pro frontend-only server použij [frontend-llmfeatures-deploy.md](/home/kovm23/BP/microsoft-edu-ai-hackathon-2025/docs/frontend-llmfeatures-deploy.md) a Apache konfiguraci [apache-llmfeatures.vse.cz.conf](/home/kovm23/BP/microsoft-edu-ai-hackathon-2025/docs/apache-llmfeatures.vse.cz.conf).
+Pro frontend-only server použij [frontend-llmfeatures-deploy.md](frontend-llmfeatures-deploy.md) a Apache konfiguraci [apache-llmfeatures.vse.cz.conf](apache-llmfeatures.vse.cz.conf).
 
 Důležitá poznámka:
 
@@ -96,4 +87,4 @@ Důležitá poznámka:
 3. Spusť `bash scripts/bootstrap_backend.sh`.
 4. Uprav `backend/.env`.
 5. Spusť `cd backend && pm2 start ecosystem.config.js`.
-6. Přepni Worker `BACKEND_URL` na nový backend.
+6. Aktualizuj `ALLOWED_ORIGINS` na novou frontend doménu a `pm2 reload ecosystem.config.js`.

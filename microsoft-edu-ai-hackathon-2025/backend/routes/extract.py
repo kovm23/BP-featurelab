@@ -127,7 +127,7 @@ def api_extract_local():
 
     # Prevent path traversal
     real_path = os.path.realpath(zip_path)
-    if not any(real_path.startswith(prefix) for prefix in _SAFE_PREFIXES):
+    if not any(real_path == prefix or real_path.startswith(prefix + os.sep) for prefix in _SAFE_PREFIXES):
         return jsonify({"error": "Path not allowed."}), 403
 
     if not os.path.exists(zip_path):
@@ -138,7 +138,7 @@ def api_extract_local():
     raw_labels_path = data.get("labels_path", "")
     if raw_labels_path:
         real_labels = os.path.realpath(raw_labels_path)
-        if not any(real_labels.startswith(prefix) for prefix in _SAFE_PREFIXES):
+        if not any(real_labels == prefix or real_labels.startswith(prefix + os.sep) for prefix in _SAFE_PREFIXES):
             return jsonify({"error": "labels_path not allowed."}), 403
     labels_df = load_labels_from_path(raw_labels_path)
 

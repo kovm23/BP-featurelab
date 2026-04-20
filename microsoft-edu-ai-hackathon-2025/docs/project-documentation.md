@@ -53,7 +53,7 @@ Tato sekce doplňuje historický popis níže o aktuální chování aplikace:
 - EN lokalizace je napojena i na klíčové texty 5fázového wizardu (phase titles/descriptions, hlavní CTA tlačítka, continue/stop akce, completion badges).
 - Runtime hlášky z `useTrainingPipeline` (fallback progress labely a frontendové error prefixy) respektují zvolený jazyk CZ/EN.
 - Produkční routování API: Apache na `llmfeatures.vse.cz` proxyuje `/api/*` na backend (`llm.vse.cz:5000`).
-- Discovery endpoint přijímá ZIP nebo více samostatných médií, ale pro samotný návrh featur analyzuje maximálně 5 vzorků.
+- Discovery endpoint přijímá ZIP nebo více samostatných médií, ale pro samotný návrh featur analyzuje maximálně `DISCOVERY_MAX_SAMPLES` médií (výchozí 10).
 - Frontend po refreshi obnovuje nejen Fáze 1-4, ale i uložené výsledky Fáze 5 (`predictions`, `prediction_metrics`) a umí znovu navázat na aktivní async job ve Fázích 1-5.
 - Export/import relace (`/export-session`, `/import-session`) je dostupný přes stejný origin `llmfeatures.vse.cz/api/*`.
 - Session registry eviktuje neaktivní session po 24 hodinách.
@@ -210,9 +210,9 @@ Dvouúrovňový proces pro automatický návrh feature specifikace:
 
 #### Krok 1: Pozorování vzorků
 
-Do discovery lze poslat ZIP i více samostatných médií. Po načtení / rozbalení backend pracuje s nalezenými mediálními soubory, ale pro samotný návrh featur záměrně analyzuje jen **maximálně prvních 5 vzorků**. Tento krok tedy slouží k rychlému feature engineeringu, ne k plné analýze datasetu.
+Do discovery lze poslat ZIP i více samostatných médií. Po načtení / rozbalení backend pracuje s nalezenými mediálními soubory, ale pro samotný návrh featur záměrně analyzuje jen **maximálně prvních `DISCOVERY_MAX_SAMPLES` vzorků (výchozí 10)**. Tento krok tedy slouží k rychlému feature engineeringu, ne k plné analýze datasetu.
 
-Pro každý z max. 5 vzorkových médií se zavolá LLM s observation promptem:
+Pro každý z max. `DISCOVERY_MAX_SAMPLES` vzorkových médií se zavolá LLM s observation promptem:
 
 ```
 You are a media analysis AI.
@@ -323,7 +323,7 @@ Each value MUST respect the specified range or categorical domain.
 
 #### Multi-pass extrakce
 
-Konfigurovatelné přes env var `EXTRACTION_PASSES` (default: 2).
+Konfigurovatelné přes env var `EXTRACTION_PASSES` (default: 1).
 
 Pro každé médium:
 1. Zavolá LLM `N`-krát se stejným promptem
@@ -365,7 +365,7 @@ Frontend má pro tento workflow tlačítka **Export relace** a **Import relace**
 **Poznámky kompatibility:**
 
 - Doporučená je stejná verze backendu na obou serverech.
-- Server musí mít kompatibilní Python závislosti (načítání `model.pkl` / `xgb_model.pkl`).
+- Server musí mít kompatibilní Python závislosti (načítání `model.pkl`).
 - Pokud se interní formát checkpointu mezi verzemi změní, import může selhat.
 
 Loguje statistiky: kolik hodnot bylo clampnuto, pro které features.
@@ -464,7 +464,7 @@ Cross-validace pro regresi není implementována (`cv_mse`, `cv_std`, `cv_mae` j
 
 #### Feature Importance
 
-- **RuleKit:** Frekvence features v pravidlech (kolikrát se feature objeví v rule conditions)
+- **RuleKit:** Normalizovaná frekvence features v pravidlech. Hodnota = podíl pravidel, v jejichž podmínkách se daná feature vyskytuje (rozsah 0–1, součet ≤ 1). Formát: `{"feature_name": 0.42, ...}` seřazeno sestupně. Implementace: `_count_rule_features()` v `ml_rules.py`.
 
 Vrací se v API response pro vizualizaci ve frontend.
 
@@ -475,6 +475,11 @@ Při `target_mode = classification` backend nejdřív validuje, že zvolený tar
 - nesmí být prázdný po odfiltrování chybějících hodnot
 - pokud je téměř celý numerický a má vysokou kardinalitu, je považován za pravděpodobně spojitou proměnnou a backend vrátí chybu s doporučením přepnout na regresi
 - pokud má vysokou kardinalitu i jako string a většina tříd je singleton nebo téměř singleton, je považován za identifier-like sloupec a backend ho odmítne
+
+**Positive label pro binární klasifikaci** — prioritní pořadí v `_resolve_positive_label()`:
+1. Env var `CLASSIFICATION_POSITIVE_LABEL` (explicitní override)
+2. Třída pojmenovaná `1`, `true`, `positive`, `malignant`, nebo `yes`
+3. Fallback: méně četná třída
 
 Model pro klasifikaci:
 - `RuleClassifier` z RuleKitu
@@ -591,6 +596,8 @@ def update_job(job_id, **kwargs): ...
 5. Odpověď: `{"progress": 45, "stage": "Extracting (3/10)...", "done": false}`
 6. Po dokončení: `{"progress": 100, "done": true, "details": {...}}`
 
+**TTL dokončených jobů:** Dokončené joby se mažou z paměti **8 hodin po posledním update** (pole `_updated_at`). Po vypršení TTL vrátí `GET /status/{job_id}` chybu `404`. Výsledky jsou uloženy na disku v `pipeline_state.json` — ztráta `job_id` neznamená ztrátu výsledků. Frontend po `404` ze `/status` automaticky přejde na obnovu stavu ze `/state`.
+
 ---
 
 ### 2.9 Víceuživatelská podpora a Ollama serializace
@@ -610,7 +617,17 @@ prohlížeč B ──X-Session-ID: xyz──► get_pipeline("xyz") ──► Ma
 
 Session ID je UUID generovaný prohlížečem při první návštěvě a uložen v `localStorage`. Posílá se jako HTTP hlavička `X-Session-ID` s každým requestem. Server identifikuje uživatele a vrátí (nebo vytvoří) jeho pipeline instanci.
 
-Session registry eviktuje neaktivní session po 24 hodinách (TTL-based cleanup).
+Session registry eviktuje neaktivní session po 24 hodinách (TTL-based cleanup). Checkpoint složka na disku (`checkpoints/sessions/{id}/`) zůstane — smaže se pouze in-memory instance pipeline.
+
+**Cascade invalidace při opakovaném spuštění fáze** (`pipeline.invalidate_from_phase(n)`):
+
+| Spuštěná fáze | Co se vymaže |
+|---|---|
+| 1 (Discovery) | `feature_spec`, `training_X/Y`, model, `testing_X`, predikce |
+| 2 (Training Extraction) | `training_X/Y`, model, `testing_X`, predikce |
+| 3 (Training) | model, predikce |
+| 4 (Testing Extraction) | `testing_X`, predikce |
+| 5 (Prediction) | pouze predikce |
 
 #### Ollama EOF — popis chyby a oprava
 
@@ -635,6 +652,14 @@ with open(_OLLAMA_LOCK_FILE, "w") as lockfile:
 ```
 
 **Dopad na výkon:** Extrakce více médií jedním uživatelem probíhá sekvenčně (bylo tak i dříve). Souběžní uživatelé se řadí do fronty na úrovni LLM callů. Celková doba zpracování je stejná, ale bez crashů.
+
+#### CPU fallback při GPU OOM
+
+Pokud Ollama selže při načítání modelu s GPU out-of-memory chybou, backend automaticky zopakuje request v CPU režimu (`num_gpu=0`). Chování:
+- Povoleno výchozí: `OLLAMA_CPU_FALLBACK=1`
+- Selhání GPU se zaloguje jako `WARNING` v server logu
+- CPU inference je výrazně pomalejší (desítky sekund per médium místo sekund)
+- Nastavením `OLLAMA_CPU_FALLBACK=0` lze fallback zakázat, čímž GPU OOM skončí chybou extrakce
 
 ---
 
@@ -950,10 +975,8 @@ Pro srovnávací experiment v bakalářské práci doporučuji následující de
 
 | Proměnná | Default | Popis |
 |---|---|---|
-| `VITE_API_BASE` | `http://localhost:5000` (dev) / unset (Worker proxy) | Frontend API base URL |
-| `BACKEND_URL` | - | Primární backend URL pro Cloudflare Worker proxy (nastavuje se v Cloudflare env vars/secrets, necommitovat krátkodobé tunnel URL do repozitáře) |
-| `BACKEND_URL_FALLBACK` | - | Volitelná fallback backend URL (nebo seznam URL), použije se při nedostupnosti primárního backendu |
-| `ALLOWED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173,https://bpfeaturelab.kovm23.workers.dev` | CORS allowlist backendu pro browser requesty a Worker frontend |
+| `VITE_API_BASE` | `""` (prázdný — požadavky jdou na origin stránky) | Frontend API base URL; v dev režimu Vite proxy přesměruje `/api/*` na localhost:5000 |
+| `ALLOWED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173,https://llmfeatures.vse.cz` | CORS allowlist backendu; čárkami oddělené originy — musí obsahovat doménu frontendu |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Base URL lokálního Ollama serveru |
 | `OLLAMA_MODEL` | `qwen2.5vl:7b` | Výchozí Ollama model pro discovery/extrakci |
 | `OLLAMA_API_KEY` | `ollama` | API klíč pro OpenAI-kompatibilní endpoint Ollamy (ve většině instalací stačí default) |
@@ -966,19 +989,15 @@ Pro srovnávací experiment v bakalářské práci doporučuji následující de
 | `DISCOVERY_MAX_SAMPLES` | `10` | Počet vzorků analyzovaných LLM při Phase 1 — vyšší znamená bohatší feature spec, ale delší discovery |
 | `EXTRACTION_PASSES` | `1` | Počet LLM callů per médium při extrakci (více = stabilnější hodnoty, vyšší cena) |
 | `CV_MAX_FOLDS` | `3` | Horní limit počtu CV foldů |
-| `XGB_N_ESTIMATORS` | `100` | Legacy; XGBoost byl odstraněn, tato proměnná se nepoužívá |
-| `XGB_MAX_DEPTH` | `4` | Legacy; XGBoost byl odstraněn |
-| `XGB_LEARNING_RATE` | `0.1` | Legacy; XGBoost byl odstraněn |
-| `XGB_RANDOM_STATE` | `42` | Legacy; XGBoost byl odstraněn |
 | `CLASSIFICATION_POSITIVE_LABEL` | — (neuvedeno) | Explicitní positive label pro binární klasifikaci; jinak se odvozuje heuristikou ze jmen tříd (`positive`, `yes`, `true`, `1`) nebo z méně četné třídy |
 | `CLASSIFICATION_POSITIVE_THRESHOLD` | `0.45` | Práh pro positive prediction v binární klasifikaci |
 | `SECRET_KEY` | náhodný `token_hex(32)` při každém startu | Flask session secret — pro stabilitu sessions mezi restarty nastavit jako perzistentní hodnotu |
 
 **Poznámka k PM2 konfiguraci:** `EXTRACTION_PASSES` a `CV_MAX_FOLDS` jsou nastaveny přímo v `backend/ecosystem.config.js` (sekce `env`). Při použití PM2 tedy jejich hodnota vychází z tohoto souboru, nikoliv z `backend/.env`. Změna hodnot vyžaduje úpravu `ecosystem.config.js` a restart procesů přes `pm2 reload ecosystem.config.js`.
 
-Poznámka: při použití `trycloudflare.com` je `BACKEND_URL` dočasná adresa, která se mění po restartu tunelu. Pokud není po restartu aktualizována, Worker může vracet chyby 530.
+**Poznámka k ALLOWED_ORIGINS:** Musí obsahovat veřejný frontend origin, jinak polling na `/status/<job_id>` a `/queue-info` skončí s CORS chybou 403.
 
-Poznámka: při produkčním nasazení přes `*.workers.dev` musí backend `ALLOWED_ORIGINS` obsahovat veřejný frontend origin, jinak polling na `/status/<job_id>` a `/queue-info` skončí 403.
+**Poznámka k SECRET_KEY:** Pokud není nastaveno, Flask generuje nový náhodný klíč při každém restartu — session cookies přestanou platit. V produkci nastavit jako perzistentní hodnotu.
 
 Poznámka: backend načítá konfiguraci explicitně z `backend/.env`; kořenový `.env` se nepoužívá.
 
@@ -989,18 +1008,15 @@ Pro přesun backendu na jiný server viz [docs/migration.md](../docs/migration.m
 | Proces | Příkaz | Port |
 |---|---|---|
 | `backend` | `gunicorn -w 1 -b 0.0.0.0:5000 --timeout 1200 --graceful-timeout 60 app:app` | 5000 |
-| `backend-tunnel` | `cloudflared tunnel --url http://127.0.0.1:5000` | — |
 
 ### 6.3 Spuštění
 
 ```bash
-# Backend + tunnel (Cloudflare varianta)
 cd backend
 pm2 start ecosystem.config.js
 ```
 
-Pro split deploy variantu s frontendem na samostatném Apache hostu použij [frontend-llmfeatures-deploy.md](/home/kovm23/BP/microsoft-edu-ai-hackathon-2025/docs/frontend-llmfeatures-deploy.md) a konfiguraci [apache-llmfeatures.vse.cz.conf](/home/kovm23/BP/microsoft-edu-ai-hackathon-2025/docs/apache-llmfeatures.vse.cz.conf).
-```
+Pro split deploy variantu s frontendem na samostatném Apache hostu viz [frontend-llmfeatures-deploy.md](frontend-llmfeatures-deploy.md) a konfiguraci [apache-llmfeatures.vse.cz.conf](apache-llmfeatures.vse.cz.conf).
 
 ### 6.4 Reprodukovatelný experimentální scénář pro BP
 
@@ -1042,7 +1058,7 @@ Spustí feature discovery z vzorkových médií.
 - `model`: ID LLM modelu
 - `labels_file` (optional): CSV s labels
 
-Poznámka: endpoint může přijmout více souborů nebo ZIP, ale discovery pro samotný návrh featur analyzuje maximálně prvních 5 nalezených médií.
+Poznámka: endpoint může přijmout více souborů nebo ZIP, ale discovery pro samotný návrh featur analyzuje maximálně prvních `DISCOVERY_MAX_SAMPLES` nalezených médií (výchozí 10).
 
 **Response:** `{"job_id": "uuid"}`
 
@@ -1133,6 +1149,32 @@ Spustí trénování modelu.
 
 Finální výsledek je dostupný přes `GET /status/{job_id}` v `details` (viz sekce 2.6).
 
+**Regresní výsledek:**
+```json
+{
+  "status": "success", "target_mode": "regression",
+  "mse": 0.023, "rules_count": 12,
+  "rules": ["IF action_intensity > 5.5 THEN 0.72"],
+  "feature_importance": {"rulekit": {"action_intensity": 0.42}},
+  "warnings": [], "training_data_X": [...]
+}
+```
+
+**Klasifikační výsledek:**
+```json
+{
+  "status": "success", "target_mode": "classification",
+  "train_accuracy": 0.85, "train_balanced_accuracy": 0.83,
+  "train_f1_macro": 0.82, "train_mcc": 0.78,
+  "cv_accuracy": 0.79, "cv_balanced_accuracy": 0.77,
+  "cv_f1_macro": 0.76, "cv_precision_macro": 0.78,
+  "cv_recall_macro": 0.77, "cv_mcc": 0.71, "cv_folds": 5,
+  "rules_count": 8, "rules": ["IF ..."],
+  "feature_importance": {"rulekit": {"feat": 0.33}},
+  "warnings": [], "training_data_X": [...]
+}
+```
+
 ### POST /predict
 Spustí batch predikci.
 
@@ -1143,24 +1185,51 @@ Spustí batch predikci.
 {"job_id": "uuid"}
 ```
 
-Finální výsledek je dostupný přes `GET /status/{job_id}` v `details`:
+Finální výsledek je dostupný přes `GET /status/{job_id}` v `details`.
+
+**Regresní predikce:**
 ```json
 {
   "predictions": [
     {
       "media_name": "video_001",
-      "predicted_score": 0.672,
-      "actual_score": 0.71,
+      "predicted_score": 0.672, "actual_score": 0.71,
       "rule_applied": "IF action_intensity > 5.5 THEN 0.672",
       "extracted_features": {...}
     }
   ],
   "metrics": {
-    "mse": 0.0234,
-    "mae": 0.112,
-    "correlation": 0.89,
-    "matched_count": 50,
-    "total_count": 50
+    "mode": "regression",
+    "mse": 0.0234, "mae": 0.112, "correlation": 0.89,
+    "matched_count": 50, "total_count": 50
+  }
+}
+```
+
+**Klasifikační predikce:**
+```json
+{
+  "predictions": [
+    {
+      "media_name": "video_001",
+      "predicted_label": "high", "confidence": 0.82,
+      "actual_label": "high",
+      "rule_applied": "IF ...",
+      "extracted_features": {...}
+    }
+  ],
+  "metrics": {
+    "mode": "classification",
+    "accuracy": 0.75, "balanced_accuracy": 0.73,
+    "f1_macro": 0.72, "precision_macro": 0.74, "recall_macro": 0.73,
+    "mcc": 0.67,
+    "confusion_matrix": [[30, 10], [5, 55]],
+    "per_class_metrics": {
+      "high": {"precision": 0.8, "recall": 0.7, "f1": 0.75, "support": 40}
+    },
+    "avg_confidence": 0.79, "correct_confidence_avg": 0.84,
+    "wrong_confidence_avg": 0.71,
+    "matched_count": 100, "total_count": 100
   }
 }
 ```
@@ -1436,7 +1505,7 @@ Neobsahuje trénovací logiku. Pokud se mění preprocessing nebo metriky, editu
 
 - `_train_regression_branch(...)` — fit RuleKit `RuleRegressor`; žádný ensemble ani CV
 - Feature importance: frekvence features v pravidlech (RuleKit)
-- Vrací `mse` na trénovacích datech; `cv_mse`, `rulekit_mse`, `xgb_mse` jsou vždy `None`
+- Vrací `mse` na trénovacích datech; `cv_mse` je vždy `None` (regresní CV není implementováno)
 
 ### 10.4 `ml_preprocessing.py` — feature pipeline
 

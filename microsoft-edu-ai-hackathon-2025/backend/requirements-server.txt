@@ -19,4 +19,3 @@ PyPDF2==3.0.1
 flask-cors==5.0.0
 rulekit>=1.7.14
 scikit-learn==1.5.2
-xgboost==2.1.3

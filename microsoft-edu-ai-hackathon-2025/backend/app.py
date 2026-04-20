@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 def _parse_allowed_origins() -> list[str]:
     raw_origins = os.getenv(
         "ALLOWED_ORIGINS",
-        "http://localhost:5173,http://127.0.0.1:5173,https://bpfeaturelab.kovm23.workers.dev",
+        "http://localhost:5173,http://127.0.0.1:5173,https://llmfeatures.vse.cz",
     )
     origins = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
     return origins or ["http://localhost:5173", "http://127.0.0.1:5173"]
