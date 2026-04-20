@@ -15,6 +15,7 @@ import pandas as pd
 
 from pipeline.feature_validation import validate_row
 from services.processing import process_single_media
+from utils.csv_utils import load_labels_from_path
 from utils.target_context import build_labels_context
 import jobs as job_registry
 
@@ -112,13 +113,11 @@ def _extract_single_pass(media_path: str, prompt: str, model_name: str) -> dict:
     """Run a single extraction pass and return cleaned attrs dict."""
     result = process_single_media(media_path, prompt=prompt, model_name=model_name)
     analysis = result.get("analysis", {})
-    if isinstance(analysis, dict):
-        attrs = analysis.get("attributes", analysis)
-        for key in _META_KEYS:
-            attrs.pop(key, None)
-    else:
-        attrs = {}
-    return attrs
+    if not isinstance(analysis, dict):
+        return {}
+    for key in _META_KEYS:
+        analysis.pop(key, None)
+    return analysis
 
 
 def extract_features_async(
@@ -270,12 +269,7 @@ def extract_features_async(
             len(df_X), total_clamped,
         )
 
-        df_Y = None
-        if csv_path:
-            try:
-                df_Y = pd.read_csv(csv_path)
-            except Exception as e:
-                logger.warning("Cannot load CSV labels: %s", e)
+        df_Y = load_labels_from_path(csv_path) if csv_path else None
 
         if dataset_type == "training":
             pipeline.training_X = df_X

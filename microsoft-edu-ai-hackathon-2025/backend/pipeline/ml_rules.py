@@ -97,7 +97,7 @@ def _find_covering_rule(row: pd.Series, rules: list[str]) -> str:
 def _count_rule_features(rules: list[str], feature_names: list[str]) -> dict:
     """Return a normalised frequency dict of features appearing in rules."""
     counts = {
-        feat: sum(1 for rule in rules if feat in rule)
+        feat: sum(1 for rule in rules if (feat + " ") in rule)
         for feat in feature_names
     }
     counts = {k: v for k, v in counts.items() if v > 0}

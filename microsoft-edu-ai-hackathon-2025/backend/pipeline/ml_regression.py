@@ -34,11 +34,8 @@ def _train_regression_branch(pipeline, X, y_raw, target_column, _cb, warnings: l
     rulekit_importance = _count_rule_features(rules, list(X.columns))
 
     pipeline.model = rulekit_model
-    pipeline.xgb_model = None
     pipeline.rules = rules
     pipeline.mse = mse
-    pipeline.rulekit_mse = None
-    pipeline.xgb_mse = None
     pipeline.cv_mse = None
     pipeline.cv_std = None
     pipeline.cv_mae = None

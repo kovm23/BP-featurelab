@@ -11,13 +11,11 @@ from sklearn.metrics import (
     confusion_matrix,
     f1_score,
     matthews_corrcoef,
-    mean_absolute_error,
-    mean_squared_error,
     precision_score,
     precision_recall_fscore_support,
     recall_score,
 )
-from sklearn.model_selection import KFold, StratifiedKFold
+from sklearn.model_selection import StratifiedKFold
 
 from pipeline.ml_preprocessing import _apply_median_imputer, _fit_median_imputer, _oversample_minority
 from utils.csv_utils import normalize_media_name

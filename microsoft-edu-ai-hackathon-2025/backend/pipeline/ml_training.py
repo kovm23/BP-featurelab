@@ -100,9 +100,8 @@ def _train_classification_branch(pipeline, X, y_raw, target_column, _cb, warning
         )
 
     pipeline.model = rulekit_model
-    pipeline.xgb_model = None
     pipeline.rules = rules
-    pipeline.mse = pipeline.rulekit_mse = pipeline.xgb_mse = None
+    pipeline.mse = None
     pipeline.cv_mse = pipeline.cv_std = pipeline.cv_mae = None
     pipeline.train_accuracy = round(float(accuracy_score(y, y_pred)), 6)
     pipeline.train_balanced_accuracy = round(float(balanced_accuracy_score(y, y_pred)), 6)
@@ -217,12 +216,7 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
 
     Optionally compares with testing_Y_df for evaluation metrics.
     """
-    def _cb(pct: int, msg: str) -> None:
-        if progress_cb:
-            try:
-                progress_cb(pct, msg)
-            except Exception as e:
-                logger.debug("progress_cb failed: %s", e)
+    _cb = _make_progress_cb(progress_cb)
 
     if not pipeline.is_trained:
         raise Exception("Model is not trained. Complete Phase 3 first.")
@@ -242,27 +236,21 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
     if target_mode == "classification":
         _cb(25, "RuleKit classification predictions...")
         rulekit_classifier = getattr(pipeline, "model", None)
-        xgb_classifier = getattr(pipeline, "xgb_model", None)
-        legacy_xgb = rulekit_classifier is None and xgb_classifier is not None
-        if rulekit_classifier is None and xgb_classifier is None:
+        if rulekit_classifier is None:
             raise Exception("Classification model is missing. Train Phase 3 again.")
 
-        if legacy_xgb:
-            y_pred = np.asarray([str(l) for l in xgb_classifier.predict(X_test)], dtype=object)
-            y_pred_proba = None
-        else:
-            medians = dict(zip(pipeline._training_columns, pipeline._scaler_mean))
-            X_test = _apply_median_imputer(X_test, medians)
-            positive_label = (
-                getattr(pipeline, "_positive_label", None)
-                or _resolve_positive_label(getattr(pipeline, "_label_classes", []) or [])
-            )
-            y_pred, y_pred_proba = _rulekit_classification_predict(
-                rulekit_classifier, X_test,
-                positive_label=positive_label,
-                positive_threshold=CLASSIFICATION_POSITIVE_THRESHOLD,
-                label_classes=getattr(pipeline, "_label_classes", None) or None,
-            )
+        medians = dict(zip(pipeline._training_columns, pipeline._scaler_mean))
+        X_test = _apply_median_imputer(X_test, medians)
+        positive_label = (
+            getattr(pipeline, "_positive_label", None)
+            or _resolve_positive_label(getattr(pipeline, "_label_classes", []) or [])
+        )
+        y_pred, y_pred_proba = _rulekit_classification_predict(
+            rulekit_classifier, X_test,
+            positive_label=positive_label,
+            positive_threshold=CLASSIFICATION_POSITIVE_THRESHOLD,
+            label_classes=getattr(pipeline, "_label_classes", None) or None,
+        )
 
         coverage_matrix = None
         if rulekit_classifier is not None and hasattr(rulekit_classifier, "get_coverage_matrix") and pipeline.rules:
@@ -294,8 +282,6 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
                     rule_applied = pipeline.rules[int(covered[0])]
             elif pipeline.rules:
                 rule_applied = _find_covering_rule(row, pipeline.rules)
-            elif legacy_xgb:
-                rule_applied = "Legacy XGBoost classification model"
 
             item = {
                 "media_name": media_name,
