@@ -67,7 +67,7 @@ export const TRAINING_TRANSLATIONS = {
     labelsAutoloadHint:
       "If labels CSV is in ZIP, it will be loaded automatically. You can upload it separately here.",
     labelsMatchingHint:
-      'The first CSV column should match media file names without extension. Example: "video.mp4" -> "video". Extensions, paths and letter case are tolerated, but the base name should still match.',
+      'Labels CSV must have a header row — the second column name becomes the target variable you pick in Phase 3. If your CSV has no header, the app detects and fixes it automatically. First column must match media filenames (extension, path and case are ignored).',
     ollamaUnavailable: "Ollama is unavailable (localhost:11434). Start it with:",
     checkAgain: "Check again",
     uploadTrainingFirst: "Upload training ZIP first",
@@ -167,7 +167,7 @@ export const TRAINING_TRANSLATIONS = {
     queueBusyMessage:
       "Model is currently busy. Additional requests are waiting in the queue ({count}), so processing may take longer than usual.",
     csvFormatHint:
-      'CSV format: first column = filename without extension. E.g. file "video.mp4" → CSV value "video".',
+      "filename,score          ← header row (column names)\nvideo1,high\nvideo2,low\nvideo3.mp4,high         ← extensions are OK too",
     extractionStallWarning:
       "Extraction is taking longer than usual — the model may be busy or processing a large file.",
   },
@@ -239,7 +239,7 @@ export const TRAINING_TRANSLATIONS = {
     labelsAutoloadHint:
       "Pokud je CSV s labely v ZIPu, načte se automaticky. Zde ho lze nahrát zvlášť.",
     labelsMatchingHint:
-      'První sloupec CSV má odpovídat názvům médií bez přípony. Příklad: "video.mp4" -> "video". Přípony, cesty i velikost písmen se tolerují, ale základ názvu musí stále sedět.',
+      'CSV s labely musí mít hlavičkový řádek — název druhého sloupce se stane cílovou proměnnou, kterou vyberete ve Fázi 3. Pokud CSV hlavičku nemá, aplikace ji automaticky doplní. První sloupec musí odpovídat názvům souborů (přípony, cesty i velikost písmen se ignorují).',
     ollamaUnavailable: "Ollama není dostupný (localhost:11434). Spusťte:",
     checkAgain: "Zkontrolovat znovu",
     uploadTrainingFirst: "Nejdříve nahrajte trénovací ZIP",
@@ -339,7 +339,7 @@ export const TRAINING_TRANSLATIONS = {
     queueBusyMessage:
       "Model je momentálně vytížený. Ve frontě čekají další požadavky ({count}), takže zpracování může trvat déle než obvykle.",
     csvFormatHint:
-      'Formát CSV: první sloupec = název souboru bez přípony. Např. soubor "video.mp4" → hodnota v CSV "video".',
+      "nazev_souboru,skore     ← hlavičkový řádek (názvy sloupců)\nvideo1,vysoka\nvideo2,nizka\nvideo3.mp4,vysoka       ← přípony jsou OK",
     extractionStallWarning:
       "Extrakce trvá déle než obvykle — model je pravděpodobně zaneprázdněn nebo se zpracovává velký soubor.",
   },

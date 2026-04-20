@@ -61,7 +61,7 @@ sudo chown -R www-data:www-data /var/www/llmfeatures
 
 ## 3. Aktivuj Apache virtualhost
 
-Konfigurace je připravena v [apache-llmfeatures.vse.cz.conf](/home/kovm23/BP/microsoft-edu-ai-hackathon-2025/docs/apache-llmfeatures.vse.cz.conf).
+Konfigurace je připravena v [apache-llmfeatures.vse.cz.conf](apache-llmfeatures.vse.cz.conf).
 
 ```bash
 sudo cp ~/BP/microsoft-edu-ai-hackathon-2025/docs/apache-llmfeatures.vse.cz.conf /etc/apache2/sites-available/llmfeatures.vse.cz.conf

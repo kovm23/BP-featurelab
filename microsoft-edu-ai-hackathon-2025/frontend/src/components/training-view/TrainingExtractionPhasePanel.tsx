@@ -121,7 +121,7 @@ export function TrainingExtractionPhasePanel(props: {
         <p className={`text-xs ${cls(deluxe, "text-blue-800", "text-blue-200")}`}>
           {tr.labelsMatchingHint}
         </p>
-        <p className={`text-xs mt-1 font-mono ${cls(deluxe, "text-blue-700", "text-blue-300/80")}`}>
+        <p className={`text-xs mt-1 font-mono whitespace-pre ${cls(deluxe, "text-blue-700", "text-blue-300/80")}`}>
           {tr.csvFormatHint}
         </p>
       </div>

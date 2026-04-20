@@ -37,7 +37,7 @@ Script:
 
 ## 4. Backend konfigurace
 
-Zkontroluj [backend/.env](/home/kovm23/BP/microsoft-edu-ai-hackathon-2025/backend/.env):
+Zkontroluj `backend/.env`:
 
 - `OLLAMA_BASE_URL`
 - `OLLAMA_MODEL`
