@@ -67,6 +67,9 @@ def _train_classification_branch(pipeline, X, y_raw, target_column, _cb, warning
     """Train RuleKit classifier and update pipeline state in-place."""
     y = _validate_classification_target(y_raw)
     X = X.loc[y.index]
+    y_counts = y.value_counts()
+    train_majority_class = str(y_counts.idxmax())
+    train_baseline_accuracy = round(float(y_counts.max() / max(len(y), 1)), 6)
     medians = _fit_median_imputer(X)
     X = _apply_median_imputer(X, medians)
     label_classes = [str(c) for c in pd.Index(pd.unique(y)).tolist()]
@@ -107,6 +110,8 @@ def _train_classification_branch(pipeline, X, y_raw, target_column, _cb, warning
     pipeline.train_balanced_accuracy = round(float(balanced_accuracy_score(y, y_pred)), 6)
     pipeline.train_f1_macro = round(float(f1_score(y, y_pred, average="macro", zero_division=0)), 6)
     pipeline.train_mcc = round(float(matthews_corrcoef(y, y_pred)), 6)
+    pipeline.train_baseline_accuracy = train_baseline_accuracy
+    pipeline.train_majority_class = train_majority_class
     pipeline.cv_accuracy = cv_results.get("cv_accuracy")
     pipeline.cv_balanced_accuracy = cv_results.get("cv_balanced_accuracy")
     pipeline.cv_f1_macro = cv_results.get("cv_f1_macro")
@@ -134,6 +139,8 @@ def _train_classification_branch(pipeline, X, y_raw, target_column, _cb, warning
         "train_balanced_accuracy": pipeline.train_balanced_accuracy,
         "train_f1_macro": pipeline.train_f1_macro,
         "train_mcc": pipeline.train_mcc,
+        "train_baseline_accuracy": pipeline.train_baseline_accuracy,
+        "train_majority_class": pipeline.train_majority_class,
         **{k: cv_results.get(k) for k in ("cv_accuracy", "cv_balanced_accuracy", "cv_f1_macro",
                                             "cv_precision_macro", "cv_recall_macro", "cv_mcc")},
         "cv_folds": cv_results.get("n_folds"),

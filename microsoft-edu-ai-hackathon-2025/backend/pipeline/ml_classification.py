@@ -1,6 +1,7 @@
 """Classification helpers: label resolution, probability alignment, CV, metrics."""
 import logging
 import os
+from collections import Counter
 
 import numpy as np
 import pandas as pd
@@ -291,9 +292,14 @@ def _compute_classification_metrics(
     ]
     correct_conf = [float(i["confidence"]) for i in matched if i.get("predicted_label") == i.get("actual_label")]
     incorrect_conf = [float(i["confidence"]) for i in matched if i.get("predicted_label") != i.get("actual_label")]
+    label_counts = Counter(actual_list)
+    majority_label = label_counts.most_common(1)[0][0]
+    baseline_accuracy = round(label_counts[majority_label] / max(len(actual_list), 1), 6)
     return {
         "mode": "classification",
         "accuracy": round(float(accuracy_score(actual_list, pred_list)), 6),
+        "baseline_accuracy": baseline_accuracy,
+        "majority_class": majority_label,
         "balanced_accuracy": round(float(balanced_accuracy_score(actual_list, pred_list)), 6),
         "f1_macro": round(float(f1_score(actual_list, pred_list, average="macro", zero_division=0)), 6),
         "precision_macro": round(float(precision_score(actual_list, pred_list, average="macro", zero_division=0)), 6),

@@ -1,7 +1,26 @@
+import { Download } from "lucide-react";
 import type { PredictionMetrics } from "@/lib/api";
+import { EXPORT_CONFUSION_MATRIX_URL, sessionHeaders } from "@/lib/api";
 import { cls } from "./shared";
 import type { TrainingTranslations } from "./translations";
 import { ConfidenceStat, ConfusionMatrix, MetricStat } from "./metricStats";
+
+function downloadConfusionMatrixPng() {
+  fetch(EXPORT_CONFUSION_MATRIX_URL, { headers: sessionHeaders() })
+    .then((r) => {
+      if (!r.ok) throw new Error(`${r.status}`);
+      return r.blob();
+    })
+    .then((blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "confusion_matrix.png";
+      a.click();
+      URL.revokeObjectURL(url);
+    })
+    .catch((err) => console.error("Confusion matrix export failed:", err));
+}
 
 export function ClassificationMetricsPanel({
   deluxe,
@@ -15,7 +34,20 @@ export function ClassificationMetricsPanel({
   return (
     <>
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-x-5 gap-y-4">
-        <MetricStat deluxe={deluxe} value={(predictionMetrics.accuracy ?? 0).toFixed(4)} label={tr.accuracy} tooltip={tr.accuracyTooltip} />
+        <div>
+          <MetricStat deluxe={deluxe} value={(predictionMetrics.accuracy ?? 0).toFixed(4)} label={tr.accuracy} tooltip={tr.accuracyTooltip} />
+          {predictionMetrics.baseline_accuracy != null && (
+            <p className={`text-[10px] mt-0.5 text-center ${cls(deluxe, "text-slate-500", "text-slate-400")}`}>
+              baseline: {(predictionMetrics.baseline_accuracy * 100).toFixed(1)}%
+              {" "}(
+              <span className={(predictionMetrics.accuracy ?? 0) >= predictionMetrics.baseline_accuracy ? "text-green-600" : "text-red-500"}>
+                {((predictionMetrics.accuracy ?? 0) - predictionMetrics.baseline_accuracy) >= 0 ? "+" : ""}
+                {(((predictionMetrics.accuracy ?? 0) - predictionMetrics.baseline_accuracy) * 100).toFixed(1)}pp
+              </span>
+              )
+            </p>
+          )}
+        </div>
         <MetricStat deluxe={deluxe} value={(predictionMetrics.balanced_accuracy ?? 0).toFixed(4)} label={tr.balancedAccuracy} tooltip={tr.balancedAccuracyTooltip} />
         <MetricStat deluxe={deluxe} value={(predictionMetrics.f1_macro ?? 0).toFixed(4)} label={tr.f1Macro} tooltip={tr.f1MacroTooltip} />
         <MetricStat deluxe={deluxe} value={(predictionMetrics.precision_macro ?? 0).toFixed(4)} label={tr.precisionMacro} tooltip={tr.precisionMacroTooltip} />
@@ -80,6 +112,14 @@ export function ClassificationMetricsPanel({
                 {tr.actualAxis} × {tr.predictedAxis}
               </p>
               <ConfusionMatrix labels={predictionMetrics.labels} matrix={predictionMetrics.confusion_matrix} />
+              <div className="mt-2 flex justify-end">
+                <button
+                  onClick={downloadConfusionMatrixPng}
+                  className={`px-2 py-1 rounded text-xs flex items-center gap-1 ${cls(deluxe, "bg-slate-500 hover:bg-slate-600 text-white", "bg-slate-600 hover:bg-slate-500 text-white")}`}
+                >
+                  <Download className="w-3 h-3" /> Download as PNG
+                </button>
+              </div>
             </div>
           </details>
         )}

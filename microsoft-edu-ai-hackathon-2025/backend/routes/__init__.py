@@ -7,6 +7,9 @@ from .reset import reset_bp
 from .state import state_bp
 from .health import health_bp
 from .session_transfer import session_transfer_bp
+from .demo import demo_bp
+from .export_matrix import export_matrix_bp
+from .repeatability import repeatability_bp
 
 __all__ = [
     "discover_bp",
@@ -18,4 +21,7 @@ __all__ = [
     "state_bp",
     "health_bp",
     "session_transfer_bp",
+    "demo_bp",
+    "export_matrix_bp",
+    "repeatability_bp",
 ]

@@ -109,6 +109,13 @@ export function TrainingResultsCard({
                       {tr.matthews}: <strong>{Number(trainResult.train_mcc).toFixed(4)}</strong>
                     </p>
                   )}
+                  {trainResult.train_baseline_accuracy != null && (
+                    <p>
+                      Baseline (majority class):{" "}
+                      <strong>{(Number(trainResult.train_baseline_accuracy) * 100).toFixed(1)}%</strong>
+                      {trainResult.train_majority_class && ` (class: ${trainResult.train_majority_class})`}
+                    </p>
+                  )}
                 </div>
               </details>
             )}

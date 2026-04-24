@@ -75,6 +75,8 @@ def api_state():
             "train_balanced_accuracy": pipeline.train_balanced_accuracy,
             "train_f1_macro": pipeline.train_f1_macro,
             "train_mcc": pipeline.train_mcc,
+            "train_baseline_accuracy": pipeline.train_baseline_accuracy,
+            "train_majority_class": pipeline.train_majority_class,
             "cv_accuracy": pipeline.cv_accuracy,
             "cv_balanced_accuracy": pipeline.cv_balanced_accuracy,
             "cv_f1_macro": pipeline.cv_f1_macro,

@@ -37,7 +37,7 @@ Při psaní praktické části je vhodné explicitně uvést tato provozní omez
 - Klasifikace validuje, že cílová proměnná je skutečně kategorická; sloupce s vysokou kardinalitou nebo téměř spojitým numerickým rozsahem jsou odmítnuty.
 - Výsledky jsou interpretovatelné, ale jejich kvalita závisí na kvalitě lokálního multimodálního modelu v Ollamě a na kvalitě vstupních dat.
 
-### Stav implementace (aktualizace 2026-04-09)
+### Stav implementace (aktualizace 2026-04-24)
 
 Tato sekce doplňuje historický popis níže o aktuální chování aplikace:
 
@@ -130,7 +130,10 @@ backend/
 │   ├── reset.py                # POST /reset
 │   ├── state.py                # GET /state
 │   ├── health.py               # GET /health, GET /queue-info
-│   └── session_transfer.py     # GET /export-session, POST /import-session
+│   ├── session_transfer.py     # GET /export-session, POST /import-session
+│   ├── export_matrix.py        # GET /export-confusion-matrix
+│   ├── repeatability.py        # POST /repeatability-test
+│   └── demo.py                 # POST /load-demo (DEMO_MODE=true)
 ├── services/
 │   ├── processing.py           # Media processing (video → keyframes + audio)
 │   ├── openai_service.py       # LLM API client (Ollama OpenAI-compatible) + GPU lock
@@ -169,6 +172,8 @@ Každý uživatel (prohlížeč) dostane vlastní instanci `MachineLearningPipel
 | `xgb_mse` | `None` | Legacy pole; vždy `None` |
 | `cv_mse`, `cv_mae`, `cv_std` | `float \| None` | Cross-val metriky pro regresi |
 | `train_accuracy`, `cv_accuracy`, ... | `float \| None` | Trénovací a cross-val metriky pro klasifikaci |
+| `train_baseline_accuracy` | `float \| None` | Přesnost majority-class baseline na trénovacích datech |
+| `train_majority_class` | `str \| None` | Nejčetnější třída v trénovacích datech |
 | `warnings` | `list[str]` | Ne-fatal upozornění z tréninku |
 | `is_trained` | `bool` | Indikátor natrénovaného modelu |
 | `testing_X` | `DataFrame \| None` | Extrahované features z testovacích dat |
@@ -489,8 +494,10 @@ Model pro klasifikaci:
 - `StratifiedKFold` místo obyčejného `KFold`, aby foldy zachovávaly rozložení tříd
 
 Metriky klasifikace:
-- train: `accuracy`, `balanced_accuracy`, `f1_macro`, `mcc`
+- train: `accuracy`, `balanced_accuracy`, `f1_macro`, `mcc`, `train_baseline_accuracy`, `train_majority_class`
 - cross-validation: `cv_accuracy`, `cv_balanced_accuracy`, `cv_f1_macro`, `cv_precision_macro`, `cv_recall_macro`, `cv_mcc`
+
+`train_baseline_accuracy` udává přesnost triviálního modelu, který vždy predikuje nejčetnější třídu. Slouží jako základní srovnávací hodnota (majority-class baseline) — zobrazuje se v UI vedle accuracy a je dostupná i v API response.
 
 V klasifikační větvi se nepoužívá `MSE` ani `MAE`.
 
@@ -545,6 +552,8 @@ Pokud je pipeline v režimu klasifikace:
 5. pokud jsou k dispozici ground-truth labels, musí CSV obsahovat stejný target sloupec jako při tréninku; jinak backend vrátí chybu místo tichého fallbacku na jiný sloupec
 6. pokud jsou k dispozici ground-truth labels, počítají se klasifikační metriky:
    - `accuracy`
+   - `baseline_accuracy` — přesnost majority-class baseline na testovacích datech
+   - `majority_class` — nejčetnější třída v testovacích ground-truth labelech
    - `balanced_accuracy`
    - `f1_macro`
    - `precision_macro`
@@ -992,6 +1001,8 @@ Pro srovnávací experiment v bakalářské práci doporučuji následující de
 | `CLASSIFICATION_POSITIVE_LABEL` | — (neuvedeno) | Explicitní positive label pro binární klasifikaci; jinak se odvozuje heuristikou ze jmen tříd (`positive`, `yes`, `true`, `1`) nebo z méně četné třídy |
 | `CLASSIFICATION_POSITIVE_THRESHOLD` | `0.45` | Práh pro positive prediction v binární klasifikaci |
 | `SECRET_KEY` | náhodný `token_hex(32)` při každém startu | Flask session secret — pro stabilitu sessions mezi restarty nastavit jako perzistentní hodnotu |
+| `DEMO_MODE` | `false` | Povolí endpoint `POST /load-demo` (pre-built demo relace bez Ollamy); v produkci nechat vypnuto |
+| `VITE_DEMO_MODE` | `false` | Frontendový příznak; zobrazí tlačítko „Demo" v záhlaví; vždy nastavit společně s `DEMO_MODE=true` na backendu |
 
 **Poznámka k PM2 konfiguraci:** `EXTRACTION_PASSES` a `CV_MAX_FOLDS` jsou nastaveny přímo v `backend/ecosystem.config.js` (sekce `env`). Při použití PM2 tedy jejich hodnota vychází z tohoto souboru, nikoliv z `backend/.env`. Změna hodnot vyžaduje úpravu `ecosystem.config.js` a restart procesů přes `pm2 reload ecosystem.config.js`.
 
@@ -1032,6 +1043,16 @@ Pro praktickou část bakalářské práce je vhodné popsat alespoň jeden stan
 8. Exportovat artefakty (`feature_spec`, `training_X`, `testing_X`, `predictions`, `rules`, `metrics`) pro další analýzu a screenshoty do práce.
 
 Tento scénář je dobře přenositelný do textu praktické části, protože přímo kopíruje strukturu uživatelského rozhraní i backendové pipeline.
+
+#### Doplňující kroky pro obhajobu BP
+
+**Majority-class baseline** — po dokončení Fáze 3 a Fáze 5 jsou hodnoty `train_baseline_accuracy` a `baseline_accuracy` k dispozici automaticky v metrikovém panelu i v API response. Cituj je v práci jako srovnávací hodnotu.
+
+**Export matice záměn** — po Fázi 5 rozbal sekci *Confusion Matrix* a stáhni PNG přes tlačítko „Download as PNG". Soubor `confusion_matrix.png` vlož přímo do přílohy práce.
+
+**Test stochasticity LLM** — po Fázi 2 klikni na „LLM Repeatability Test", nahraj jedno reprezentativní video, nastav 3–5 opakování a spusť. Výslednou tabulku (mean ± std, CV% per feature) cituj v sekci věnované omezením systému nebo metodologii extrakce featur.
+
+**Screenshoty UI bez Ollamy** — spusť backend s `DEMO_MODE=true` a frontend s `VITE_DEMO_MODE=true`, klikni „Demo" v záhlaví aplikace. Všechny fáze se zobrazí jako dokončené s realistickými hodnotami. Pořiď screenshoty pro přílohu.
 
 ---
 
@@ -1281,6 +1302,71 @@ Obnoví session z dříve exportovaného ZIP archivu.
   "imported_files": ["pipeline_state.json", "training_X.csv", "model.pkl"]
 }
 ```
+
+### GET /export-confusion-matrix
+Vykreslí matici záměn aktuální session jako PNG obrázek (matplotlib heatmap).
+
+Vyžaduje dokončenou Fázi 5 s ground-truth labels. Barvy jsou normalizované po řádcích (recall), anotace zobrazují absolutní počty.
+
+**Response:** binární PNG soubor (`confusion_matrix.png`), HTTP 400 pokud není dostupná matice záměn.
+
+Závislost: `matplotlib>=3.7.0` musí být nainstalována.
+
+### POST /repeatability-test
+Spustí asynchronní test reprodukovatelnosti LLM extrakce — zavolá LLM N-krát na jedno médium a vrátí per-feature statistiky.
+
+Vyžaduje dokončenou Fázi 1 (feature spec musí být nastavena).
+
+**Request:** `multipart/form-data`
+- `file`: jedno mediální médium (video/obrázek/audio)
+- `n_repetitions`: počet opakování (2–10, default 5)
+- `model`: ID LLM modelu (default = výchozí model backendu)
+
+**Response (okamžitě):**
+```json
+{"job_id": "uuid"}
+```
+
+Výsledek po dokončení (`GET /status/{job_id}` → `details`):
+```json
+{
+  "n_repetitions": 5,
+  "filename": "video_001.mp4",
+  "model": "qwen2.5vl:7b",
+  "feature_stats": [
+    {
+      "feature": "audio_intensity",
+      "type": "numeric",
+      "values": [6.2, 6.5, 6.1, 6.8, 6.3],
+      "mean": 6.38,
+      "std": 0.26,
+      "cv_pct": 4.1
+    },
+    {
+      "feature": "scene_type",
+      "type": "categorical",
+      "values": ["outdoor", "outdoor", "outdoor", "indoor", "outdoor"],
+      "mode": "outdoor",
+      "mode_frequency": 4,
+      "mode_frequency_pct": 80.0
+    }
+  ]
+}
+```
+
+`cv_pct` (coefficient of variation) vyjadřuje relativní variabilitu hodnot: `std / mean * 100`. Hodnoty pod 10 % znamenají nízkou stochastičnost, nad 20 % signalizují nestabilní výstup modelu pro danou featuru.
+
+### POST /load-demo
+Načte předpřipravenou demo relaci do aktuální session. **Vyžaduje `DEMO_MODE=true`** na backendu; v produkci vrátí HTTP 403.
+
+Demo simuluje dokončenou MediaEval pipeline (4 třídy, 24 trénovacích + 10 testovacích videí, přesnost ~33 %, MCC ~0.14). Reálný model není přítomen — predikce nelze znovu spustit.
+
+**Response:**
+```json
+{"ok": true, "message": "Demo session loaded."}
+```
+
+Po načtení vyvolat `GET /state` pro hydrataci frontendu (nebo `window.location.reload()`).
 
 ---
 

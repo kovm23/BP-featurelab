@@ -71,6 +71,8 @@ class MachineLearningPipeline:
         self.train_balanced_accuracy: float | None = None
         self.train_f1_macro: float | None = None
         self.train_mcc: float | None = None
+        self.train_baseline_accuracy: float | None = None
+        self.train_majority_class: str | None = None
         self.cv_accuracy: float | None = None
         self.cv_balanced_accuracy: float | None = None
         self.cv_f1_macro: float | None = None
@@ -107,6 +109,8 @@ class MachineLearningPipeline:
         self.train_balanced_accuracy = None
         self.train_f1_macro = None
         self.train_mcc = None
+        self.train_baseline_accuracy = None
+        self.train_majority_class = None
         self.cv_accuracy = None
         self.cv_balanced_accuracy = None
         self.cv_f1_macro = None
@@ -194,6 +198,8 @@ class MachineLearningPipeline:
                 "train_balanced_accuracy": self.train_balanced_accuracy,
                 "train_f1_macro": self.train_f1_macro,
                 "train_mcc": self.train_mcc,
+                "train_baseline_accuracy": self.train_baseline_accuracy,
+                "train_majority_class": self.train_majority_class,
                 "cv_accuracy": self.cv_accuracy,
                 "cv_balanced_accuracy": self.cv_balanced_accuracy,
                 "cv_f1_macro": self.cv_f1_macro,
@@ -273,6 +279,8 @@ class MachineLearningPipeline:
             self.train_balanced_accuracy = state.get("train_balanced_accuracy")
             self.train_f1_macro = state.get("train_f1_macro")
             self.train_mcc = state.get("train_mcc")
+            self.train_baseline_accuracy = state.get("train_baseline_accuracy")
+            self.train_majority_class = state.get("train_majority_class")
             self.cv_accuracy = state.get("cv_accuracy")
             self.cv_balanced_accuracy = state.get("cv_balanced_accuracy")
             self.cv_f1_macro = state.get("cv_f1_macro")

@@ -10,10 +10,13 @@ import session_registry
 from config import MAX_CONTENT_LENGTH
 from env_loader import load_backend_env
 from routes import (
+    demo_bp,
     discover_bp,
+    export_matrix_bp,
     extract_bp,
     health_bp,
     predict_bp,
+    repeatability_bp,
     reset_bp,
     session_transfer_bp,
     state_bp,
@@ -57,6 +60,9 @@ app.register_blueprint(reset_bp)
 app.register_blueprint(state_bp)
 app.register_blueprint(health_bp)
 app.register_blueprint(session_transfer_bp)
+app.register_blueprint(demo_bp)
+app.register_blueprint(export_matrix_bp)
+app.register_blueprint(repeatability_bp)
 
 
 def get_pipeline():

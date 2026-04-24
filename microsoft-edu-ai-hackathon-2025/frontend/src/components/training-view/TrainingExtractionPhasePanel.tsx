@@ -7,6 +7,7 @@ import { cls, DatasetTable, FeatureSpecBox, FileDropZone, ProgressBar } from "./
 import { OllamaWarning } from "./OllamaWarning";
 import type { TrainingTranslations } from "./translations";
 import { translateStage } from "./translations";
+import { RepeatabilityTestModal } from "./RepeatabilityTestModal";
 
 export function TrainingExtractionPhasePanel(props: {
   deluxe: boolean;
@@ -179,13 +180,14 @@ export function TrainingExtractionPhasePanel(props: {
       {trainingDataX && (
         <>
           <DatasetTable deluxe={deluxe} data={trainingDataX} title={tr.trainingDatasetTitle} />
-          <div className="flex justify-center mt-2">
+          <div className="flex justify-center gap-2 mt-2 flex-wrap">
             <button
               onClick={() => downloadTrainingDataCSV(trainingDataX)}
               className="px-3 py-1.5 bg-slate-600 text-white rounded text-xs hover:bg-slate-700 flex items-center gap-1"
             >
               <Download className="w-3 h-3" /> {tr.downloadTrainingX}
             </button>
+            <RepeatabilityTestModal deluxe={deluxe} />
           </div>
           <div className="flex justify-center mt-4">
             <Button onClick={() => onGoToStep?.(3)}>

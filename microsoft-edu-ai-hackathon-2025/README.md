@@ -29,26 +29,74 @@ Projekt vznikl na Microsoft × VŠE Edu AI Hackathonu 2025 a dále se rozvíjí 
 # 1) Naklonuj repo
 cd microsoft-edu-ai-hackathon-2025
 
-# 2) Backend
+# 2) Backend (venv je ve složce projektu, ne v backend/)
+python3 -m venv venv
+source venv/bin/activate          # Windows: venv\Scripts\activate
+pip install -r backend/requirements.txt
+cp backend/.env.example backend/.env   # edituj dle potřeby
 cd backend
-python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -r requirements-server.txt
-cp .env.example .env             # edituj dle potřeby
-flask --app app run --port 5000  # nebo: gunicorn app:app -w 1 --threads 8 -k gthread
+flask --app app run --port 5000   # nebo: gunicorn app:app -w 1 --threads 8 -k gthread
 
 # 3) Frontend (v novém terminálu)
-cd ../frontend
+cd frontend
 npm install
-cp .env.example .env             # VITE_API_BASE=http://localhost:5000
-npm run dev                      # http://localhost:5173
+cp .env.example .env              # VITE_API_BASE=http://localhost:5000
+npm run dev                       # http://localhost:5173
 
 # 4) Ollama (samostatný proces)
 ollama pull qwen2.5vl:7b
-ollama serve                     # http://localhost:11434
+ollama serve                      # http://localhost:11434
 ```
 
 Otevři `http://localhost:5173` a projdi pipeline: Discovery → Training Extraction → Training → Testing Extraction → Prediction.
+
+## Nové funkce (verze pro obhajobu BP)
+
+### Majority class baseline
+
+Výsledky klasifikace nyní automaticky zobrazují hodnotu **majority-class baseline** (= přesnost modelu, který vždy predikuje nejčetnější třídu). Zobrazuje se:
+- v metrikovém panelu vedle accuracy: `baseline: X.X% (+Xpp)`
+- v rozbalitelné sekci *Advanced metrics* ve výsledcích trénování
+
+Nemusíš nic konfigurovat — funguje automaticky po spuštění Fáze 3 a Fáze 5.
+
+### Export matice záměn jako PNG
+
+V rozbalitelné sekci *Confusion Matrix* (Fáze 5) přibyl tlačítko **Download as PNG**. Kliknutím stáhneš `confusion_matrix.png` — matplotlib heatmap vhodný pro přímé vložení do přílohy BP.
+
+Vyžaduje: `matplotlib` musí být nainstalován (`pip install -r requirements.txt` to zajistí).
+
+### Test reprodukovatelnosti LLM (Repeatability Test)
+
+Po úspěšné extrakci tréninkových dat (Fáze 2) se zobrazí tlačítko **LLM Repeatability Test**.
+
+1. Nahraj jedno video/obrázek
+2. Nastav počet opakování (2–10, doporučeno 3–5)
+3. Klikni *Start Test* — systém zavolá LLM N-krát na stejný soubor
+4. Výsledek zobrazí tabulku: pro každou featuru **mean ± std** a **CV%** (coefficient of variation)
+   - CV% < 10 % → zelená (nízká variabilita)
+   - CV% 10–20 % → žlutá
+   - CV% > 20 % → červená
+
+Tato čísla lze přímo citovat v bakalářské práci jako doklad míry stochasticity LLM extrakce.
+
+### Demo mód (pro screenshoty do BP)
+
+Umožňuje zobrazit kompletní UI se vzorkovými výsledky bez spuštěného Ollamy.
+
+**Spuštění:**
+
+```bash
+# Backend
+DEMO_MODE=true flask --app app run --port 5000
+
+# Frontend
+VITE_DEMO_MODE=true npm run dev
+```
+
+Po spuštění se v záhlaví aplikace zobrazí oranžové tlačítko **Demo**. Kliknutím se načte předpřipravená demo relace (MediaEval dataset, 4 třídy, 24 tréninkových + 10 testovacích videí). Všechny fáze pipeline se zobrazí jako dokončené s realistickými hodnotami odpovídajícími výsledkům popsaným v BP.
+
+Demo mód je **pouze pro screenshoty** — model není reálně natrénován a predikce nelze znovu spustit.
 
 ## Struktura repa
 

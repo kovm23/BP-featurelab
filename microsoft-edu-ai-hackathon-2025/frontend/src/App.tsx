@@ -6,6 +6,7 @@ import { useAppUi } from "@/hooks/useAppUi";
 import { useSessionTransfer } from "@/hooks/useSessionTransfer";
 import { useTrainingPipeline } from "@/hooks/useTrainingPipeline";
 import { loadPersisted } from "@/hooks/trainingPipelineUtils";
+import { DEMO_MODE_ENABLED, LOAD_DEMO_URL, sessionHeaders } from "@/lib/api";
 
 export default function MediaFeatureLabPro() {
   const [showRestoredToast, setShowRestoredToast] = useState(false);
@@ -58,6 +59,15 @@ export default function MediaFeatureLabPro() {
     }
   }, [pipeline.isRestoring, pipeline.restoredWithData]);
 
+  async function handleLoadDemo() {
+    const confirmMsg = lang === "cs"
+      ? "Načíst demo relaci? Tím přepíšete aktuální stav."
+      : "Load demo session? This will overwrite the current state.";
+    if (!window.confirm(confirmMsg)) return;
+    await fetch(LOAD_DEMO_URL, { method: "POST", headers: sessionHeaders() });
+    window.location.reload();
+  }
+
   async function handleReset() {
     if (!window.confirm(t.resetConfirm)) return;
     try {
@@ -103,6 +113,7 @@ export default function MediaFeatureLabPro() {
           handleReset={handleReset}
           handleExportSession={handleExportSession}
           triggerImport={() => importInputRef.current?.click()}
+          handleLoadDemo={DEMO_MODE_ENABLED ? handleLoadDemo : undefined}
           t={t}
         />
 

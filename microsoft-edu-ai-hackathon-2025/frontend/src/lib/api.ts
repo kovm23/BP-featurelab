@@ -14,6 +14,10 @@ export const HEALTH_URL = `${API_BASE}/health`;
 export const QUEUE_INFO_URL = `${API_BASE}/queue-info`;
 export const EXPORT_SESSION_URL = `${API_BASE}/export-session`;
 export const IMPORT_SESSION_URL = `${API_BASE}/import-session`;
+export const LOAD_DEMO_URL = `${API_BASE}/load-demo`;
+export const EXPORT_CONFUSION_MATRIX_URL = `${API_BASE}/export-confusion-matrix`;
+export const REPEATABILITY_TEST_URL = `${API_BASE}/repeatability-test`;
+export const DEMO_MODE_ENABLED = import.meta.env.VITE_DEMO_MODE === "true";
 export const STATUS_URL = (jobId: string) =>
   `${API_BASE}/status/${encodeURIComponent(jobId)}`;
 
@@ -124,6 +128,8 @@ export interface TrainResult {
   train_balanced_accuracy?: number;
   train_f1_macro?: number;
   train_mcc?: number;
+  train_baseline_accuracy?: number;
+  train_majority_class?: string;
   cv_accuracy?: number;
   cv_balanced_accuracy?: number;
   cv_f1_macro?: number;
@@ -181,6 +187,8 @@ export interface PredictionMetrics {
   precision_macro?: number;
   recall_macro?: number;
   mcc?: number;
+  baseline_accuracy?: number;
+  majority_class?: string;
   labels?: string[];
   confusion_matrix?: number[][];
   class_metrics?: Array<{
