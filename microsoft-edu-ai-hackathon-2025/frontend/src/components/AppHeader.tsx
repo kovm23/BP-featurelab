@@ -21,7 +21,6 @@ export function AppHeader({
   handleReset: () => void;
   handleExportSession: () => void;
   triggerImport: () => void;
-  handleLoadDemo?: () => void;
   t: {
     toggleTheme: string;
     guide: string;
@@ -124,15 +123,6 @@ export function AppHeader({
           {t.importSession}
         </Button>
 
-        {handleLoadDemo && (
-          <Button
-            variant="outline"
-            onClick={handleLoadDemo}
-            className="border-amber-400 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20"
-          >
-            Demo
-          </Button>
-        )}
       </div>
     </div>
   );

@@ -14,10 +14,8 @@ export const HEALTH_URL = `${API_BASE}/health`;
 export const QUEUE_INFO_URL = `${API_BASE}/queue-info`;
 export const EXPORT_SESSION_URL = `${API_BASE}/export-session`;
 export const IMPORT_SESSION_URL = `${API_BASE}/import-session`;
-export const LOAD_DEMO_URL = `${API_BASE}/load-demo`;
 export const EXPORT_CONFUSION_MATRIX_URL = `${API_BASE}/export-confusion-matrix`;
 export const REPEATABILITY_TEST_URL = `${API_BASE}/repeatability-test`;
-export const DEMO_MODE_ENABLED = import.meta.env.VITE_DEMO_MODE === "true";
 export const STATUS_URL = (jobId: string) =>
   `${API_BASE}/status/${encodeURIComponent(jobId)}`;
 

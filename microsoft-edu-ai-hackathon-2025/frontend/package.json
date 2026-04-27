@@ -21,6 +21,7 @@
     "framer-motion": "^11.18.2",
     "jszip": "^3.10.1",
     "lucide-react": "^0.460.0",
+    "playwright": "^1.59.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-dropzone": "^14.3.8",
