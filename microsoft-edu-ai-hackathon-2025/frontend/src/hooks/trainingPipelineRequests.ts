@@ -1,5 +1,6 @@
 import type {
   FeatureSpec,
+  LlmEndpointConfig,
   PredictionItem,
   PredictionMetrics,
   StatusPayload,
@@ -24,6 +25,7 @@ export interface ExtractRequestConfig {
   labelsFile?: File | null;
   zipPath?: string;
   labelsPath?: string;
+  llmEndpoint?: LlmEndpointConfig;
 }
 
 async function parseError(response: Response, fallbackMessage: string) {
@@ -37,12 +39,20 @@ export async function submitDiscoveryRequest(params: {
   targetVariable: string;
   targetMode: TargetMode;
   modelProvider: string;
+  llmEndpoint?: LlmEndpointConfig;
 }) {
   const formData = new FormData();
   for (const file of params.sampleFiles) formData.append("files", file, file.name);
   formData.append("target_variable", params.targetVariable);
   formData.append("target_mode", params.targetMode);
-  formData.append("model", params.modelProvider);
+  const ep = params.llmEndpoint;
+  if (ep?.baseUrl && ep?.apiKey) {
+    formData.append("model", ep.model || params.modelProvider);
+    formData.append("llm_base_url", ep.baseUrl);
+    formData.append("llm_api_key", ep.apiKey);
+  } else {
+    formData.append("model", params.modelProvider);
+  }
   if (params.labelsFile) formData.append("labels_file", params.labelsFile);
 
   const response = await fetch(DISCOVER_URL, {
@@ -66,12 +76,18 @@ export async function pollDiscoveryJob(params: {
 }
 
 export async function submitExtractRequest(config: ExtractRequestConfig) {
+  const ep = config.llmEndpoint;
+  const useCustom = !!(ep?.baseUrl && ep?.apiKey);
   if (config.zipFile) {
     const formData = new FormData();
     formData.append("file", config.zipFile);
-    formData.append("model", config.modelProvider);
+    formData.append("model", useCustom ? (ep!.model || config.modelProvider) : config.modelProvider);
     formData.append("feature_spec", JSON.stringify(config.featureSpec));
     formData.append("dataset_type", config.datasetType);
+    if (useCustom) {
+      formData.append("llm_base_url", ep!.baseUrl);
+      formData.append("llm_api_key", ep!.apiKey);
+    }
     if (config.labelsFile) formData.append("labels_file", config.labelsFile);
 
     const response = await fetch(EXTRACT_URL, {
@@ -91,9 +107,10 @@ export async function submitExtractRequest(config: ExtractRequestConfig) {
     body: JSON.stringify({
       zip_path: config.zipPath,
       labels_path: config.labelsPath || undefined,
-      model: config.modelProvider,
+      model: useCustom ? (ep!.model || config.modelProvider) : config.modelProvider,
       feature_spec: config.featureSpec,
       dataset_type: config.datasetType,
+      ...(useCustom ? { llm_base_url: ep!.baseUrl, llm_api_key: ep!.apiKey } : {}),
     }),
   });
   if (!response.ok) {

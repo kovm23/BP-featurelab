@@ -141,6 +141,8 @@ export default function MediaFeatureLabPro() {
           predictionMetrics={pipeline.predictionMetrics}
           modelProvider={pipeline.modelProvider}
           setModelProvider={pipeline.setModelProvider}
+          llmEndpoint={pipeline.llmEndpoint}
+          setLlmEndpoint={pipeline.setLlmEndpoint}
           step={pipeline.trainingStep}
           onGoToStep={(s) => pipeline.setTrainingStep(s as 1 | 2 | 3 | 4 | 5)}
           progress={pipeline.progress}

@@ -1,4 +1,4 @@
-import type { FeatureSpec, TargetMode } from "@/lib/api";
+import type { FeatureSpec, LlmEndpointConfig, TargetMode } from "@/lib/api";
 
 export interface PersistedPipeline {
   trainingStep?: 1 | 2 | 3 | 4 | 5;
@@ -6,6 +6,7 @@ export interface PersistedPipeline {
   targetMode?: TargetMode;
   featureSpec?: FeatureSpec | null;
   modelProvider?: string;
+  llmEndpoint?: LlmEndpointConfig;
 }
 
 const STORAGE_KEY = "mflPipeline";

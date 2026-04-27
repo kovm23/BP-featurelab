@@ -90,6 +90,25 @@ def get_ollama_queue_info() -> dict:
     return {"busy": busy, "queued": queued}
 
 
+def _make_client(base_url: str, api_key: str) -> openai.OpenAI:
+    """Create an OpenAI-compatible client for a custom endpoint."""
+    url = base_url.rstrip("/")
+    if not url.endswith("/v1"):
+        url = f"{url}/v1"
+    return openai.OpenAI(
+        base_url=url,
+        api_key=api_key,
+        timeout=httpx.Timeout(OLLAMA_REQUEST_TIMEOUT, connect=OLLAMA_CONNECT_TIMEOUT),
+    )
+
+
+def get_client(custom_base_url: str = "", custom_api_key: str = "") -> "tuple[openai.OpenAI, bool]":
+    """Return (client, is_custom). is_custom=True means skip file lock and extra_body."""
+    if custom_base_url and custom_api_key:
+        return _make_client(custom_base_url, custom_api_key), True
+    return local_client, False
+
+
 def image_to_base64(img_arr):
     img = Image.fromarray(img_arr.astype(np.uint8))
     buffered = io.BytesIO()
@@ -111,9 +130,17 @@ def _clean_json_response(content):
     return content.strip()
 
 
-def extract_image_features_with_llm(image_base64_list, prompt=None, deployment_name=None, feature_gen=False) -> list:
+def extract_image_features_with_llm(
+    image_base64_list,
+    prompt=None,
+    deployment_name=None,
+    feature_gen=False,
+    custom_base_url: str = "",
+    custom_api_key: str = "",
+) -> list:
     features_list = []
     model_name = deployment_name or DEFAULT_MODEL
+    client, is_custom = get_client(custom_base_url, custom_api_key)
 
     for img_b64 in image_base64_list:
         prompt_text = prompt or "Extract meaningful features from this image for tabular dataset construction."
@@ -129,20 +156,27 @@ def extract_image_features_with_llm(image_base64_list, prompt=None, deployment_n
 
         for attempt in range(max_retries):
             try:
-                options = ollama_request_options()
-                if use_cpu_fallback:
-                    options["num_gpu"] = 0
-                with _tracked_ollama_lock():
-                    response = local_client.chat.completions.create(
-                        model=model_name,
-                        messages=[
-                            {"role": "system", "content": "You are a feature extraction assistant. You MUST output valid JSON only. No text, no markdown, just JSON."},
-                            {"role": "user", "content": user_content}
-                        ],
-                        max_tokens=2048,
-                        temperature=0.1,
-                        extra_body={"options": options},
-                    )
+                kwargs: dict = dict(
+                    model=model_name,
+                    messages=[
+                        {"role": "system", "content": "You are a feature extraction assistant. You MUST output valid JSON only. No text, no markdown, just JSON."},
+                        {"role": "user", "content": user_content},
+                    ],
+                    max_tokens=2048,
+                    temperature=0.1,
+                )
+                if not is_custom:
+                    options = ollama_request_options()
+                    if use_cpu_fallback:
+                        options["num_gpu"] = 0
+                    kwargs["extra_body"] = {"options": options}
+
+                if is_custom:
+                    response = client.chat.completions.create(**kwargs)
+                else:
+                    with _tracked_ollama_lock():
+                        response = client.chat.completions.create(**kwargs)
+
                 content = response.choices[0].message.content
                 clean_content = _clean_json_response(content)
 
@@ -161,12 +195,12 @@ def extract_image_features_with_llm(image_base64_list, prompt=None, deployment_n
                 else:
                     features_list.append({"error": "Rate limit exceeded."})
             except Exception as e:
-                if OLLAMA_CPU_FALLBACK and not use_cpu_fallback and is_gpu_load_error(e):
+                if not is_custom and OLLAMA_CPU_FALLBACK and not use_cpu_fallback and is_gpu_load_error(e):
                     use_cpu_fallback = True
                     logger.warning("GPU model load failed, retrying on CPU fallback: %s", e)
                     time.sleep(2)
                     continue
-                if is_transient_ollama_error(e) and attempt < max_retries - 1:
+                if not is_custom and is_transient_ollama_error(e) and attempt < max_retries - 1:
                     wait = backoff * (attempt + 1)
                     logger.warning("Transient Ollama error on image extraction attempt %s, retrying in %ss: %s", attempt + 1, wait, e)
                     time.sleep(wait)
@@ -177,9 +211,17 @@ def extract_image_features_with_llm(image_base64_list, prompt=None, deployment_n
     return features_list
 
 
-def extract_text_features_with_llm(text_list, prompt=None, deployment_name=None, feature_gen=False) -> list:
+def extract_text_features_with_llm(
+    text_list,
+    prompt=None,
+    deployment_name=None,
+    feature_gen=False,
+    custom_base_url: str = "",
+    custom_api_key: str = "",
+) -> list:
     features_list = []
     model_name = deployment_name or DEFAULT_MODEL
+    client, is_custom = get_client(custom_base_url, custom_api_key)
 
     for text in text_list:
         prompt_text = prompt or "Extract meaningful features from this text."
@@ -194,20 +236,27 @@ def extract_text_features_with_llm(text_list, prompt=None, deployment_name=None,
 
         for attempt in range(max_retries):
             try:
-                options = ollama_request_options()
-                if use_cpu_fallback:
-                    options["num_gpu"] = 0
-                with _tracked_ollama_lock():
-                    response = local_client.chat.completions.create(
-                        model=model_name,
-                        messages=[
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": text}
-                        ],
-                        max_tokens=2048,
-                        temperature=0.1,
-                        extra_body={"options": options},
-                    )
+                kwargs: dict = dict(
+                    model=model_name,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": text},
+                    ],
+                    max_tokens=2048,
+                    temperature=0.1,
+                )
+                if not is_custom:
+                    options = ollama_request_options()
+                    if use_cpu_fallback:
+                        options["num_gpu"] = 0
+                    kwargs["extra_body"] = {"options": options}
+
+                if is_custom:
+                    response = client.chat.completions.create(**kwargs)
+                else:
+                    with _tracked_ollama_lock():
+                        response = client.chat.completions.create(**kwargs)
+
                 content = response.choices[0].message.content
                 clean_content = _clean_json_response(content)
 
@@ -218,7 +267,7 @@ def extract_text_features_with_llm(text_list, prompt=None, deployment_name=None,
                 features_list.append(features)
                 break
             except Exception as e:
-                if OLLAMA_CPU_FALLBACK and not use_cpu_fallback and is_gpu_load_error(e):
+                if not is_custom and OLLAMA_CPU_FALLBACK and not use_cpu_fallback and is_gpu_load_error(e):
                     use_cpu_fallback = True
                     logger.warning("GPU model load failed, retrying text extraction on CPU fallback: %s", e)
                     time.sleep(2)

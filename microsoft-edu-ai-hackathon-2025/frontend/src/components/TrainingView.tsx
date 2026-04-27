@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, ChevronRight, Cpu, X } from "lucide-react";
 import { AVAILABLE_MODELS } from "@/lib/api";
-import type { FeatureSpec, PredictionItem, PredictionMetrics, TrainResult } from "@/lib/api";
+import type { FeatureSpec, LlmEndpointConfig, PredictionItem, PredictionMetrics, TrainResult } from "@/lib/api";
 import { cls, enrichError, QueueBusyBanner, useElapsedTimer, useProgressStall } from "./training-view/shared";
 import { DiscoveryPhasePanel } from "./training-view/DiscoveryPhasePanel";
 import { PredictionPhasePanel } from "./training-view/PredictionPhasePanel";
@@ -37,6 +37,8 @@ export interface TrainingViewProps {
   predictionMetrics: PredictionMetrics | null;
   modelProvider: string;
   setModelProvider: (v: string) => void;
+  llmEndpoint?: LlmEndpointConfig;
+  setLlmEndpoint?: (cfg: LlmEndpointConfig) => void;
   step: number;
   onGoToStep?: (step: number) => void;
   onCancel?: () => void;
@@ -153,6 +155,8 @@ export function TrainingView({
   predictionMetrics,
   modelProvider,
   setModelProvider,
+  llmEndpoint,
+  setLlmEndpoint,
   step,
   onGoToStep,
   onCancel,
@@ -337,6 +341,8 @@ export function TrainingView({
           progressLabel={progressLabel}
           onCancel={onCancel}
           onGoToStep={onGoToStep}
+          llmEndpoint={llmEndpoint}
+          setLlmEndpoint={setLlmEndpoint}
         />
       )}
 

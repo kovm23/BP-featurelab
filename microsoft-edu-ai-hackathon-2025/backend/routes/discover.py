@@ -38,6 +38,8 @@ def api_discover():
     pipeline.target_variable = target_var
     pipeline.save_state()
     model_name = request.form.get("model", DEFAULT_MODEL)
+    llm_base_url = request.form.get("llm_base_url", "").strip()
+    llm_api_key = request.form.get("llm_api_key", "").strip()
     labels_df = load_labels_from_request(request, UPLOAD_FOLDER)
 
     media_paths = []
@@ -79,7 +81,8 @@ def api_discover():
 
             _pcb(3, "Preparing files...")
             features = pipeline.discover_features(
-                media_paths, target_var, model_name, labels_df, progress_cb=_pcb
+                media_paths, target_var, model_name, labels_df, progress_cb=_pcb,
+                llm_base_url=llm_base_url, llm_api_key=llm_api_key,
             )
             pipeline.save_state()
             set_job(job_id, {

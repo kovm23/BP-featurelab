@@ -11,6 +11,7 @@ from config import DISCOVERY_MAX_SAMPLES
 from pipeline.feature_schema import normalize_feature_spec
 from services.openai_service import (
     _tracked_ollama_lock,
+    get_client,
     local_client,
     ollama_request_options,
 )
@@ -47,7 +48,7 @@ def _any_has_audio(paths: list[str]) -> bool:
     return False
 
 
-def _warm_up_model(model_name: str, progress_cb=None) -> None:
+def _warm_up_model(model_name: str, progress_cb=None, custom_base_url: str = "", custom_api_key: str = "") -> None:
     """Send a minimal request to ensure the model is fully loaded before real work.
 
     Ollama spawns a new runner process on the first request and can return an EOF
@@ -58,19 +59,25 @@ def _warm_up_model(model_name: str, progress_cb=None) -> None:
     deadline = time.monotonic() + max_wait
     attempt = 0
     use_cpu_fallback = False
+    client, is_custom = get_client(custom_base_url, custom_api_key)
     while True:
         try:
-            options = ollama_request_options()
-            if use_cpu_fallback:
-                options["num_gpu"] = 0
-            with _tracked_ollama_lock():
-                local_client.chat.completions.create(
-                    model=model_name,
-                    messages=[{"role": "user", "content": "1"}],
-                    max_tokens=1,
-                    temperature=0.0,
-                    extra_body={"options": options},
-                )
+            kwargs: dict = dict(
+                model=model_name,
+                messages=[{"role": "user", "content": "1"}],
+                max_tokens=1,
+                temperature=0.0,
+            )
+            if not is_custom:
+                options = ollama_request_options()
+                if use_cpu_fallback:
+                    options["num_gpu"] = 0
+                kwargs["extra_body"] = {"options": options}
+            if is_custom:
+                client.chat.completions.create(**kwargs)
+            else:
+                with _tracked_ollama_lock():
+                    client.chat.completions.create(**kwargs)
             return
         except Exception as exc:
             if not use_cpu_fallback and is_gpu_load_error(exc):
@@ -108,6 +115,8 @@ def discover_features(
     model_name: str,
     labels_df: pd.DataFrame | None = None,
     progress_cb=None,
+    llm_base_url: str = "",
+    llm_api_key: str = "",
 ) -> dict:
     """Analyse sample media and suggest a feature definition spec.
 
@@ -129,7 +138,7 @@ def discover_features(
     # Pre-warm the model so Ollama finishes loading before the observation loop.
     # Without this, the first inference call often returns EOF while the runner starts.
     _cb(3, "Loading model...")
-    _warm_up_model(model_name, progress_cb=progress_cb)
+    _warm_up_model(model_name, progress_cb=progress_cb, custom_base_url=llm_base_url, custom_api_key=llm_api_key)
 
     # Step 1: analyse each sample independently to gather observations
     observations = []
@@ -168,7 +177,8 @@ def discover_features(
         file_name = os.path.basename(path)
         pct = 5 + int((idx / n_samples) * 55)
         _cb(pct, f"Analysing sample {idx + 1}/{n_samples}: {file_name}...")
-        result = process_single_media(path, prompt=obs_prompt, model_name=model_name)
+        result = process_single_media(path, prompt=obs_prompt, model_name=model_name,
+                                       custom_base_url=llm_base_url, custom_api_key=llm_api_key)
         raw = result.get("analysis") or result.get("description") or str(result)
         if raw:
             observations.append(str(raw))
@@ -213,18 +223,24 @@ def discover_features(
     max_retries = 4
     backoff_s = 20  # model cold-load takes 20-30 s; each wait must exceed that
     use_cpu_fallback = False
+    synth_client, is_custom = get_client(llm_base_url, llm_api_key)
     for attempt in range(max_retries):
         try:
-            options = ollama_request_options()
-            if use_cpu_fallback:
-                options["num_gpu"] = 0
-            with _tracked_ollama_lock():
-                response = local_client.chat.completions.create(
-                    model=model_name,
-                    messages=[{"role": "user", "content": synthesis_prompt}],
-                    temperature=0.3,
-                    extra_body={"options": options},
-                )
+            synth_kwargs: dict = dict(
+                model=model_name,
+                messages=[{"role": "user", "content": synthesis_prompt}],
+                temperature=0.3,
+            )
+            if not is_custom:
+                options = ollama_request_options()
+                if use_cpu_fallback:
+                    options["num_gpu"] = 0
+                synth_kwargs["extra_body"] = {"options": options}
+            if is_custom:
+                response = synth_client.chat.completions.create(**synth_kwargs)
+            else:
+                with _tracked_ollama_lock():
+                    response = synth_client.chat.completions.create(**synth_kwargs)
             break
         except Exception as exc:
             if not use_cpu_fallback and is_gpu_load_error(exc):

@@ -1,9 +1,11 @@
 import React from "react";
 import { AlertTriangle, CheckCircle2, ChevronRight, Download, Lightbulb, Loader2, UploadCloud, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { FeatureSpec } from "@/lib/api";
+import type { FeatureSpec, LlmEndpointConfig } from "@/lib/api";
+import { DEFAULT_LLM_ENDPOINT } from "@/lib/api";
 import { downloadFeatureSpec } from "@/lib/pipelineDownloads";
 import { cls, FeatureSpecBox, ProgressBar } from "./shared";
+import { LlmEndpointConfigPanel } from "./LlmEndpointConfig";
 import { OllamaWarning } from "./OllamaWarning";
 import type { TrainingTranslations } from "./translations";
 import { translateStage } from "./translations";
@@ -34,6 +36,8 @@ export function DiscoveryPhasePanel(props: {
   etaText?: string | null;
   onCancel?: () => void;
   onGoToStep?: (step: number) => void;
+  llmEndpoint?: LlmEndpointConfig;
+  setLlmEndpoint?: (cfg: LlmEndpointConfig) => void;
 }) {
   const {
     deluxe,
@@ -61,6 +65,8 @@ export function DiscoveryPhasePanel(props: {
     etaText,
     onCancel,
     onGoToStep,
+    llmEndpoint,
+    setLlmEndpoint,
   } = props;
 
   return (
@@ -196,7 +202,15 @@ export function DiscoveryPhasePanel(props: {
         )}
       </div>
 
-      {ollamaOk === false && <OllamaWarning deluxe={deluxe} tr={tr} recheckOllama={recheckOllama} />}
+      <LlmEndpointConfigPanel
+        deluxe={deluxe}
+        value={llmEndpoint ?? DEFAULT_LLM_ENDPOINT}
+        onChange={setLlmEndpoint ?? (() => {})}
+      />
+
+      {ollamaOk === false && !(llmEndpoint?.baseUrl && llmEndpoint?.apiKey) && (
+        <OllamaWarning deluxe={deluxe} tr={tr} recheckOllama={recheckOllama} />
+      )}
 
       {hasDownstreamProgress && !isDiscovering && (
         <div className={`flex items-start gap-2 p-3 rounded-lg border ${cls(deluxe, "bg-amber-50 border-amber-200 text-amber-800", "bg-amber-900/20 border-amber-800/50 text-amber-300")}`}>

@@ -19,6 +19,14 @@ export const REPEATABILITY_TEST_URL = `${API_BASE}/repeatability-test`;
 export const STATUS_URL = (jobId: string) =>
   `${API_BASE}/status/${encodeURIComponent(jobId)}`;
 
+export interface LlmEndpointConfig {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+}
+
+export const DEFAULT_LLM_ENDPOINT: LlmEndpointConfig = { baseUrl: "", apiKey: "", model: "" };
+
 // =====================================================
 // SESSION — perzistentní X-Session-ID header
 // =====================================================

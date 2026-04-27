@@ -5,6 +5,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import type {
   FeatureSpec,
+  LlmEndpointConfig,
   PipelineState,
   StatusPayload,
   TargetMode,
@@ -100,6 +101,9 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
   const [modelProvider, setModelProvider] = useState<string>(
     saved?.modelProvider ?? "qwen2.5vl:7b",
   );
+  const [llmEndpoint, setLlmEndpoint] = useState<LlmEndpointConfig>(
+    saved?.llmEndpoint ?? { baseUrl: "", apiKey: "", model: "" },
+  );
 
   const pipelineStateSetters = {
     setFeatureSpec,
@@ -148,8 +152,9 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
       targetMode,
       featureSpec,
       modelProvider,
+      llmEndpoint,
     });
-  }, [trainingStep, targetVariable, targetMode, featureSpec, modelProvider]);
+  }, [trainingStep, targetVariable, targetMode, featureSpec, modelProvider, llmEndpoint]);
 
   // --- Restore from backend on mount ---
   const restoredRef = useRef(false);
@@ -414,6 +419,7 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
         targetVariable,
         targetMode,
         modelProvider,
+        llmEndpoint,
       });
       if (data.job_id) {
         saveActiveJob({ job_id: data.job_id, phase: "discover" });
@@ -489,6 +495,7 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
         labelsFile: config.labelsFile,
         zipPath: config.zipPath,
         labelsPath: config.labelsPath,
+        llmEndpoint,
       });
 
       if (data.job_id) {
@@ -698,6 +705,7 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
     handlePredict,
     // Common
     modelProvider, setModelProvider,
+    llmEndpoint, setLlmEndpoint,
     progress,
     progressLabel,
     error,

@@ -31,7 +31,7 @@ _SAFE_PREFIXES = [
 
 def _start_extraction(pipeline, media_files, feature_spec, model_name,
                        dataset_type, csv_path, labels_df, extract_path,
-                       cleanup_paths=None):
+                       cleanup_paths=None, llm_base_url="", llm_api_key=""):
     """Common helper: create a job and run extraction in a background thread."""
     pipeline.invalidate_from_phase(2 if dataset_type == "training" else 4)
     pipeline.save_state()
@@ -42,7 +42,8 @@ def _start_extraction(pipeline, media_files, feature_spec, model_name,
         try:
             pipeline.extract_features_async(
                 media_files, feature_spec, job_id, model_name,
-                dataset_type, csv_path, labels_df
+                dataset_type, csv_path, labels_df,
+                llm_base_url=llm_base_url, llm_api_key=llm_api_key,
             )
         finally:
             shutil.rmtree(extract_path, ignore_errors=True)
@@ -70,6 +71,8 @@ def api_extract():
         return jsonify({"error": "Allowed format: .zip"}), 400
 
     model_name = request.form.get("model", DEFAULT_MODEL)
+    llm_base_url = request.form.get("llm_base_url", "").strip()
+    llm_api_key = request.form.get("llm_api_key", "").strip()
     try:
         feature_spec = json.loads(request.form.get("feature_spec", "{}"))
     except (json.JSONDecodeError, TypeError):
@@ -102,6 +105,7 @@ def api_extract():
         pipeline, media_files, feature_spec, model_name,
         dataset_type, csv_path, labels_df, extract_path,
         cleanup_paths=[zip_path],
+        llm_base_url=llm_base_url, llm_api_key=llm_api_key,
     )
     return jsonify({"job_id": job_id, "media_count": len(media_files)})
 
@@ -118,6 +122,8 @@ def api_extract_local():
 
     zip_path = data.get("zip_path")
     model_name = data.get("model", DEFAULT_MODEL)
+    llm_base_url = data.get("llm_base_url", "").strip()
+    llm_api_key = data.get("llm_api_key", "").strip()
     feature_spec = data.get("feature_spec", {})
     feature_spec = normalize_feature_spec(feature_spec)
     dataset_type = data.get("dataset_type", "training")
@@ -158,5 +164,6 @@ def api_extract_local():
     job_id = _start_extraction(
         pipeline, media_files, feature_spec, model_name,
         dataset_type, csv_path, labels_df, extract_path,
+        llm_base_url=llm_base_url, llm_api_key=llm_api_key,
     )
     return jsonify({"job_id": job_id, "media_count": len(media_files)})
