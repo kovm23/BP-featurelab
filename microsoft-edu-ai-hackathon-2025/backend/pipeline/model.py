@@ -392,7 +392,8 @@ class MachineLearningPipeline:
     # ------------------------------------------------------------------
 
     def discover_features(self, media_paths, target_variable, model_name, labels_df=None,
-                          progress_cb=None, llm_base_url: str = "", llm_api_key: str = ""):
+                          progress_cb=None, llm_base_url: str = "", llm_api_key: str = "",
+                          llm_temperature: float | None = None):
         """Phase 1: Feature discovery."""
         return discover_features(
             self,
@@ -403,17 +404,20 @@ class MachineLearningPipeline:
             progress_cb=progress_cb,
             llm_base_url=llm_base_url,
             llm_api_key=llm_api_key,
+            llm_temperature=llm_temperature,
         )
 
     def extract_features_async(
         self, media_files, feature_spec, job_id, model_name, dataset_type,
-        csv_path=None, labels_df=None, llm_base_url: str = "", llm_api_key: str = ""
+        csv_path=None, labels_df=None, llm_base_url: str = "", llm_api_key: str = "",
+        llm_temperature: float | None = None,
     ):
         """Phase 2/4: Async feature extraction (called from a background thread)."""
         return extract_features_async(
             self, media_files, feature_spec, job_id, model_name,
             dataset_type, csv_path, labels_df,
             llm_base_url=llm_base_url, llm_api_key=llm_api_key,
+            llm_temperature=llm_temperature,
         )
 
     def train_model(self, target_column: str, progress_cb=None) -> dict:

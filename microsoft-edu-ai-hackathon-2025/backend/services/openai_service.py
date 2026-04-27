@@ -137,6 +137,7 @@ def extract_image_features_with_llm(
     feature_gen=False,
     custom_base_url: str = "",
     custom_api_key: str = "",
+    custom_temperature: float | None = None,
 ) -> list:
     features_list = []
     model_name = deployment_name or DEFAULT_MODEL
@@ -156,6 +157,7 @@ def extract_image_features_with_llm(
 
         for attempt in range(max_retries):
             try:
+                temperature = custom_temperature if (is_custom and custom_temperature is not None) else 0.1
                 kwargs: dict = dict(
                     model=model_name,
                     messages=[
@@ -163,7 +165,7 @@ def extract_image_features_with_llm(
                         {"role": "user", "content": user_content},
                     ],
                     max_tokens=2048,
-                    temperature=0.1,
+                    temperature=temperature,
                 )
                 if not is_custom:
                     options = ollama_request_options()
@@ -218,6 +220,7 @@ def extract_text_features_with_llm(
     feature_gen=False,
     custom_base_url: str = "",
     custom_api_key: str = "",
+    custom_temperature: float | None = None,
 ) -> list:
     features_list = []
     model_name = deployment_name or DEFAULT_MODEL
@@ -236,6 +239,7 @@ def extract_text_features_with_llm(
 
         for attempt in range(max_retries):
             try:
+                temperature = custom_temperature if (is_custom and custom_temperature is not None) else 0.1
                 kwargs: dict = dict(
                     model=model_name,
                     messages=[
@@ -243,7 +247,7 @@ def extract_text_features_with_llm(
                         {"role": "user", "content": text},
                     ],
                     max_tokens=2048,
-                    temperature=0.1,
+                    temperature=temperature,
                 )
                 if not is_custom:
                     options = ollama_request_options()

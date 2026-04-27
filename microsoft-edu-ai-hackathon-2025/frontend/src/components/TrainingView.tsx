@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, ChevronRight, Cpu, X } from "lucide-react";
-import { AVAILABLE_MODELS } from "@/lib/api";
+import { AVAILABLE_MODELS, CUSTOM_MODEL_ID, DEFAULT_LLM_ENDPOINT } from "@/lib/api";
 import type { FeatureSpec, LlmEndpointConfig, PredictionItem, PredictionMetrics, TrainResult } from "@/lib/api";
+import { LlmEndpointConfigPanel } from "./training-view/LlmEndpointConfig";
 import { cls, enrichError, QueueBusyBanner, useElapsedTimer, useProgressStall } from "./training-view/shared";
 import { DiscoveryPhasePanel } from "./training-view/DiscoveryPhasePanel";
 import { PredictionPhasePanel } from "./training-view/PredictionPhasePanel";
@@ -292,27 +293,39 @@ export function TrainingView({
       </p>
 
       {(step <= 2 || step === 4) && (
-        <div className="flex justify-center items-center gap-2 mb-6">
-          <span className={`flex items-center gap-1.5 text-xs font-medium ${cls(deluxe, "text-slate-500", "text-slate-400")}`}>
-            <Cpu className="h-3.5 w-3.5" /> {tr.processWith}
-          </span>
-          <select
-            value={modelProvider}
-            onChange={(e) => setModelProvider(e.target.value)}
-            disabled={anyBusy}
-            className={`appearance-none text-xs font-bold pl-2.5 pr-7 py-1.5 rounded-md outline-none border ${cls(
-              deluxe,
-              "bg-white text-slate-900 border-slate-300",
-              "bg-slate-800 text-white border-slate-600"
-            )}`}
-          >
-            {AVAILABLE_MODELS.map((model) => (
-              <option key={model.id} value={model.id}>
-                {model.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        <>
+          <div className="flex justify-center items-center gap-2 mb-4">
+            <span className={`flex items-center gap-1.5 text-xs font-medium ${cls(deluxe, "text-slate-500", "text-slate-400")}`}>
+              <Cpu className="h-3.5 w-3.5" /> {tr.processWith}
+            </span>
+            <select
+              value={modelProvider}
+              onChange={(e) => setModelProvider(e.target.value)}
+              disabled={anyBusy}
+              className={`appearance-none text-xs font-bold pl-2.5 pr-7 py-1.5 rounded-md outline-none border ${cls(
+                deluxe,
+                "bg-white text-slate-900 border-slate-300",
+                "bg-slate-800 text-white border-slate-600"
+              )}`}
+            >
+              {AVAILABLE_MODELS.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {modelProvider === CUSTOM_MODEL_ID && setLlmEndpoint && (
+            <div className="mb-6">
+              <LlmEndpointConfigPanel
+                deluxe={deluxe}
+                value={llmEndpoint ?? DEFAULT_LLM_ENDPOINT}
+                onChange={setLlmEndpoint}
+              />
+            </div>
+          )}
+        </>
       )}
 
       {step === 1 && (

@@ -23,9 +23,12 @@ export interface LlmEndpointConfig {
   baseUrl: string;
   apiKey: string;
   model: string;
+  temperature?: number;
 }
 
-export const DEFAULT_LLM_ENDPOINT: LlmEndpointConfig = { baseUrl: "", apiKey: "", model: "" };
+export const DEFAULT_LLM_ENDPOINT: LlmEndpointConfig = { baseUrl: "", apiKey: "", model: "", temperature: 0.1 };
+
+export const CUSTOM_MODEL_ID = "__custom__";
 
 // =====================================================
 // SESSION — perzistentní X-Session-ID header
@@ -72,6 +75,7 @@ export const AVAILABLE_MODELS = [
   { id: "qwen2.5vl:7b", name: "Qwen 2.5 VL", type: "local" as const },
   { id: "llava:7b", name: "Llava v1.6 7B", type: "local" as const },
   { id: "llama3.2-vision", name: "Llama 3.2 Vision", type: "local" as const },
+  { id: CUSTOM_MODEL_ID, name: "Custom endpoint…", type: "custom" as const },
 ];
 
 // =====================================================

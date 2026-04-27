@@ -40,6 +40,10 @@ def api_discover():
     model_name = request.form.get("model", DEFAULT_MODEL)
     llm_base_url = request.form.get("llm_base_url", "").strip()
     llm_api_key = request.form.get("llm_api_key", "").strip()
+    try:
+        llm_temperature = float(request.form.get("llm_temperature", ""))
+    except (ValueError, TypeError):
+        llm_temperature = None
     labels_df = load_labels_from_request(request, UPLOAD_FOLDER)
 
     media_paths = []
@@ -83,6 +87,7 @@ def api_discover():
             features = pipeline.discover_features(
                 media_paths, target_var, model_name, labels_df, progress_cb=_pcb,
                 llm_base_url=llm_base_url, llm_api_key=llm_api_key,
+                llm_temperature=llm_temperature,
             )
             pipeline.save_state()
             set_job(job_id, {

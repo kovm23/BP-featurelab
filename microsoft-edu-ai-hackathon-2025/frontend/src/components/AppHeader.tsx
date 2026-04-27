@@ -10,7 +10,6 @@ export function AppHeader({
   handleReset,
   handleExportSession,
   triggerImport,
-  handleLoadDemo,
   t,
 }: {
   deluxe: boolean;

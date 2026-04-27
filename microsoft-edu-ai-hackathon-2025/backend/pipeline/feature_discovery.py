@@ -117,6 +117,7 @@ def discover_features(
     progress_cb=None,
     llm_base_url: str = "",
     llm_api_key: str = "",
+    llm_temperature: float | None = None,
 ) -> dict:
     """Analyse sample media and suggest a feature definition spec.
 
@@ -178,7 +179,8 @@ def discover_features(
         pct = 5 + int((idx / n_samples) * 55)
         _cb(pct, f"Analysing sample {idx + 1}/{n_samples}: {file_name}...")
         result = process_single_media(path, prompt=obs_prompt, model_name=model_name,
-                                       custom_base_url=llm_base_url, custom_api_key=llm_api_key)
+                                       custom_base_url=llm_base_url, custom_api_key=llm_api_key,
+                                       custom_temperature=llm_temperature)
         raw = result.get("analysis") or result.get("description") or str(result)
         if raw:
             observations.append(str(raw))
@@ -226,10 +228,11 @@ def discover_features(
     synth_client, is_custom = get_client(llm_base_url, llm_api_key)
     for attempt in range(max_retries):
         try:
+            synth_temperature = llm_temperature if (is_custom and llm_temperature is not None) else 0.3
             synth_kwargs: dict = dict(
                 model=model_name,
                 messages=[{"role": "user", "content": synthesis_prompt}],
-                temperature=0.3,
+                temperature=synth_temperature,
             )
             if not is_custom:
                 options = ollama_request_options()

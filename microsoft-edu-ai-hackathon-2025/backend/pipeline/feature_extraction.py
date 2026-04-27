@@ -110,10 +110,12 @@ def _aggregate_passes(pass_results: list[dict], feature_spec: dict) -> dict:
 
 
 def _extract_single_pass(media_path: str, prompt: str, model_name: str,
-                          custom_base_url: str = "", custom_api_key: str = "") -> dict:
+                          custom_base_url: str = "", custom_api_key: str = "",
+                          custom_temperature: float | None = None) -> dict:
     """Run a single extraction pass and return cleaned attrs dict."""
     result = process_single_media(media_path, prompt=prompt, model_name=model_name,
-                                   custom_base_url=custom_base_url, custom_api_key=custom_api_key)
+                                   custom_base_url=custom_base_url, custom_api_key=custom_api_key,
+                                   custom_temperature=custom_temperature)
     analysis = result.get("analysis", {})
     if not isinstance(analysis, dict):
         return {}
@@ -133,6 +135,7 @@ def extract_features_async(
     labels_df: pd.DataFrame | None = None,
     llm_base_url: str = "",
     llm_api_key: str = "",
+    llm_temperature: float | None = None,
 ) -> None:
     """Extract features from media files according to feature_spec.
 
@@ -203,7 +206,8 @@ def extract_features_async(
                     "done": False,
                 })
                 attrs = _extract_single_pass(media_path, prompt, model_name,
-                                               custom_base_url=llm_base_url, custom_api_key=llm_api_key)
+                                               custom_base_url=llm_base_url, custom_api_key=llm_api_key,
+                                               custom_temperature=llm_temperature)
                 if attrs:
                     pass_results.append(attrs)
 

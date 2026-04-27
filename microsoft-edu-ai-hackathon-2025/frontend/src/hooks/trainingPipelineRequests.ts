@@ -50,6 +50,7 @@ export async function submitDiscoveryRequest(params: {
     formData.append("model", ep.model || params.modelProvider);
     formData.append("llm_base_url", ep.baseUrl);
     formData.append("llm_api_key", ep.apiKey);
+    if (ep.temperature != null) formData.append("llm_temperature", String(ep.temperature));
   } else {
     formData.append("model", params.modelProvider);
   }
@@ -87,6 +88,7 @@ export async function submitExtractRequest(config: ExtractRequestConfig) {
     if (useCustom) {
       formData.append("llm_base_url", ep!.baseUrl);
       formData.append("llm_api_key", ep!.apiKey);
+      if (ep!.temperature != null) formData.append("llm_temperature", String(ep!.temperature));
     }
     if (config.labelsFile) formData.append("labels_file", config.labelsFile);
 
@@ -110,7 +112,7 @@ export async function submitExtractRequest(config: ExtractRequestConfig) {
       model: useCustom ? (ep!.model || config.modelProvider) : config.modelProvider,
       feature_spec: config.featureSpec,
       dataset_type: config.datasetType,
-      ...(useCustom ? { llm_base_url: ep!.baseUrl, llm_api_key: ep!.apiKey } : {}),
+      ...(useCustom ? { llm_base_url: ep!.baseUrl, llm_api_key: ep!.apiKey, ...(ep!.temperature != null ? { llm_temperature: ep!.temperature } : {}) } : {}),
     }),
   });
   if (!response.ok) {

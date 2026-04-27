@@ -145,6 +145,7 @@ def process_single_media(
     model_name: str = DEFAULT_MODEL,
     custom_base_url: str = "",
     custom_api_key: str = "",
+    custom_temperature: float | None = None,
 ) -> Dict[str, Any]:
     """Process a single media file (video or image) and send it to the LLM with the given prompt.
 
@@ -168,6 +169,7 @@ def process_single_media(
             llm_resp = extract_image_features_with_llm(
                 [img_b64], prompt=prompt, deployment_name=model_name, feature_gen=True,
                 custom_base_url=custom_base_url, custom_api_key=custom_api_key,
+                custom_temperature=custom_temperature,
             )
             result["analysis"] = llm_resp[0] if isinstance(llm_resp, list) and llm_resp else llm_resp
 
@@ -202,6 +204,7 @@ def process_single_media(
             llm_resp = extract_image_features_with_llm(
                 frame_b64, prompt=full_prompt, deployment_name=model_name, feature_gen=True,
                 custom_base_url=custom_base_url, custom_api_key=custom_api_key,
+                custom_temperature=custom_temperature,
             )
             result["analysis"] = llm_resp[0] if isinstance(llm_resp, list) and llm_resp else llm_resp
 

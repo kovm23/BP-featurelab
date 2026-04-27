@@ -2,10 +2,8 @@ import React from "react";
 import { AlertTriangle, CheckCircle2, ChevronRight, Download, Lightbulb, Loader2, UploadCloud, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { FeatureSpec, LlmEndpointConfig } from "@/lib/api";
-import { DEFAULT_LLM_ENDPOINT } from "@/lib/api";
 import { downloadFeatureSpec } from "@/lib/pipelineDownloads";
 import { cls, FeatureSpecBox, ProgressBar } from "./shared";
-import { LlmEndpointConfigPanel } from "./LlmEndpointConfig";
 import { OllamaWarning } from "./OllamaWarning";
 import type { TrainingTranslations } from "./translations";
 import { translateStage } from "./translations";
@@ -201,12 +199,6 @@ export function DiscoveryPhasePanel(props: {
           </div>
         )}
       </div>
-
-      <LlmEndpointConfigPanel
-        deluxe={deluxe}
-        value={llmEndpoint ?? DEFAULT_LLM_ENDPOINT}
-        onChange={setLlmEndpoint ?? (() => {})}
-      />
 
       {ollamaOk === false && !(llmEndpoint?.baseUrl && llmEndpoint?.apiKey) && (
         <OllamaWarning deluxe={deluxe} tr={tr} recheckOllama={recheckOllama} />
