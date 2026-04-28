@@ -265,13 +265,28 @@ def extract_features_async(
         feature_cols = [c for c in df_X.columns if c != "media_name"]
         missing_cells = int(df_X[feature_cols].isna().sum().sum())
         if missing_cells > 0:
-            logger.info("Imputing %d missing feature cells with column medians.", missing_cells)
+            logger.info("Imputing %d missing feature cells.", missing_cells)
             for col in feature_cols:
-                numeric_series = pd.to_numeric(df_X[col], errors="coerce")
-                col_median = numeric_series.median()  # NaN if all missing
-                if pd.isna(col_median):
-                    col_median = 0.0
-                df_X[col] = numeric_series.fillna(col_median)
+                if not df_X[col].isna().any():
+                    continue
+
+                spec_val = feature_spec.get(col)
+                is_categorical = (
+                    isinstance(spec_val, list)
+                    and bool(spec_val)
+                    and all(isinstance(v, str) for v in spec_val)
+                )
+
+                if is_categorical:
+                    mode_series = df_X[col].dropna().mode()
+                    fill_val = mode_series.iloc[0] if len(mode_series) > 0 else ""
+                    df_X[col] = df_X[col].fillna(fill_val)
+                else:
+                    numeric_series = pd.to_numeric(df_X[col], errors="coerce")
+                    col_median = numeric_series.median()
+                    if pd.isna(col_median):
+                        col_median = 0.0
+                    df_X[col] = numeric_series.fillna(col_median)
 
         logger.info(
             "Extraction complete: %d rows, %d total clamped values",
