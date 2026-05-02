@@ -6,6 +6,7 @@ from collections import Counter
 import numpy as np
 import pandas as pd
 from rulekit.classification import RuleClassifier
+from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.metrics import (
     accuracy_score,
     balanced_accuracy_score,
@@ -181,6 +182,136 @@ def _rulekit_classification_predict(
                     neg_label,
                 ).astype(object)
     return pred_labels, pred_proba
+
+
+# ---------------------------------------------------------------------------
+# Ensemble (RF + GBT) helpers
+# ---------------------------------------------------------------------------
+
+def _train_ensemble_classifier(X_fit: pd.DataFrame, y_fit: pd.Series) -> tuple:
+    """Train RF + GBT soft-voting ensemble alongside RuleKit."""
+    rf = RandomForestClassifier(
+        n_estimators=200, max_depth=None, min_samples_leaf=1,
+        class_weight="balanced", random_state=42, n_jobs=-1,
+    )
+    gbt = GradientBoostingClassifier(
+        n_estimators=100, max_depth=3, learning_rate=0.1, random_state=42,
+    )
+    rf.fit(X_fit, y_fit)
+    gbt.fit(X_fit, y_fit)
+    return rf, gbt
+
+
+def _ensemble_predict_proba(
+    rf, gbt, X: pd.DataFrame, label_classes: list[str]
+) -> np.ndarray:
+    """Soft-vote probabilities from RF+GBT, aligned to label_classes order."""
+    rf_classes = [str(c) for c in rf.classes_]
+    gbt_classes = [str(c) for c in gbt.classes_]
+    rf_p = _align_probability_columns(rf.predict_proba(X), rf_classes, label_classes)
+    gbt_p = _align_probability_columns(gbt.predict_proba(X), gbt_classes, label_classes)
+    return (rf_p + gbt_p) / 2.0
+
+
+def _combined_predict_proba(
+    rulekit_model, rf, gbt, X: pd.DataFrame, label_classes: list[str],
+    rulekit_weight: float = 1 / 3,
+) -> np.ndarray:
+    """3-way soft vote: RuleKit + RF + GBT.
+
+    rulekit_weight controls RuleKit's share (default 1/3 = equal weight).
+    The remaining weight is split equally between RF and GBT.
+    """
+    ens_weight = 1.0 - rulekit_weight
+    ens_proba = _ensemble_predict_proba(rf, gbt, X, label_classes)
+    rk_proba_raw = rulekit_model.predict_proba(X)
+    rk_source_labels = [
+        str(label)
+        for label in getattr(
+            rulekit_model, "label_unique_values", pd.Index(pd.unique(rulekit_model.predict(X))).tolist()
+        )
+    ]
+    rk_proba = _align_probability_columns(
+        _ensure_probability_matrix(rk_proba_raw, len(rk_source_labels)),
+        rk_source_labels, label_classes,
+    )
+    return rulekit_weight * rk_proba + ens_weight * ens_proba
+
+
+def _rf_feature_importance(rf, feature_columns: list[str], original_spec: dict) -> dict:
+    """Aggregate RF Gini importances back to original (pre-OHE) feature names."""
+    col_imp = dict(zip(feature_columns, rf.feature_importances_))
+    aggregated: dict[str, float] = {}
+    for feat_name in original_spec:
+        related = [c for c in feature_columns if c == feat_name or c.startswith(feat_name + "_")]
+        aggregated[feat_name] = sum(col_imp.get(c, 0.0) for c in related)
+    total = sum(aggregated.values())
+    if total > 0:
+        return {k: round(v / total, 6) for k, v in aggregated.items()}
+    return aggregated
+
+
+def _run_cross_validation_ensemble(
+    X: pd.DataFrame, y: pd.Series, label_classes: list[str],
+    n_splits: int = CV_MAX_FOLDS,
+    rulekit_weight: float = 1 / 3,
+) -> dict:
+    """Stratified K-fold CV for the 3-way combined model (RuleKit + RF + GBT).
+
+    Trains all three models per fold so that blended CV estimates are accurate.
+    """
+    class_counts = y.value_counts()
+    positive_counts = class_counts[class_counts > 0]
+    max_splits = min(n_splits, len(X), int(positive_counts.min())) if len(positive_counts) else 0
+    if max_splits < 2:
+        return {
+            "cv_accuracy": None, "cv_balanced_accuracy": None,
+            "cv_f1_macro": None, "cv_precision_macro": None,
+            "cv_recall_macro": None, "cv_mcc": None,
+            "n_folds": max_splits,
+            "note": "Too few samples per class for stratified CV",
+        }
+
+    kf = StratifiedKFold(n_splits=max_splits, shuffle=True, random_state=42)
+    fold_acc, fold_bal_acc, fold_f1, fold_prec, fold_rec, fold_mcc = [], [], [], [], [], []
+
+    for train_idx, val_idx in kf.split(X, y):
+        X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
+        y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
+        medians = _fit_median_imputer(X_train)
+        X_train = _apply_median_imputer(X_train, medians)
+        X_val = _apply_median_imputer(X_val, medians)
+        X_train_s, y_train_s = _oversample_minority(X_train, y_train)
+
+        rk_fold = RuleClassifier()
+        rk_fold.fit(X_train_s, y_train_s)
+        rf_fold, gbt_fold = _train_ensemble_classifier(X_train_s, y_train_s)
+
+        try:
+            proba = _combined_predict_proba(
+                rk_fold, rf_fold, gbt_fold, X_val, label_classes, rulekit_weight=rulekit_weight
+            )
+        except Exception:
+            proba = _ensemble_predict_proba(rf_fold, gbt_fold, X_val, label_classes)
+
+        y_pred = _proba_to_labels(proba, label_classes)
+
+        fold_acc.append(float(accuracy_score(y_val, y_pred)))
+        fold_bal_acc.append(float(balanced_accuracy_score(y_val, y_pred)))
+        fold_f1.append(float(f1_score(y_val, y_pred, average="macro", zero_division=0)))
+        fold_prec.append(float(precision_score(y_val, y_pred, average="macro", zero_division=0)))
+        fold_rec.append(float(recall_score(y_val, y_pred, average="macro", zero_division=0)))
+        fold_mcc.append(float(matthews_corrcoef(y_val, y_pred)))
+
+    return {
+        "cv_accuracy": round(float(np.mean(fold_acc)), 6),
+        "cv_balanced_accuracy": round(float(np.mean(fold_bal_acc)), 6),
+        "cv_f1_macro": round(float(np.mean(fold_f1)), 6),
+        "cv_precision_macro": round(float(np.mean(fold_prec)), 6),
+        "cv_recall_macro": round(float(np.mean(fold_rec)), 6),
+        "cv_mcc": round(float(np.mean(fold_mcc)), 6),
+        "n_folds": max_splits,
+    }
 
 
 # ---------------------------------------------------------------------------

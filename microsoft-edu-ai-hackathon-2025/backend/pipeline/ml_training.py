@@ -20,11 +20,17 @@ import pandas as pd
 from rulekit.classification import RuleClassifier
 
 from pipeline.ml_classification import (
+    _combined_predict_proba,
     _compute_classification_metrics,
+    _ensemble_predict_proba,
     _load_actual_values,
+    _proba_to_labels,
     _resolve_positive_label,
+    _rf_feature_importance,
     _run_cross_validation_classification,
+    _run_cross_validation_ensemble,
     _rulekit_classification_predict,
+    _train_ensemble_classifier,
     _validate_classification_target,
 )
 from sklearn.metrics import (
@@ -64,7 +70,12 @@ def _make_progress_cb(progress_cb):
 
 
 def _train_classification_branch(pipeline, X, y_raw, target_column, _cb, warnings: list) -> dict:
-    """Train RuleKit classifier and update pipeline state in-place."""
+    """Train RuleKit + RF/GBT ensemble classifier and update pipeline state in-place.
+
+    RuleKit is trained for human-readable rule extraction.
+    RF+GBT ensemble is trained for prediction accuracy.
+    Ensemble predictions are used for all metrics; RuleKit rules are shown for interpretability.
+    """
     y = _validate_classification_target(y_raw)
     X = X.loc[y.index]
     y_counts = y.value_counts()
@@ -76,33 +87,63 @@ def _train_classification_branch(pipeline, X, y_raw, target_column, _cb, warning
     positive_label = _resolve_positive_label(label_classes, y_reference=y)
     X_fit, y_fit = _oversample_minority(X, y)
 
-    _cb(25, "Training RuleKit classifier...")
+    _cb(20, "Training RuleKit classifier (for rules)...")
     rulekit_model = RuleClassifier()
     rulekit_model.fit(X_fit, y_fit)
-
-    _cb(60, "RuleKit classification predictions...")
-    y_pred, _ = _rulekit_classification_predict(
-        rulekit_model, X,
-        positive_label=positive_label,
-        positive_threshold=CLASSIFICATION_POSITIVE_THRESHOLD,
-        label_classes=label_classes,
-    )
     rules = _extract_rules(rulekit_model)
     rulekit_importance = _count_rule_features(rules, list(X.columns))
 
-    _cb(80, "K-fold classification validation...")
-    cv_results = _run_cross_validation_classification(
-        X, y, positive_threshold=CLASSIFICATION_POSITIVE_THRESHOLD
-    )
-    if cv_results.get("note"):
-        warnings.append(cv_results["note"])
-    if positive_label:
+    _cb(45, "Training RF+GBT ensemble (for predictions)...")
+    ensemble_model = None
+    rf_importance: dict = {}
+    try:
+        rf_model, gbt_model = _train_ensemble_classifier(X_fit, y_fit)
+        ensemble_model = {"rf": rf_model, "gbt": gbt_model}
+        rf_importance = _rf_feature_importance(rf_model, list(X.columns), pipeline.feature_spec)
+    except Exception as exc:
+        logger.warning("Ensemble training failed (%s); falling back to RuleKit for predictions.", exc)
+
+    _cb(65, "Computing predictions...")
+    if ensemble_model is not None:
+        rf_m, gbt_m = ensemble_model["rf"], ensemble_model["gbt"]
+        try:
+            y_pred_proba = _combined_predict_proba(rulekit_model, rf_m, gbt_m, X, label_classes)
+        except Exception as exc:
+            logger.warning("3-way blend failed (%s); using ensemble only.", exc)
+            y_pred_proba = _ensemble_predict_proba(rf_m, gbt_m, X, label_classes)
+        y_pred = _proba_to_labels(y_pred_proba, label_classes)
+    else:
+        y_pred, _ = _rulekit_classification_predict(
+            rulekit_model, X,
+            positive_label=positive_label,
+            positive_threshold=CLASSIFICATION_POSITIVE_THRESHOLD,
+            label_classes=label_classes,
+        )
+
+    _cb(78, "K-fold validation...")
+    if ensemble_model is not None:
+        cv_results = _run_cross_validation_ensemble(X, y, label_classes)
+        if cv_results.get("note"):
+            warnings.append(cv_results["note"])
+        warnings.append(
+            "Predictions use RuleKit (1/3) + RF (1/3) + GBT (1/3) soft vote; "
+            "rules shown are from RuleKit."
+        )
+    else:
+        cv_results = _run_cross_validation_classification(
+            X, y, positive_threshold=CLASSIFICATION_POSITIVE_THRESHOLD
+        )
+        if cv_results.get("note"):
+            warnings.append(cv_results["note"])
+
+    if positive_label and ensemble_model is None:
         warnings.append(
             f"Classification threshold policy active: "
             f"positive_label='{positive_label}', threshold={CLASSIFICATION_POSITIVE_THRESHOLD:.2f}"
         )
 
     pipeline.model = rulekit_model
+    pipeline.xgb_model = ensemble_model
     pipeline.rules = rules
     pipeline.mse = None
     pipeline.cv_mse = pipeline.cv_std = pipeline.cv_mae = None
@@ -120,7 +161,7 @@ def _train_classification_branch(pipeline, X, y_raw, target_column, _cb, warning
     pipeline.cv_mcc = cv_results.get("cv_mcc")
     pipeline.cv_folds = cv_results.get("n_folds")
     pipeline.warnings = warnings
-    pipeline.feature_importance = {"rulekit": rulekit_importance}
+    pipeline.feature_importance = {"rulekit": rulekit_importance, "rf": rf_importance}
     pipeline.is_trained = True
     pipeline.target_variable = target_column
     pipeline.predictions = pipeline.prediction_metrics = None
@@ -147,7 +188,7 @@ def _train_classification_branch(pipeline, X, y_raw, target_column, _cb, warning
         "rules_count": len(rules),
         "rules": rules,
         "feature_spec": pipeline.feature_spec,
-        "feature_importance": {"rulekit": rulekit_importance},
+        "feature_importance": {"rulekit": rulekit_importance, "rf": rf_importance},
         "warnings": warnings,
         "training_data_X": json.loads(pipeline.training_X.to_json(orient="records")),
     }
@@ -241,23 +282,48 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
 
     # ------------------------------------------------------------------ classification
     if target_mode == "classification":
-        _cb(25, "RuleKit classification predictions...")
         rulekit_classifier = getattr(pipeline, "model", None)
         if rulekit_classifier is None:
             raise Exception("Classification model is missing. Train Phase 3 again.")
 
         medians = dict(zip(pipeline._training_columns, pipeline._scaler_mean))
         X_test = _apply_median_imputer(X_test, medians)
+        label_classes = getattr(pipeline, "_label_classes", None) or None
         positive_label = (
             getattr(pipeline, "_positive_label", None)
-            or _resolve_positive_label(getattr(pipeline, "_label_classes", []) or [])
+            or _resolve_positive_label(label_classes or [])
         )
-        y_pred, y_pred_proba = _rulekit_classification_predict(
-            rulekit_classifier, X_test,
-            positive_label=positive_label,
-            positive_threshold=CLASSIFICATION_POSITIVE_THRESHOLD,
-            label_classes=getattr(pipeline, "_label_classes", None) or None,
-        )
+
+        ensemble = getattr(pipeline, "xgb_model", None)
+        if ensemble is not None and isinstance(ensemble, dict):
+            _cb(25, "RuleKit + RF + GBT combined predictions...")
+            rf_m = ensemble.get("rf")
+            gbt_m = ensemble.get("gbt")
+            if rf_m is not None and gbt_m is not None and label_classes:
+                try:
+                    y_pred_proba = _combined_predict_proba(
+                        rulekit_classifier, rf_m, gbt_m, X_test, label_classes
+                    )
+                except Exception as exc:
+                    logger.warning("3-way blend failed at prediction (%s); using ensemble only.", exc)
+                    y_pred_proba = _ensemble_predict_proba(rf_m, gbt_m, X_test, label_classes)
+                y_pred = _proba_to_labels(y_pred_proba, label_classes)
+            else:
+                _cb(25, "RuleKit classification predictions (ensemble unavailable)...")
+                y_pred, y_pred_proba = _rulekit_classification_predict(
+                    rulekit_classifier, X_test,
+                    positive_label=positive_label,
+                    positive_threshold=CLASSIFICATION_POSITIVE_THRESHOLD,
+                    label_classes=label_classes,
+                )
+        else:
+            _cb(25, "RuleKit classification predictions...")
+            y_pred, y_pred_proba = _rulekit_classification_predict(
+                rulekit_classifier, X_test,
+                positive_label=positive_label,
+                positive_threshold=CLASSIFICATION_POSITIVE_THRESHOLD,
+                label_classes=label_classes,
+            )
 
         coverage_matrix = None
         if rulekit_classifier is not None and hasattr(rulekit_classifier, "get_coverage_matrix") and pipeline.rules:

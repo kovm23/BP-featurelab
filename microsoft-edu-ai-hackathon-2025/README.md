@@ -1,6 +1,8 @@
 # Media Feature Lab
 
-Webová aplikace pro automatickou klasifikaci a regresi multimediálního obsahu (videa, obrázky) pomocí kombinace LLM-řízeného objevování featur a interpretovatelných ML modelů. Uživatel nahraje malý vzorek médií s popisky, systém navrhne měřitelné featury, extrahuje je, natrénuje interpretovatelný RuleKit model a dokáže predikovat na novém datasetu — včetně interpretace, které pravidlo každou predikci zdůvodnilo.
+Webová aplikace pro automatickou klasifikaci a regresi multimediálního obsahu (videa, obrázky) pomocí kombinace LLM-řízeného objevování featur a hybridních ML modelů. Uživatel nahraje malý vzorek médií s popisky, systém navrhne měřitelné featury, extrahuje je, natrénuje model a dokáže predikovat na novém datasetu — včetně interpretace, které pravidlo každou predikci zdůvodnilo.
+
+V klasifikačním režimu se predikce tvoří **3-way soft vote**: RuleKit (1/3) + Random Forest (1/3) + Gradient Boosting (1/3). RuleKit zůstává zdrojem interpretovatelných pravidel zobrazených v UI, zatímco RF a GBT kompenzují jeho horší generalizaci na malých datasetech.
 
 Projekt vznikl na Microsoft × VŠE Edu AI Hackathonu 2025 a dále se rozvíjí jako součást bakalářské práce.
 
@@ -51,6 +53,22 @@ ollama serve                      # http://localhost:11434
 Otevři `http://localhost:5173` a projdi pipeline: Discovery → Training Extraction → Training → Testing Extraction → Prediction.
 
 ## Nové funkce (verze pro obhajobu BP)
+
+### 3-way soft vote (klasifikace)
+
+Klasifikační model byl upgradován z čistého RuleKitu na **hybridní 3-way soft vote**:
+
+| Model | Podíl | Role |
+|---|---|---|
+| RuleKit | 1/3 | Interpretovatelná pravidla, zobrazená v UI |
+| Random Forest (200 stromů) | 1/3 | Robustní ensemble, odolný vůči přetrénování |
+| Gradient Boosting (100 stromů) | 1/3 | Silný na tabulárních datech, kompenzuje slabiny RuleKitu |
+
+Finální predikce = průměr pravděpodobnostních distribucí všech tří modelů (soft voting). Cross-validace trénuje všechny tři modely v každém foldu, takže CV metriky přesně odpovídají chování na testovacích datech.
+
+Regresní větev zůstává beze změny (RuleKit only).
+
+
 
 ### Majority class baseline
 
