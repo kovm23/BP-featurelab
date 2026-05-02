@@ -136,6 +136,69 @@ def extract_key_frames_with_timestamps(
 
 
 # ================================================================
+# Deterministic video feature computation (no LLM required)
+# ================================================================
+
+def compute_video_features(video_path: str) -> dict:
+    """Compute deterministic features from a video file using OpenCV.
+
+    Returns a dict with keys: vid_motion_magnitude, vid_color_saturation_mean,
+    vid_brightness_mean, vid_scene_cut_count, vid_face_detected.
+    Returns empty dict if the video cannot be opened.
+    """
+    frames_with_ts = extract_key_frames_with_timestamps(video_path, VIDEO_KEY_FRAME_LIMIT)
+    if not frames_with_ts:
+        return {}
+
+    frames = [f for f, _ in frames_with_ts]
+
+    # Motion: mean histogram distance between consecutive keyframes
+    motion_scores = []
+    for i in range(1, len(frames)):
+        h1 = _compute_histogram(frames[i - 1])
+        h2 = _compute_histogram(frames[i])
+        motion_scores.append(cv2.compareHist(h1, h2, cv2.HISTCMP_BHATTACHARYYA))
+    vid_motion = round(float(np.mean(motion_scores)), 4) if motion_scores else 0.0
+
+    # Color saturation and brightness via HSV
+    sat_vals, bright_vals = [], []
+    for frame in frames:
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV).astype(np.float32)
+        sat_vals.append(float(hsv[:, :, 1].mean()))
+        bright_vals.append(float(hsv[:, :, 2].mean()))
+    vid_saturation = round(float(np.mean(sat_vals)), 2) if sat_vals else 0.0
+    vid_brightness = round(float(np.mean(bright_vals)), 2) if bright_vals else 0.0
+
+    # Scene cuts: pairs with histogram distance above threshold
+    SCENE_THRESHOLD = 0.35
+    scene_cuts = sum(1 for s in motion_scores if s > SCENE_THRESHOLD)
+
+    # Face detection using OpenCV Haar cascade (ships with cv2, no extra deps)
+    face_detected_count = 0
+    try:
+        cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+        face_cascade = cv2.CascadeClassifier(cascade_path)
+        if not face_cascade.empty():
+            for frame in frames:
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=4)
+                if len(faces) > 0:
+                    face_detected_count += 1
+    except Exception as exc:
+        logger.debug("Face detection skipped for %s: %s", os.path.basename(video_path), exc)
+
+    vid_face = round(face_detected_count / max(len(frames), 1), 4)
+
+    return {
+        "vid_motion_magnitude": vid_motion,
+        "vid_color_saturation_mean": vid_saturation,
+        "vid_brightness_mean": vid_brightness,
+        "vid_scene_cut_count": scene_cuts,
+        "vid_face_detected": vid_face,
+    }
+
+
+# ================================================================
 # CORE: Process a single media file with a custom prompt
 # ================================================================
 

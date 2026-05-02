@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 
 from pipeline.feature_validation import validate_row
-from services.processing import process_single_media
+from services.processing import _is_image_file, compute_video_features, process_single_media
 from utils.csv_utils import load_labels_from_path
 from utils.target_context import build_labels_context
 import jobs as job_registry
@@ -247,6 +247,11 @@ def extract_features_async(
                 row[feat_key] = val
             if missing:
                 logger.warning("%s: missing features %s", file_name, missing)
+            # Append deterministic video features (no LLM, always reliable)
+            if not _is_image_file(media_path):
+                vid_feats = compute_video_features(media_path)
+                row.update(vid_feats)
+
             features_data.append(row)
 
             # Checkpoint
