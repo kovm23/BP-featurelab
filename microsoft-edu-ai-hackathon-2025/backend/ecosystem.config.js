@@ -16,7 +16,7 @@ module.exports = {
         PATH: `${path.join(venvPath, "bin")}:${process.env.PATH || "/usr/bin:/bin"}`,
         VIRTUAL_ENV: venvPath,
         CV_MAX_FOLDS: "3",
-        EXTRACTION_PASSES: "2",
+        EXTRACTION_PASSES: "1",
       },
     },
   ],
