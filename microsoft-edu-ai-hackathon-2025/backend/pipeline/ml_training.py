@@ -229,6 +229,8 @@ def train_model(pipeline, target_column: str, progress_cb=None) -> dict:
         )
 
     feature_cols = [c for c in pipeline.feature_spec if c in df_merged.columns]
+    vid_cols = [c for c in df_merged.columns if c.startswith("vid_") and c not in set(feature_cols)]
+    feature_cols = feature_cols + vid_cols
     if not feature_cols:
         raise Exception("None of the features were found in the data.")
     X = _preprocess_features(df_merged[feature_cols])
@@ -273,6 +275,8 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
 
     _cb(10, "Preprocessing testing features...")
     feature_cols = [c for c in pipeline.feature_spec if c in pipeline.testing_X.columns]
+    vid_cols = [c for c in pipeline.testing_X.columns if c.startswith("vid_") and c not in set(feature_cols)]
+    feature_cols = feature_cols + vid_cols
     X_test = _preprocess_features(
         pipeline.testing_X[feature_cols],
         training_columns=pipeline._training_columns,

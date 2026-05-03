@@ -1,17 +1,102 @@
-import { Download } from "lucide-react";
+import { useState } from "react";
+import { Download, Loader2 } from "lucide-react";
 import type { PredictionMetrics } from "@/lib/api";
-import { EXPORT_CONFUSION_MATRIX_URL, sessionHeaders } from "@/lib/api";
 import { cls } from "./shared";
 import type { TrainingTranslations } from "./translations";
 import { ConfidenceStat, ConfusionMatrix, MetricStat } from "./metricStats";
 
-function downloadConfusionMatrixPng() {
-  fetch(EXPORT_CONFUSION_MATRIX_URL, { headers: sessionHeaders() })
-    .then((r) => {
-      if (!r.ok) throw new Error(`${r.status}`);
-      return r.blob();
-    })
-    .then((blob) => {
+function exportConfusionMatrixToPng(
+  labels: string[],
+  matrix: number[][],
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const n = labels.length;
+    const CELL = 64;
+    const LABEL_W = 120;
+    const LABEL_H = 80;
+    const PAD = 20;
+
+    const width = LABEL_W + n * CELL + PAD;
+    const height = LABEL_H + n * CELL + PAD;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) { reject(new Error("Canvas not supported")); return; }
+
+    // Background
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, width, height);
+
+    // Row-normalised values for color
+    const rowNorm = matrix.map((row) => {
+      const s = row.reduce((a, b) => a + b, 0) || 1;
+      return row.map((v) => v / s);
+    });
+
+    // Cells
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        const norm = rowNorm[i][j];
+        // Blue scale: 0 → #eff6ff, 1 → #1d4ed8
+        const r = Math.round(239 - norm * (239 - 29));
+        const g = Math.round(246 - norm * (246 - 78));
+        const b = Math.round(255 - norm * (255 - 216));
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+        ctx.fillRect(LABEL_W + j * CELL, LABEL_H + i * CELL, CELL, CELL);
+
+        // Cell border
+        ctx.strokeStyle = "#e2e8f0";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(LABEL_W + j * CELL, LABEL_H + i * CELL, CELL, CELL);
+
+        // Cell value
+        ctx.fillStyle = norm > 0.5 ? "#ffffff" : "#1e293b";
+        ctx.font = "bold 13px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(
+          String(matrix[i][j]),
+          LABEL_W + j * CELL + CELL / 2,
+          LABEL_H + i * CELL + CELL / 2,
+        );
+      }
+    }
+
+    // Axis labels (predicted = x, actual = y)
+    ctx.fillStyle = "#374151";
+    ctx.font = "11px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    for (let j = 0; j < n; j++) {
+      // Predicted (top)
+      ctx.save();
+      ctx.translate(LABEL_W + j * CELL + CELL / 2, LABEL_H - 10);
+      ctx.rotate(-Math.PI / 4);
+      ctx.textAlign = "left";
+      ctx.fillText(labels[j], 0, 0);
+      ctx.restore();
+    }
+    for (let i = 0; i < n; i++) {
+      // Actual (left)
+      ctx.textAlign = "right";
+      ctx.fillText(labels[i], LABEL_W - 6, LABEL_H + i * CELL + CELL / 2);
+    }
+
+    // Axis titles
+    ctx.font = "bold 12px sans-serif";
+    ctx.fillStyle = "#111827";
+    ctx.textAlign = "center";
+    ctx.fillText("Predicted", LABEL_W + (n * CELL) / 2, height - 6);
+    ctx.save();
+    ctx.translate(10, LABEL_H + (n * CELL) / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText("Actual", 0, 0);
+    ctx.restore();
+
+    canvas.toBlob((blob) => {
+      if (!blob) { reject(new Error("Canvas export failed")); return; }
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -19,9 +104,10 @@ function downloadConfusionMatrixPng() {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 100);
-    })
-    .catch((err) => console.error("Confusion matrix export failed:", err));
+      setTimeout(() => URL.revokeObjectURL(url), 500);
+      resolve();
+    }, "image/png");
+  });
 }
 
 export function ClassificationMetricsPanel({
@@ -33,6 +119,21 @@ export function ClassificationMetricsPanel({
   predictionMetrics: PredictionMetrics;
   tr: TrainingTranslations;
 }) {
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  function handleDownload() {
+    if (!predictionMetrics.labels || !predictionMetrics.confusion_matrix) return;
+    setDownloading(true);
+    setDownloadError(null);
+    exportConfusionMatrixToPng(predictionMetrics.labels, predictionMetrics.confusion_matrix)
+      .then(() => setDownloading(false))
+      .catch((err: Error) => {
+        setDownloading(false);
+        setDownloadError(err.message ?? "Export failed");
+      });
+  }
+
   return (
     <>
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-x-5 gap-y-4">
@@ -114,12 +215,20 @@ export function ClassificationMetricsPanel({
                 {tr.actualAxis} × {tr.predictedAxis}
               </p>
               <ConfusionMatrix labels={predictionMetrics.labels} matrix={predictionMetrics.confusion_matrix} />
-              <div className="mt-2 flex justify-end">
+              <div className="mt-2 flex items-center justify-end gap-2">
+                {downloadError && (
+                  <span className="text-xs text-red-500">{downloadError}</span>
+                )}
                 <button
-                  onClick={downloadConfusionMatrixPng}
-                  className={`px-2 py-1 rounded text-xs flex items-center gap-1 ${cls(deluxe, "bg-slate-500 hover:bg-slate-600 text-white", "bg-slate-600 hover:bg-slate-500 text-white")}`}
+                  type="button"
+                  onClick={handleDownload}
+                  disabled={downloading}
+                  className={`px-2 py-1 rounded text-xs flex items-center gap-1 disabled:opacity-60 ${cls(deluxe, "bg-slate-500 hover:bg-slate-600 text-white", "bg-slate-600 hover:bg-slate-500 text-white")}`}
                 >
-                  <Download className="w-3 h-3" /> Download as PNG
+                  {downloading
+                    ? <Loader2 className="w-3 h-3 animate-spin" />
+                    : <Download className="w-3 h-3" />}
+                  Download as PNG
                 </button>
               </div>
             </div>

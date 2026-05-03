@@ -160,6 +160,21 @@ def compute_video_features(video_path: str) -> dict:
         motion_scores.append(cv2.compareHist(h1, h2, cv2.HISTCMP_BHATTACHARYYA))
     vid_motion = round(float(np.mean(motion_scores)), 4) if motion_scores else 0.0
 
+    # Optical flow: true pixel-level motion magnitude (Farneback dense flow)
+    of_magnitudes = []
+    for i in range(1, len(frames)):
+        prev_gray = cv2.cvtColor(frames[i - 1], cv2.COLOR_BGR2GRAY)
+        curr_gray = cv2.cvtColor(frames[i], cv2.COLOR_BGR2GRAY)
+        try:
+            flow = cv2.calcOpticalFlowFarneback(
+                prev_gray, curr_gray, None, 0.5, 3, 15, 3, 5, 1.2, 0
+            )
+            magnitude = np.sqrt(flow[..., 0] ** 2 + flow[..., 1] ** 2)
+            of_magnitudes.append(float(np.mean(magnitude)))
+        except Exception:
+            pass
+    vid_optical_flow = round(float(np.mean(of_magnitudes)), 4) if of_magnitudes else 0.0
+
     # Color saturation and brightness via HSV
     sat_vals, bright_vals = [], []
     for frame in frames:
@@ -191,6 +206,7 @@ def compute_video_features(video_path: str) -> dict:
 
     return {
         "vid_motion_magnitude": vid_motion,
+        "vid_optical_flow_mean": vid_optical_flow,
         "vid_color_saturation_mean": vid_saturation,
         "vid_brightness_mean": vid_brightness,
         "vid_scene_cut_count": scene_cuts,

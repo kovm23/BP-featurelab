@@ -245,6 +245,10 @@ def _rf_feature_importance(rf, feature_columns: list[str], original_spec: dict) 
     for feat_name in original_spec:
         related = [c for c in feature_columns if c == feat_name or c.startswith(feat_name + "_")]
         aggregated[feat_name] = sum(col_imp.get(c, 0.0) for c in related)
+    # Computed video features are not in feature_spec — pass through directly
+    for col in feature_columns:
+        if col.startswith("vid_") and col not in aggregated:
+            aggregated[col] = col_imp.get(col, 0.0)
     total = sum(aggregated.values())
     if total > 0:
         return {k: round(v / total, 6) for k, v in aggregated.items()}

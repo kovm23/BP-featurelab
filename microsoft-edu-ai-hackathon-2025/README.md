@@ -98,6 +98,21 @@ Po úspěšné extrakci tréninkových dat (Fáze 2) se zobrazí tlačítko **LL
 
 Tato čísla lze přímo citovat v bakalářské práci jako doklad míry stochasticity LLM extrakce.
 
+### Computed video features
+
+Pro video datasety se ke každému vzorku automaticky přidá sada **deterministických featur** počítaných přímo z pixelů přes OpenCV — bez LLM, vždy se stejným výsledkem:
+
+| Feature | Popis |
+|---|---|
+| `vid_motion_magnitude` | Průměrná Bhattacharyya distance mezi po sobě jdoucími keyframy (0–1) |
+| `vid_optical_flow_mean` | Průměrná pixel-level intenzita pohybu (Farneback dense optical flow, 0–∞) |
+| `vid_color_saturation_mean` | Průměrná sytost barev (HSV kanál S, 0–255) |
+| `vid_brightness_mean` | Průměrný jas (HSV kanál V, 0–255) |
+| `vid_scene_cut_count` | Počet detekovaných střihů (histogram dist. > 0.35) |
+| `vid_face_detected` | Podíl keyframů s detekovanou tváří (Haar cascade, 0–1) |
+
+Tyto featury **doplňují** LLM-extrahované featury — fáze Discovery a Extraction jsou beze změny. Pro obrázkové datasety se nepočítají. ML modely (RF, GBT, RuleKit) je vidí jako běžné numerické vstupy; pokud pro daný úkol nejsou prediktivní, model jim přiřadí nulovou důležitost.
+
 ### Demo mód (pro screenshoty do BP)
 
 Umožňuje zobrazit kompletní UI se vzorkovými výsledky bez spuštěného Ollamy.

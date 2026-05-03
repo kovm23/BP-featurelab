@@ -49,6 +49,7 @@ Tato sekce doplňuje historický popis níže o aktuální chování aplikace:
 - Predikce v regression režimu vrací `predicted_score`, volitelně `actual_score`.
 - Při `target_mode=classification` se cílová proměnná validuje jako skutečně kategorická. Sloupec s vysokou kardinalitou / téměř spojitou numerickou škálou je odmítnut s chybou a doporučením přepnout na regresi.
 - Škálování features bylo odstraněno dle požadavku (pipeline běží bez `StandardScaler`).
+- Pro video datasety se ke každému vzorku automaticky přidá sada **deterministických computed featur** (`vid_motion_magnitude`, `vid_optical_flow_mean`, `vid_color_saturation_mean`, `vid_brightness_mean`, `vid_scene_cut_count`, `vid_face_detected`) počítaných z keyframů přes OpenCV — bez LLM, bez train/test leakage. Pro obrázkové datasety se nepočítají.
 - Frontend používá lokalizaci CZ/EN s automatickou detekcí jazyka prohlížeče při prvním načtení a perzistencí volby (`localStorage`, key `mflLang`).
 - EN lokalizace je napojena i na klíčové texty 5fázového wizardu (phase titles/descriptions, hlavní CTA tlačítka, continue/stop akce, completion badges).
 - Runtime hlášky z `useTrainingPipeline` (fallback progress labely a frontendové error prefixy) respektují zvolený jazyk CZ/EN.
@@ -227,7 +228,7 @@ objects, environment, and any other notable properties.
 Be objective and specific. Output a concise bullet-point list of observations.
 ```
 
-**Zpracování videa:** Pro video se nejdříve extrahují keyframes (scene-based selection) + audio transcript (Whisper), tyto se přiloží k promptu jako kontext.
+**Zpracování videa:** Pro video se nejdříve extrahují keyframes (scene-based selection) + audio transcript (Whisper), tyto se přiloží k promptu jako kontext. Současně se z keyframů deterministicky vypočítají computed video features (viz sekce 9.2).
 
 #### Krok 2: Syntéza feature specifikace
 
@@ -1569,12 +1570,25 @@ Abstrakce nad zpracováním multimediálních souborů pro LLM extrakci.
 **Odpovědnosti:**
 
 - Vyextrahuje upload ZIP do `UPLOAD_FOLDER/<session_id>/`
-- U videí vybere keyframes přes scene detection (`scenedetect` knihovna) nebo fixní interval jako fallback
-- Audio track extrahuje přes `ffmpeg` do WAV a předá `speech_service`
-- Obrázky se posílají LLM jako `image_url` content part
-- Každý mediální soubor transformuje na strukturu `{"keyframes": [...], "transcript": "..."}` konzumovanou fází Discovery i Extraction
+- U videí vybere až `VIDEO_KEY_FRAME_LIMIT` (10) keyframů přes scene-change detection (HSV histogram, Bhattacharyya distance) s fallbackem na rovnoměrný sampling
+- Audio track extrahuje přes `ffmpeg` a přepíše přes Whisper (faster-whisper large-v3)
+- Obrázky se posílají LLM přímo jako base64 JPEG
+- Každý mediální soubor transformuje na strukturu konzumovanou fází Discovery i Extraction
 
 Výstup je deterministický: stejný vstupní soubor → stejné keyframes → stejný prompt pro LLM. Díky tomu jsou extrakční pokusy porovnatelné.
+
+**`compute_video_features(video_path)`** — pomocná funkce pro deterministické computed featury (volána z `feature_extraction.py` pro každý video soubor, nezávisle na LLM):
+
+| Výstupní klíč | Výpočet |
+|---|---|
+| `vid_motion_magnitude` | Průměrná Bhattacharyya distance mezi po sobě jdoucími keyframy |
+| `vid_optical_flow_mean` | Průměrná pixel-level intenzita pohybu (Farneback dense optical flow) |
+| `vid_color_saturation_mean` | Průměr HSV S-kanálu přes všechny keyframy |
+| `vid_brightness_mean` | Průměr HSV V-kanálu přes všechny keyframy |
+| `vid_scene_cut_count` | Počet párů keyframů s distance > 0.35 |
+| `vid_face_detected` | Podíl keyframů s detekovanou tváří (OpenCV Haar cascade) |
+
+Tyto featury se přidají do feature matice vedle LLM-extrahovaných featur. Pro obrázkové datasety se nepočítají.
 
 ### 9.3 `services/speech_service.py` — Whisper STT
 
