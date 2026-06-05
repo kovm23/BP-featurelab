@@ -54,6 +54,37 @@ function escapeCsvCell(value: unknown) {
   return text;
 }
 
+function formatConfidencePercent(value: number | null | undefined) {
+  if (typeof value !== "number" || Number.isNaN(value)) return "—";
+  return `${Math.round(value * 100)}%`;
+}
+
+function formatConfidencePart(label: string | null | undefined, confidence: number | null | undefined) {
+  if (!label) return "—";
+  return `${label} (${formatConfidencePercent(confidence)})`;
+}
+
+function formatConfidenceBreakdown(prediction: PredictionItem) {
+  const breakdown = prediction.confidence_breakdown;
+  if (!breakdown) return "—";
+  return [
+    { name: "Final", detail: breakdown.final },
+    { name: "RuleKit", detail: breakdown.rulekit },
+    { name: "RF", detail: breakdown.rf },
+    { name: "GBT", detail: breakdown.gbt },
+  ]
+    .map(({ name, detail }) =>
+      `${name}: ${formatConfidencePart(detail?.label, detail?.confidence)}`
+    )
+    .join("; ");
+}
+
+function formatTopRules(prediction: PredictionItem) {
+  const topRules = prediction.top_rules?.filter(Boolean);
+  if (topRules && topRules.length > 0) return topRules.join(" | ");
+  return prediction.rule_applied || "—";
+}
+
 function downloadPredictionsCsv(predictions: PredictionItem[], featureSpec: FeatureSpec | null, filename: string) {
   const hasLabelPredictions = predictions.some((p) => p.predicted_label !== undefined);
   const hasActualPredictionValues = predictions.some((p) => p.actual_score !== undefined || p.actual_label !== undefined);
@@ -62,7 +93,18 @@ function downloadPredictionsCsv(predictions: PredictionItem[], featureSpec: Feat
 
   const headers = [
     "media_name",
-    ...(hasLabelPredictions ? ["predicted_label", "confidence"] : ["predicted_score"]),
+    ...(hasLabelPredictions
+      ? [
+          "predicted_label",
+          "confidence",
+          "ensemble_override",
+          "rulekit_prediction",
+          "rf_prediction",
+          "gbt_prediction",
+          "confidence_breakdown",
+          "top_rules",
+        ]
+      : ["predicted_score"]),
     ...(hasActualPredictionValues ? [actualColName] : []),
     "rule_applied",
     ...featureColumns,
@@ -74,8 +116,17 @@ function downloadPredictionsCsv(predictions: PredictionItem[], featureSpec: Feat
       [
         escapeCsvCell(prediction.media_name),
         ...(hasLabelPredictions
-          ? [escapeCsvCell(prediction.predicted_label), escapeCsvCell(typeof prediction.confidence === 'number' ? prediction.confidence.toFixed(4) : prediction.confidence)]
-          : [escapeCsvCell(typeof prediction.predicted_score === 'number' ? prediction.predicted_score.toFixed(4) : prediction.predicted_score)]),
+          ? [
+              escapeCsvCell(prediction.predicted_label),
+              escapeCsvCell(typeof prediction.confidence === "number" ? prediction.confidence.toFixed(4) : prediction.confidence),
+              escapeCsvCell(prediction.ensemble_override === true ? "true" : "false"),
+              escapeCsvCell(prediction.rulekit_prediction),
+              escapeCsvCell(prediction.rf_prediction),
+              escapeCsvCell(prediction.gbt_prediction),
+              escapeCsvCell(formatConfidenceBreakdown(prediction)),
+              escapeCsvCell(formatTopRules(prediction)),
+            ]
+          : [escapeCsvCell(typeof prediction.predicted_score === "number" ? prediction.predicted_score.toFixed(4) : prediction.predicted_score)]),
         ...(hasActualPredictionValues
           ? [escapeCsvCell(prediction.actual_label ?? (prediction.actual_score !== undefined ? prediction.actual_score : ""))]
           : []),
@@ -152,6 +203,12 @@ export function PredictionResults({
         </span>
       </div>
 
+      {hasLabelPredictions && (
+        <div className={`p-3 rounded-lg border text-xs leading-relaxed ${cls(deluxe, "bg-amber-50 border-amber-200 text-amber-800", "bg-amber-900/20 border-amber-800/50 text-amber-200")}`}>
+          {tr.interpretabilityNote}
+        </div>
+      )}
+
       {predictionMetrics && (
         <PredictionMetricsPanel deluxe={deluxe} predictionMetrics={predictionMetrics} tr={tr} />
       )}
@@ -195,6 +252,10 @@ export function PredictionResults({
                     <th className="px-2 py-1 text-left font-mono">{tr.rowStatus}</th>
                     <th className="px-2 py-1 text-left font-mono">{tr.predictedLabel}</th>
                     <th className="px-2 py-1 text-left font-mono">{tr.confidenceLabel}</th>
+                    <th className="px-2 py-1 text-left font-mono">{tr.ensembleOverride}</th>
+                    <th className="px-2 py-1 text-left font-mono">{tr.rulekitPrediction}</th>
+                    <th className="px-2 py-1 text-left font-mono">{tr.confidenceBreakdown}</th>
+                    <th className="px-2 py-1 text-left font-mono">{tr.topRules}</th>
                   </>
                 ) : (
                   <th className="px-2 py-1 text-left font-mono">{tr.predictedScore}</th>
@@ -230,6 +291,11 @@ export function PredictionResults({
                   : isWrong
                     ? cls(deluxe, "bg-rose-100 text-rose-700", "bg-rose-900/40 text-rose-300")
                     : cls(deluxe, "bg-amber-100 text-amber-700", "bg-amber-900/40 text-amber-300");
+                const overridePill = prediction.ensemble_override
+                  ? cls(deluxe, "bg-orange-100 text-orange-700", "bg-orange-900/40 text-orange-300")
+                  : cls(deluxe, "bg-slate-100 text-slate-600", "bg-slate-800 text-slate-300");
+                const confidenceBreakdown = formatConfidenceBreakdown(prediction);
+                const topRules = formatTopRules(prediction);
 
                 return (
                   <tr key={index} className={rowTone}>
@@ -246,6 +312,20 @@ export function PredictionResults({
                         </td>
                         <td className="px-2 py-1 whitespace-nowrap font-bold text-indigo-600">
                           {prediction.confidence != null ? Number(prediction.confidence).toFixed(4) : "—"}
+                        </td>
+                        <td className="px-2 py-1 whitespace-nowrap">
+                          <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${overridePill}`}>
+                            {prediction.ensemble_override ? tr.overrideYes : tr.overrideNo}
+                          </span>
+                        </td>
+                        <td className="px-2 py-1 whitespace-nowrap font-bold text-slate-600">
+                          {prediction.rulekit_prediction ?? "—"}
+                        </td>
+                        <td className="px-2 py-1 min-w-72 max-w-[28rem] whitespace-normal font-mono text-[10px]" title={confidenceBreakdown}>
+                          {confidenceBreakdown}
+                        </td>
+                        <td className="px-2 py-1 min-w-80 max-w-[32rem] whitespace-normal font-mono text-[10px]" title={topRules}>
+                          {topRules}
                         </td>
                       </>
                     ) : (

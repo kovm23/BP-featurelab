@@ -182,8 +182,26 @@ export interface PredictionItem {
   predicted_label?: string;
   actual_label?: string;
   confidence?: number | null;
+  ensemble_override?: boolean;
+  rulekit_prediction?: string | null;
+  rf_prediction?: string | null;
+  gbt_prediction?: string | null;
+  confidence_breakdown?: ConfidenceBreakdown | null;
   rule_applied: string;
+  top_rules?: string[];
   extracted_features: Record<string, unknown>;
+}
+
+export interface ConfidenceDetail {
+  label?: string | null;
+  confidence?: number | null;
+}
+
+export interface ConfidenceBreakdown {
+  final?: ConfidenceDetail | null;
+  rulekit?: ConfidenceDetail | null;
+  rf?: ConfidenceDetail | null;
+  gbt?: ConfidenceDetail | null;
 }
 
 export interface PredictionMetrics {

@@ -24,6 +24,7 @@ from pipeline.ml_classification import (
     _compute_classification_metrics,
     _ensemble_predict_proba,
     _load_actual_values,
+    _model_predict_proba,
     _proba_to_labels,
     _resolve_positive_label,
     _rf_feature_importance,
@@ -46,12 +47,32 @@ from pipeline.ml_preprocessing import (
     _preprocess_features,
 )
 from pipeline.ml_regression import _train_regression_branch
-from pipeline.ml_rules import _count_rule_features, _extract_rules, _find_covering_rule
+from pipeline.ml_rules import _count_rule_features, _extract_rules, _find_covering_rule, _find_covering_rules
 from utils.csv_utils import normalize_media_name
 
 logger = logging.getLogger(__name__)
 
 CLASSIFICATION_POSITIVE_THRESHOLD = float(os.getenv("CLASSIFICATION_POSITIVE_THRESHOLD", "0.45"))
+
+
+def _prediction_detail(label_classes, proba, row_num: int, fallback_label=None) -> dict:
+    """Return a compact label/confidence pair for one model's probability row."""
+    label = str(fallback_label) if fallback_label is not None else None
+    confidence = None
+    if proba is not None and label_classes and row_num < len(proba):
+        row = np.asarray(proba[row_num], dtype=float)
+        if row.size:
+            top_idx = int(np.argmax(row))
+            if top_idx < len(label_classes):
+                label = str(label_classes[top_idx])
+                confidence = round(float(row[top_idx]), 4)
+    return {"label": label, "confidence": confidence}
+
+
+def _labels_from_proba(proba, label_classes):
+    if proba is None or not label_classes:
+        return None
+    return _proba_to_labels(proba, label_classes)
 
 
 # ---------------------------------------------------------------------------
@@ -298,6 +319,16 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
             or _resolve_positive_label(label_classes or [])
         )
 
+        rulekit_pred_labels, rulekit_pred_proba = _rulekit_classification_predict(
+            rulekit_classifier, X_test,
+            positive_label=positive_label,
+            positive_threshold=CLASSIFICATION_POSITIVE_THRESHOLD,
+            label_classes=label_classes,
+        )
+        y_pred, y_pred_proba = rulekit_pred_labels, rulekit_pred_proba
+        rf_pred_proba = gbt_pred_proba = None
+        rf_pred_labels = gbt_pred_labels = None
+
         ensemble = getattr(pipeline, "xgb_model", None)
         if ensemble is not None and isinstance(ensemble, dict):
             _cb(25, "RuleKit + RF + GBT combined predictions...")
@@ -305,29 +336,23 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
             gbt_m = ensemble.get("gbt")
             if rf_m is not None and gbt_m is not None and label_classes:
                 try:
-                    y_pred_proba = _combined_predict_proba(
-                        rulekit_classifier, rf_m, gbt_m, X_test, label_classes
-                    )
+                    if rulekit_pred_proba is None:
+                        raise RuntimeError("RuleKit probabilities unavailable")
+                    rf_pred_proba = _model_predict_proba(rf_m, X_test, label_classes)
+                    gbt_pred_proba = _model_predict_proba(gbt_m, X_test, label_classes)
+                    y_pred_proba = (rulekit_pred_proba + rf_pred_proba + gbt_pred_proba) / 3.0
                 except Exception as exc:
                     logger.warning("3-way blend failed at prediction (%s); using ensemble only.", exc)
+                    rf_pred_proba = _model_predict_proba(rf_m, X_test, label_classes)
+                    gbt_pred_proba = _model_predict_proba(gbt_m, X_test, label_classes)
                     y_pred_proba = _ensemble_predict_proba(rf_m, gbt_m, X_test, label_classes)
                 y_pred = _proba_to_labels(y_pred_proba, label_classes)
+                rf_pred_labels = _labels_from_proba(rf_pred_proba, label_classes)
+                gbt_pred_labels = _labels_from_proba(gbt_pred_proba, label_classes)
             else:
                 _cb(25, "RuleKit classification predictions (ensemble unavailable)...")
-                y_pred, y_pred_proba = _rulekit_classification_predict(
-                    rulekit_classifier, X_test,
-                    positive_label=positive_label,
-                    positive_threshold=CLASSIFICATION_POSITIVE_THRESHOLD,
-                    label_classes=label_classes,
-                )
         else:
             _cb(25, "RuleKit classification predictions...")
-            y_pred, y_pred_proba = _rulekit_classification_predict(
-                rulekit_classifier, X_test,
-                positive_label=positive_label,
-                positive_threshold=CLASSIFICATION_POSITIVE_THRESHOLD,
-                label_classes=label_classes,
-            )
 
         coverage_matrix = None
         if rulekit_classifier is not None and hasattr(rulekit_classifier, "get_coverage_matrix") and pipeline.rules:
@@ -351,12 +376,23 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
             media_name = str(row.get("media_name", f"object_{i}"))
             pred_label = str(y_pred[row_num])
             confidence = float(np.max(y_pred_proba[row_num])) if y_pred_proba is not None else None
+            rulekit_label = str(rulekit_pred_labels[row_num]) if row_num < len(rulekit_pred_labels) else None
+            rf_label = str(rf_pred_labels[row_num]) if rf_pred_labels is not None and row_num < len(rf_pred_labels) else None
+            gbt_label = str(gbt_pred_labels[row_num]) if gbt_pred_labels is not None and row_num < len(gbt_pred_labels) else None
 
             rule_applied = "RuleKit (no single rule match)"
+            top_rules = []
             if coverage_matrix is not None and row_num < len(coverage_matrix):
                 covered = np.where(np.asarray(coverage_matrix[row_num]).astype(int) > 0)[0]
-                if len(covered) > 0 and covered[0] < len(pipeline.rules):
-                    rule_applied = pipeline.rules[int(covered[0])]
+                top_rules = [
+                    pipeline.rules[int(rule_idx)]
+                    for rule_idx in covered[:3]
+                    if int(rule_idx) < len(pipeline.rules)
+                ]
+            elif pipeline.rules:
+                top_rules = _find_covering_rules(row, pipeline.rules, max_rules=3)
+            if top_rules:
+                rule_applied = top_rules[0]
             elif pipeline.rules:
                 rule_applied = _find_covering_rule(row, pipeline.rules)
 
@@ -364,7 +400,18 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
                 "media_name": media_name,
                 "predicted_label": pred_label,
                 "confidence": round(confidence, 4) if confidence is not None else None,
+                "ensemble_override": bool(rulekit_label is not None and pred_label != rulekit_label),
+                "rulekit_prediction": rulekit_label,
+                "rf_prediction": rf_label,
+                "gbt_prediction": gbt_label,
+                "confidence_breakdown": {
+                    "final": _prediction_detail(label_classes, y_pred_proba, row_num, pred_label),
+                    "rulekit": _prediction_detail(label_classes, rulekit_pred_proba, row_num, rulekit_label),
+                    "rf": _prediction_detail(label_classes, rf_pred_proba, row_num, rf_label),
+                    "gbt": _prediction_detail(label_classes, gbt_pred_proba, row_num, gbt_label),
+                },
                 "rule_applied": rule_applied,
+                "top_rules": top_rules,
                 "extracted_features": {k: row[k] for k in pipeline.feature_spec if k in row},
             }
             media_key = normalize_media_name(media_name)

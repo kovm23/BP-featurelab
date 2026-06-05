@@ -206,11 +206,15 @@ def _ensemble_predict_proba(
     rf, gbt, X: pd.DataFrame, label_classes: list[str]
 ) -> np.ndarray:
     """Soft-vote probabilities from RF+GBT, aligned to label_classes order."""
-    rf_classes = [str(c) for c in rf.classes_]
-    gbt_classes = [str(c) for c in gbt.classes_]
-    rf_p = _align_probability_columns(rf.predict_proba(X), rf_classes, label_classes)
-    gbt_p = _align_probability_columns(gbt.predict_proba(X), gbt_classes, label_classes)
+    rf_p = _model_predict_proba(rf, X, label_classes)
+    gbt_p = _model_predict_proba(gbt, X, label_classes)
     return (rf_p + gbt_p) / 2.0
+
+
+def _model_predict_proba(model, X: pd.DataFrame, label_classes: list[str]) -> np.ndarray:
+    """Return sklearn-style model probabilities aligned to label_classes."""
+    model_classes = [str(c) for c in model.classes_]
+    return _align_probability_columns(model.predict_proba(X), model_classes, label_classes)
 
 
 def _combined_predict_proba(

@@ -105,6 +105,14 @@ export const TRAINING_TRANSLATIONS = {
     actualScore: "actual_score",
     confidenceLabel: "confidence",
     ruleApplied: "rule_applied",
+    ensembleOverride: "ensemble_override",
+    rulekitPrediction: "rulekit_prediction",
+    confidenceBreakdown: "confidence_breakdown",
+    topRules: "top_rules",
+    overrideYes: "Override",
+    overrideNo: "Rule-aligned",
+    interpretabilityNote:
+      "Interpretability note: displayed rules explain the transparent RuleKit component. The final classification is a RuleKit + RF + GBT soft vote, so RF/GBT can adjust the final label when they detect patterns not captured by the shown rule.",
     paired: "Matched",
     rerunDiscoveryWarning:
       "Running Discovery again will invalidate extracted datasets, trained model, and old predictions.",
@@ -278,6 +286,14 @@ export const TRAINING_TRANSLATIONS = {
     actualScore: "Skutečné skóre",
     confidenceLabel: "Jistota",
     ruleApplied: "Použité pravidlo",
+    ensembleOverride: "Ensemble override",
+    rulekitPrediction: "RuleKit predikce",
+    confidenceBreakdown: "Rozpad jistoty",
+    topRules: "Top pravidla",
+    overrideYes: "Přepsáno",
+    overrideNo: "Podle pravidla",
+    interpretabilityNote:
+      "Poznámka k interpretaci: zobrazená pravidla vysvětlují transparentní RuleKit složku. Finální klasifikace je soft-vote RuleKit + RF + GBT, takže RF/GBT mohou upravit finální třídu, pokud zachytí vzorce, které zobrazené pravidlo nepokrývá.",
     paired: "Spárováno",
     rerunDiscoveryWarning:
       "Nové spuštění Discovery zneplatní extrahovaná data, natrénovaný model i staré predikce.",
