@@ -1,4 +1,4 @@
-import { HelpCircle, Moon, RefreshCw, Sun } from "lucide-react";
+import { CirclePlay, Moon, RefreshCw, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export function AppHeader({
@@ -101,13 +101,11 @@ export function AppHeader({
 
         <Button
           variant={deluxe ? "secondary" : "default"}
-          size="icon"
-          className="rounded-full"
           onClick={() => setShowGuide(true)}
           title={t.guide}
           aria-label={t.guide}
         >
-          <HelpCircle className="h-4 w-4" aria-hidden="true" />
+          <CirclePlay className="h-4 w-4" aria-hidden="true" /> {t.guide}
         </Button>
 
         <Button variant="outline" onClick={handleReset}>

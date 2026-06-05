@@ -23,6 +23,9 @@ export function Guide({
     ? {
       title: "How to use Media Feature Lab",
       subtitle: "Quick walkthrough of the 5-phase pipeline",
+      videoTitle: "Walkthrough video",
+      videoDesc: "A short screencast showing the main idea and workflow.",
+      videoFallback: "Open the screencast video",
       close: "Got it",
       pipelineCard: "The training pipeline has 5 phases. Finish each phase before moving to the next one. Progress is saved automatically, so you can continue after refresh or restart.",
       phase1Title: "Phase 1 — Feature Discovery",
@@ -43,6 +46,9 @@ export function Guide({
     : {
       title: "Jak používat Media Feature Lab",
       subtitle: "Rychlý průvodce 5fázovou pipeline",
+      videoTitle: "Video průvodce",
+      videoDesc: "Krátký screencast ukazuje hlavní princip a průchod aplikací.",
+      videoFallback: "Otevřít screencast video",
       close: "Rozumím",
       pipelineCard: "Trénovací pipeline má 5 fází. Každou fázi je potřeba dokončit, než přejdete na další. Postup se ukládá automaticky, takže po obnovení stránky nebo restartu navážete tam, kde jste skončili.",
       phase1Title: "Fáze 1 — Objevování featur",
@@ -94,6 +100,25 @@ export function Guide({
           </CardDescription>
         </CardHeader>
         <CardContent className={`space-y-3 text-sm leading-relaxed ${deluxe ? "text-slate-100" : "text-slate-800"}`}>
+          <section>
+            <div className="mb-2">
+              <h2 className={deluxe ? "text-base font-semibold text-white" : "text-base font-semibold text-slate-900"}>
+                {t.videoTitle}
+              </h2>
+              <p className={`mt-1 ${deluxe ? "text-slate-300" : "text-slate-600"}`}>{t.videoDesc}</p>
+            </div>
+            <video
+              controls
+              preload="metadata"
+              className={`aspect-video w-full rounded-lg border object-contain ${
+                deluxe ? "border-slate-700 bg-black" : "border-slate-200 bg-slate-100"
+              }`}
+            >
+              <source src="/videos/screencast-v2.mp4" type="video/mp4" />
+              <a href="/videos/screencast-v2.mp4">{t.videoFallback}</a>
+            </video>
+          </section>
+
           <div className={`rounded-lg p-3 border ${deluxe ? "bg-indigo-950/30 border-indigo-800" : "bg-indigo-50 border-indigo-200"}`}>
             {t.pipelineCard}
           </div>
