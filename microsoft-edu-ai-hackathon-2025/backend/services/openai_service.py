@@ -109,6 +109,40 @@ def get_client(custom_base_url: str = "", custom_api_key: str = "") -> "tuple[op
     return local_client, False
 
 
+def _is_unsupported_parameter_error(exc: BaseException, parameter_name: str) -> bool:
+    msg = str(exc).lower()
+    return "unsupported parameter" in msg and parameter_name.lower() in msg
+
+
+def create_chat_completion_with_token_limit(
+    client,
+    *,
+    is_custom: bool,
+    token_limit: int,
+    **kwargs,
+):
+    """Create a chat completion with endpoint-specific token-limit naming."""
+    if is_custom:
+        request_kwargs = dict(kwargs)
+        request_kwargs["max_completion_tokens"] = token_limit
+        try:
+            return client.chat.completions.create(**request_kwargs)
+        except Exception as exc:
+            if not _is_unsupported_parameter_error(exc, "max_completion_tokens"):
+                raise
+            fallback_kwargs = dict(kwargs)
+            fallback_kwargs["max_tokens"] = token_limit
+            logger.info(
+                "Custom endpoint does not support max_completion_tokens; retrying with max_tokens."
+            )
+            return client.chat.completions.create(**fallback_kwargs)
+
+    request_kwargs = dict(kwargs)
+    request_kwargs["max_tokens"] = token_limit
+    with _tracked_ollama_lock():
+        return client.chat.completions.create(**request_kwargs)
+
+
 def image_to_base64(img_arr):
     img = Image.fromarray(img_arr.astype(np.uint8))
     buffered = io.BytesIO()
@@ -164,7 +198,6 @@ def extract_image_features_with_llm(
                         {"role": "system", "content": "You are a feature extraction assistant. You MUST output valid JSON only. No text, no markdown, just JSON."},
                         {"role": "user", "content": user_content},
                     ],
-                    max_tokens=2048,
                     temperature=temperature,
                 )
                 if not is_custom:
@@ -173,11 +206,12 @@ def extract_image_features_with_llm(
                         options["num_gpu"] = 0
                     kwargs["extra_body"] = {"options": options}
 
-                if is_custom:
-                    response = client.chat.completions.create(**kwargs)
-                else:
-                    with _tracked_ollama_lock():
-                        response = client.chat.completions.create(**kwargs)
+                response = create_chat_completion_with_token_limit(
+                    client,
+                    is_custom=is_custom,
+                    token_limit=2048,
+                    **kwargs,
+                )
 
                 content = response.choices[0].message.content
                 clean_content = _clean_json_response(content)
@@ -246,7 +280,6 @@ def extract_text_features_with_llm(
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": text},
                     ],
-                    max_tokens=2048,
                     temperature=temperature,
                 )
                 if not is_custom:
@@ -255,11 +288,12 @@ def extract_text_features_with_llm(
                         options["num_gpu"] = 0
                     kwargs["extra_body"] = {"options": options}
 
-                if is_custom:
-                    response = client.chat.completions.create(**kwargs)
-                else:
-                    with _tracked_ollama_lock():
-                        response = client.chat.completions.create(**kwargs)
+                response = create_chat_completion_with_token_limit(
+                    client,
+                    is_custom=is_custom,
+                    token_limit=2048,
+                    **kwargs,
+                )
 
                 content = response.choices[0].message.content
                 clean_content = _clean_json_response(content)

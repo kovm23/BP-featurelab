@@ -11,8 +11,8 @@ from config import DISCOVERY_MAX_SAMPLES
 from pipeline.feature_schema import normalize_feature_spec
 from services.openai_service import (
     _tracked_ollama_lock,
+    create_chat_completion_with_token_limit,
     get_client,
-    local_client,
     ollama_request_options,
 )
 from services.processing import process_single_media
@@ -65,7 +65,6 @@ def _warm_up_model(model_name: str, progress_cb=None, custom_base_url: str = "",
             kwargs: dict = dict(
                 model=model_name,
                 messages=[{"role": "user", "content": "1"}],
-                max_tokens=1,
                 temperature=0.0,
             )
             if not is_custom:
@@ -73,11 +72,12 @@ def _warm_up_model(model_name: str, progress_cb=None, custom_base_url: str = "",
                 if use_cpu_fallback:
                     options["num_gpu"] = 0
                 kwargs["extra_body"] = {"options": options}
-            if is_custom:
-                client.chat.completions.create(**kwargs)
-            else:
-                with _tracked_ollama_lock():
-                    client.chat.completions.create(**kwargs)
+            create_chat_completion_with_token_limit(
+                client,
+                is_custom=is_custom,
+                token_limit=1,
+                **kwargs,
+            )
             return
         except Exception as exc:
             if not use_cpu_fallback and is_gpu_load_error(exc):
