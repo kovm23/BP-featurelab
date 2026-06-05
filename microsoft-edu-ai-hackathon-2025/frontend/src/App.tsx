@@ -1,15 +1,113 @@
 import { useState, useEffect } from "react";
+import { ExternalLink, ShieldCheck } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { Guide } from "@/components/Guide";
 import { TrainingView } from "@/components/TrainingView";
+import { Button } from "@/components/ui/button";
 import { useAppUi } from "@/hooks/useAppUi";
 import { useSessionTransfer } from "@/hooks/useSessionTransfer";
 import { useTrainingPipeline } from "@/hooks/useTrainingPipeline";
 import { loadPersisted } from "@/hooks/trainingPipelineUtils";
-import { sessionHeaders } from "@/lib/api";
+
+function UsageAgreementDialog({
+  deluxe,
+  lang,
+  onAccept,
+}: {
+  deluxe: boolean;
+  lang: "cs" | "en";
+  onAccept: () => void;
+}) {
+  const disclaimerHref = lang === "en" ? "/disclaimer-en.html" : "/disclaimer-cs.html";
+  const text = lang === "en"
+    ? {
+        title: "Before You Start",
+        subtitle: "Data protection and fair use",
+        intro:
+          "Before uploading media, confirm that the files do not contain personal, confidential, proprietary, or sensitive data.",
+        point1: "Use only data you are allowed to process.",
+        point2: "Anonymize files and labels before analysis.",
+        point3: "Review generated outputs before using them in reports or decisions.",
+        link: "Read full terms",
+        accept: "I understand and want to continue",
+      }
+    : {
+        title: "Než začnete",
+        subtitle: "Ochrana dat a férové použití",
+        intro:
+          "Před nahráním médií potvrďte, že soubory neobsahují osobní, důvěrné, proprietární ani citlivé údaje.",
+        point1: "Používejte jen data, která smíte zpracovávat.",
+        point2: "Před analýzou anonymizujte soubory i labely.",
+        point3: "Vygenerované výstupy před použitím v práci nebo rozhodování zkontrolujte.",
+        link: "Přečíst celé podmínky",
+        accept: "Rozumím a chci pokračovat",
+      };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-950/45 backdrop-blur-sm" />
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="usage-agreement-title"
+        className={`relative z-10 w-full max-w-lg rounded-2xl border p-5 shadow-2xl ${
+          deluxe
+            ? "border-slate-700 bg-slate-900 text-white"
+            : "border-slate-200 bg-white text-slate-950"
+        }`}
+      >
+        <div className="flex items-start gap-3">
+          <div className={`rounded-xl p-2 ${deluxe ? "bg-blue-500/15 text-blue-200" : "bg-blue-50 text-blue-700"}`}>
+            <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+          </div>
+          <div>
+            <p className={`text-xs font-semibold uppercase ${deluxe ? "text-blue-200" : "text-blue-700"}`}>
+              {text.subtitle}
+            </p>
+            <h2 id="usage-agreement-title" className="mt-1 text-xl font-semibold">
+              {text.title}
+            </h2>
+          </div>
+        </div>
+
+        <p className={`mt-4 text-sm leading-relaxed ${deluxe ? "text-slate-300" : "text-slate-600"}`}>
+          {text.intro}
+        </p>
+
+        <ul className={`mt-4 list-disc space-y-2 pl-5 text-sm ${deluxe ? "text-slate-200" : "text-slate-700"}`}>
+          <li>{text.point1}</li>
+          <li>{text.point2}</li>
+          <li>{text.point3}</li>
+        </ul>
+
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <a
+            href={disclaimerHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`inline-flex items-center gap-1.5 text-sm font-medium underline-offset-4 hover:underline ${
+              deluxe ? "text-blue-200 hover:text-white" : "text-blue-700 hover:text-blue-900"
+            }`}
+          >
+            {text.link}
+            <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+          </a>
+          <Button onClick={onAccept}>{text.accept}</Button>
+        </div>
+      </section>
+    </div>
+  );
+}
 
 export default function MediaFeatureLabPro() {
   const [showRestoredToast, setShowRestoredToast] = useState(false);
+  const [usageAgreementAccepted, setUsageAgreementAccepted] = useState(() => {
+    try {
+      return localStorage.getItem("mflUsageAgreementAccepted") === "1";
+    } catch {
+      return false;
+    }
+  });
   const savedPipeline = loadPersisted();
   const { lang, setLang, deluxe, setDeluxe, showGuide, setShowGuide, closeGuide } = useAppUi();
 
@@ -72,6 +170,15 @@ export default function MediaFeatureLabPro() {
     window.location.reload();
   }
 
+  function handleAcceptUsageAgreement() {
+    setUsageAgreementAccepted(true);
+    try {
+      localStorage.setItem("mflUsageAgreementAccepted", "1");
+    } catch {
+      // localStorage unavailable
+    }
+  }
+
   return (
     <div
       className={`min-h-screen ${
@@ -80,7 +187,7 @@ export default function MediaFeatureLabPro() {
           : "bg-slate-50 text-slate-900"
       }`}
     >
-      <div className="mx-auto max-w-5xl px-6 py-6">
+      <div className="mx-auto max-w-6xl px-6 py-6">
         <input
           ref={importInputRef}
           type="file"
@@ -154,10 +261,19 @@ export default function MediaFeatureLabPro() {
           queueBusy={pipeline.queueBusy}
           queuedCount={pipeline.queuedCount}
           uiLanguage={lang}
+          usageAgreementAccepted={usageAgreementAccepted}
         />
       </div>
 
       {showGuide && <Guide deluxe={deluxe} onClose={closeGuide} uiLanguage={lang} />}
+
+      {!usageAgreementAccepted && (
+        <UsageAgreementDialog
+          deluxe={deluxe}
+          lang={lang}
+          onAccept={handleAcceptUsageAgreement}
+        />
+      )}
 
       {showRestoredToast && (
         <div className="fixed bottom-4 right-4 bg-slate-700 text-white text-sm px-4 py-2 rounded-lg shadow-lg z-50">

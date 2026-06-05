@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, ChevronRight, Cpu, ShieldCheck, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronRight, Cpu, X } from "lucide-react";
 import { AVAILABLE_MODELS, CUSTOM_MODEL_ID, DEFAULT_LLM_ENDPOINT } from "@/lib/api";
 import type { FeatureSpec, LlmEndpointConfig, PredictionItem, PredictionMetrics, TrainResult } from "@/lib/api";
 import { LlmEndpointConfigPanel } from "./training-view/LlmEndpointConfig";
@@ -51,6 +51,7 @@ export interface TrainingViewProps {
   recheckOllama?: () => void;
   queueBusy?: boolean;
   queuedCount?: number;
+  usageAgreementAccepted: boolean;
 }
 
 function PhaseStepper({
@@ -129,58 +130,6 @@ function PhaseStepper({
   );
 }
 
-function UsageAgreementNotice({
-  deluxe,
-  uiLanguage,
-  tr,
-  accepted,
-  onAcceptedChange,
-}: {
-  deluxe: boolean;
-  uiLanguage: "cs" | "en";
-  tr: ReturnType<typeof getTrainingTranslations>;
-  accepted: boolean;
-  onAcceptedChange: (accepted: boolean) => void;
-}) {
-  const disclaimerHref = uiLanguage === "en" ? "/disclaimer-en.html" : "/disclaimer-cs.html";
-
-  return (
-    <div className={`mb-6 rounded-lg border p-3 ${cls(deluxe, "bg-blue-50/70 border-blue-200", "bg-blue-900/20 border-blue-800/50")}`}>
-      <div className="flex items-start gap-2">
-        <ShieldCheck className={`mt-0.5 h-4 w-4 flex-shrink-0 ${cls(deluxe, "text-blue-700", "text-blue-300")}`} />
-        <div className="min-w-0 flex-1">
-          <p className={`text-sm font-semibold ${cls(deluxe, "text-blue-900", "text-blue-100")}`}>
-            {tr.usageAgreementTitle}
-          </p>
-          <p className={`mt-1 text-xs ${cls(deluxe, "text-blue-800", "text-blue-200/80")}`}>
-            {tr.usageAgreementIntro}
-          </p>
-          <label className="mt-3 flex cursor-pointer items-start gap-2">
-            <input
-              type="checkbox"
-              checked={accepted}
-              onChange={(e) => onAcceptedChange(e.target.checked)}
-              className="mt-0.5 h-4 w-4 rounded border-slate-300"
-            />
-            <span className={`text-sm ${cls(deluxe, "text-blue-950", "text-blue-100")}`}>
-              {tr.usageAgreementCheckboxPrefix}{" "}
-              <a
-                href={disclaimerHref}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={`font-semibold underline underline-offset-2 ${cls(deluxe, "text-blue-700 hover:text-blue-900", "text-blue-200 hover:text-white")}`}
-              >
-                {tr.usageAgreementLink}
-              </a>
-              {tr.usageAgreementCheckboxSuffix}
-            </span>
-          </label>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function TrainingView({
   deluxe,
   uiLanguage = "cs",
@@ -221,6 +170,7 @@ export function TrainingView({
   recheckOllama,
   queueBusy,
   queuedCount,
+  usageAgreementAccepted,
 }: TrainingViewProps) {
   const tr = getTrainingTranslations(uiLanguage);
 
@@ -260,8 +210,6 @@ export function TrainingView({
   const [useTestingLabels, setUseTestingLabels] = useState(false);
   const [showPredictForm, setShowPredictForm] = useState(true);
   const [showFeatureCols, setShowFeatureCols] = useState(false);
-  const [usageAgreementAccepted, setUsageAgreementAccepted] = useState(false);
-
   useEffect(() => {
     if (datasetYColumns && datasetYColumns.length > 0 && !targetColumn) {
       setTargetColumn(datasetYColumns[datasetYColumns.length - 1]);
@@ -344,14 +292,6 @@ export function TrainingView({
       <p className={`text-sm mb-6 ${cls(deluxe, "text-slate-500", "text-slate-400")}`}>
         {phaseDesc[step] ?? ""}
       </p>
-
-      <UsageAgreementNotice
-        deluxe={deluxe}
-        uiLanguage={uiLanguage}
-        tr={tr}
-        accepted={usageAgreementAccepted}
-        onAcceptedChange={setUsageAgreementAccepted}
-      />
 
       {(step <= 2 || step === 4) && (
         <>

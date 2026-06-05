@@ -23,13 +23,7 @@ export function useAppUi() {
     return false;
   });
 
-  const [showGuide, setShowGuide] = useState(() => {
-    try {
-      return !localStorage.getItem("mflGuideSeen");
-    } catch {
-      return false;
-    }
-  });
+  const [showGuide, setShowGuide] = useState(false);
 
   useEffect(() => {
     localStorage.setItem("mflTheme", deluxe ? "dark" : "light");
