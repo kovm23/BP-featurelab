@@ -26,6 +26,7 @@ export function TestingExtractionPhasePanel(props: {
   testExtractStalled: boolean;
   onCancel?: () => void;
   onGoToStep?: (step: number) => void;
+  usageAgreementAccepted: boolean;
 }) {
   const {
     deluxe,
@@ -46,6 +47,7 @@ export function TestingExtractionPhasePanel(props: {
     testExtractStalled,
     onCancel,
     onGoToStep,
+    usageAgreementAccepted,
   } = props;
 
   return (
@@ -77,12 +79,15 @@ export function TestingExtractionPhasePanel(props: {
       <div className="flex justify-center mt-6">
         <Button
           onClick={() => {
-            if (testZipFile) {
+            if (testZipFile && usageAgreementAccepted) {
               onExtractTesting(testZipFile);
             }
           }}
-          disabled={!testZipFile || isExtractingTest}
-          title={!testZipFile ? tr.uploadTestingFirst : undefined}
+          disabled={!testZipFile || !usageAgreementAccepted || isExtractingTest}
+          title={[
+            !testZipFile && tr.uploadTestingFirst,
+            !usageAgreementAccepted && tr.usageAgreementRequired,
+          ].filter(Boolean).join("; ") || undefined}
         >
           {isExtractingTest ? (
             <>

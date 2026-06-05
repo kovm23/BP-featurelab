@@ -25,6 +25,7 @@ export function TrainingPhasePanel(props: {
   etaText?: string | null;
   onCancel?: () => void;
   onGoToStep?: (step: number) => void;
+  usageAgreementAccepted: boolean;
 }) {
   const {
     deluxe,
@@ -45,6 +46,7 @@ export function TrainingPhasePanel(props: {
     etaText,
     onCancel,
     onGoToStep,
+    usageAgreementAccepted,
   } = props;
 
   return (
@@ -92,7 +94,14 @@ export function TrainingPhasePanel(props: {
       </div>
 
       <div className="flex justify-center mt-6">
-        <Button onClick={() => onTrain(targetColumn)} disabled={!targetColumn || isTraining} title={!targetColumn ? tr.pickTargetColumn : undefined}>
+        <Button
+          onClick={() => targetColumn && usageAgreementAccepted && onTrain(targetColumn)}
+          disabled={!targetColumn || !usageAgreementAccepted || isTraining}
+          title={[
+            !targetColumn && tr.pickTargetColumn,
+            !usageAgreementAccepted && tr.usageAgreementRequired,
+          ].filter(Boolean).join("; ") || undefined}
+        >
           {isTraining ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" /> {tr.trainingInProgressLabel} ({trainSecs}s)

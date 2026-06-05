@@ -164,6 +164,13 @@ export const TRAINING_TRANSLATIONS = {
       "filename,score          ← header row (column names)\nvideo1,high\nvideo2,low\nvideo3.mp4,high         ← extensions are OK too",
     extractionStallWarning:
       "Extraction is taking longer than usual — the model may be busy or processing a large file.",
+    usageAgreementTitle: "Data protection and usage agreement",
+    usageAgreementIntro:
+      "Before starting analysis, remove personal, confidential, proprietary, or sensitive data from uploaded files.",
+    usageAgreementCheckboxPrefix: "I confirm that I have anonymized the data and agree to the",
+    usageAgreementLink: "Data Protection, Fair Use & Usage Agreement",
+    usageAgreementCheckboxSuffix: ".",
+    usageAgreementRequired: "Confirm the data protection and usage agreement first",
   },
   cs: {
     phaseTitle1: "Fáze 1: Objevování featur",
@@ -330,6 +337,13 @@ export const TRAINING_TRANSLATIONS = {
       "nazev_souboru,skore     ← hlavičkový řádek (názvy sloupců)\nvideo1,vysoka\nvideo2,nizka\nvideo3.mp4,vysoka       ← přípony jsou OK",
     extractionStallWarning:
       "Extrakce trvá déle než obvykle — model je pravděpodobně zaneprázdněn nebo se zpracovává velký soubor.",
+    usageAgreementTitle: "Ochrana dat a podmínky použití",
+    usageAgreementIntro:
+      "Před zahájením analýzy odstraňte z nahrávaných souborů osobní, důvěrné, proprietární nebo citlivé údaje.",
+    usageAgreementCheckboxPrefix: "Potvrzuji, že jsem data anonymizoval/a, a souhlasím s dokumentem",
+    usageAgreementLink: "Ochrana dat, fair use a podmínky použití",
+    usageAgreementCheckboxSuffix: ".",
+    usageAgreementRequired: "Nejdříve potvrďte ochranu dat a podmínky použití",
   },
 } as const;
 

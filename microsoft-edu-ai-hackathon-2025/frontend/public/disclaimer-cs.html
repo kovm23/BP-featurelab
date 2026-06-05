@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="cs">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ochrana dat, fair use a podmínky použití</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        line-height: 1.6;
+        color: #0f172a;
+        background: #f8fafc;
+      }
+      body {
+        margin: 0;
+      }
+      main {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 40px 20px 56px;
+      }
+      article {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 32px;
+        box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: clamp(1.75rem, 4vw, 2.5rem);
+        line-height: 1.15;
+      }
+      h2 {
+        margin-top: 32px;
+        font-size: 1.2rem;
+      }
+      p,
+      li {
+        font-size: 1rem;
+      }
+      .lead {
+        color: #475569;
+        margin-top: 0;
+      }
+      strong {
+        color: #020617;
+      }
+      a {
+        color: #1d4ed8;
+      }
+      @media (max-width: 640px) {
+        article {
+          padding: 24px;
+          border-radius: 8px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <article>
+        <h1>Ochrana dat, fair use a podmínky použití</h1>
+        <p class="lead">Pro experimentální webovou aplikaci llmfeatures.vse.cz.</p>
+
+        <h2>1. Povinná anonymizace dat</h2>
+        <p>
+          Z důvodu ochrany soukromí a souladu s právními předpisy na ochranu osobních údajů, včetně GDPR,
+          <strong>odstraňte ze zdrojových souborů všechny osobní údaje, důvěrná data a citlivé informace</strong>
+          ještě před jejich nahráním k analýze.
+        </p>
+        <p>
+          Tento open-source a experimentální nástroj analyzuje a extrahuje featury z obsahu výzkumných
+          a multimediálních dat. Není určen ke zpracování osobních detailů.
+        </p>
+        <p>Před nahráním dataset pečlivě zkontrolujte a odstraňte zejména:</p>
+        <ul>
+          <li>Jména autorů nebo subjektů, institucionální afiliace, e-mailové adresy a kontaktní údaje.</li>
+          <li>Poděkování, financování, metadata nebo vlastnosti dokumentů, které identifikují konkrétní osoby.</li>
+          <li>Proprietární, komerční, důvěrná nebo citlivá firemní data.</li>
+          <li>Jakékoli nestrukturované prvky, které by mohly identifikovat vás, spoluautory, účastníky nebo výzkumné subjekty.</li>
+        </ul>
+
+        <h2>2. Fair use a přijatelné použití</h2>
+        <p>
+          Aplikace je poskytována pro výzkumné, akademické a analytické účely. Kvůli bezpečnosti systému
+          a férovému přístupu všech uživatelů je nutné dodržovat tyto podmínky:
+        </p>
+        <ul>
+          <li><strong>Zákaz prompt injection a manipulace.</strong> Nevkládejte skryté prompty, jailbreaky ani adversariální instrukce určené ke změně workflow, systémových promptů nebo bezpečnostních kontrol.</li>
+          <li><strong>Zákaz sideloadingu a škodlivých payloadů.</strong> Nepokoušejte se vkládat skripty, spustitelný obsah, neautorizovaná data, libovolný kód ani obcházet zamýšlené grafické nebo API rozhraní.</li>
+          <li><strong>Pouze zamýšlené použití.</strong> Službu používejte pouze k objevování a generování lidsky čitelných featur z validních multimodálních datasetů, včetně textu, obrázků, tabulek a videa.</li>
+          <li><strong>Ochrana zdrojů.</strong> Nepřetěžujte službu nadměrnými, automatizovanými nebo paralelními požadavky, včetně DoS útoků nebo agresivního scrapingu.</li>
+        </ul>
+
+        <h2>3. Potvrzení uživatele a právní účinky</h2>
+        <p>Pokračováním a nahráním dat potvrzujete a souhlasíte, že:</p>
+        <ul>
+          <li>Jste vynaložili důsledné a přiměřené úsilí k anonymizaci a odstranění osobních, důvěrných a citlivých dat ze souborů.</li>
+          <li>Nahraná data mohou být zpracována na serverech VŠE v Praze nebo na serverech třetích stran využitých přes konfiguraci Bring Your Own Key (BYOK).</li>
+          <li>Zpracování může zahrnovat přenosy dat mimo Evropský hospodářský prostor (EHP).</li>
+          <li>Pokud jsou přes BYOK využity AI služby třetích stran, použití nástroje se řídí také podmínkami těchto poskytovatelů.</li>
+          <li>Aplikace je experimentální open-source produkt poskytovaný pod licencí MIT pro akademické a výzkumné účely.</li>
+          <li>Objevování featur, generování schémat, extrahované tabulky a modelové metriky jsou poskytovány <strong>tak, jak jsou</strong> a <strong>dle dostupnosti</strong>.</li>
+          <li>Autoři, přispěvatelé ani VŠE v Praze neposkytují žádné výslovné ani implicitní záruky přesnosti, úplnosti, spolehlivosti, bezpečnosti nebo vhodnosti pro konkrétní účel.</li>
+          <li>Jakékoli spoléhání na vygenerované featury, CSV soubory nebo downstream metriky je výhradně na vaše vlastní riziko. Před použitím v regulatorních, vědeckých nebo kritických obchodních kontextech odpovídáte za ověření výstupů vůči původním datům.</li>
+        </ul>
+      </article>
+    </main>
+  </body>
+</html>

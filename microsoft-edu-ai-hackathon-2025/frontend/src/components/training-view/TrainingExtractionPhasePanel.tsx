@@ -33,6 +33,7 @@ export function TrainingExtractionPhasePanel(props: {
   extractStalled: boolean;
   onCancel?: () => void;
   onGoToStep?: (step: number) => void;
+  usageAgreementAccepted: boolean;
 }) {
   const {
     deluxe,
@@ -58,6 +59,7 @@ export function TrainingExtractionPhasePanel(props: {
     extractStalled,
     onCancel,
     onGoToStep,
+    usageAgreementAccepted,
   } = props;
 
   return (
@@ -132,12 +134,15 @@ export function TrainingExtractionPhasePanel(props: {
       <div className="flex justify-center mt-6">
         <Button
           onClick={() => {
-            if (trainZipFile) {
+            if (trainZipFile && usageAgreementAccepted) {
               onExtractTraining(trainZipFile, useExtractionLabels ? extractionLabels : null);
             }
           }}
-          disabled={!trainZipFile || isExtracting}
-          title={!trainZipFile ? tr.uploadTrainingFirst : undefined}
+          disabled={!trainZipFile || !usageAgreementAccepted || isExtracting}
+          title={[
+            !trainZipFile && tr.uploadTrainingFirst,
+            !usageAgreementAccepted && tr.usageAgreementRequired,
+          ].filter(Boolean).join("; ") || undefined}
         >
           {isExtracting ? (
             <>

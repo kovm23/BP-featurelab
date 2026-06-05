@@ -36,6 +36,7 @@ export function DiscoveryPhasePanel(props: {
   onGoToStep?: (step: number) => void;
   llmEndpoint?: LlmEndpointConfig;
   setLlmEndpoint?: (cfg: LlmEndpointConfig) => void;
+  usageAgreementAccepted: boolean;
 }) {
   const {
     deluxe,
@@ -65,6 +66,7 @@ export function DiscoveryPhasePanel(props: {
     onGoToStep,
     llmEndpoint,
     setLlmEndpoint,
+    usageAgreementAccepted,
   } = props;
 
   return (
@@ -213,11 +215,17 @@ export function DiscoveryPhasePanel(props: {
 
       <div className="flex justify-center mt-6">
         <Button
-          onClick={() => discoveryFiles.length > 0 && onDiscoverStart(discoveryFiles, useDiscoveryLabels ? discoveryLabels : null)}
-          disabled={discoveryFiles.length === 0 || !targetVariable || isDiscovering}
+          onClick={() =>
+            discoveryFiles.length > 0 &&
+            targetVariable &&
+            usageAgreementAccepted &&
+            onDiscoverStart(discoveryFiles, useDiscoveryLabels ? discoveryLabels : null)
+          }
+          disabled={discoveryFiles.length === 0 || !targetVariable || !usageAgreementAccepted || isDiscovering}
           title={[
             discoveryFiles.length === 0 && tr.uploadSamples,
             !targetVariable && tr.discoveryNeedTarget,
+            !usageAgreementAccepted && tr.usageAgreementRequired,
           ].filter(Boolean).join("; ") || undefined}
         >
           {isDiscovering ? (

@@ -31,6 +31,7 @@ export function PredictionPhasePanel(props: {
   showFeatureCols: boolean;
   setShowFeatureCols: React.Dispatch<React.SetStateAction<boolean>>;
   setShowPredictForm: React.Dispatch<React.SetStateAction<boolean>>;
+  usageAgreementAccepted: boolean;
 }) {
   const {
     deluxe,
@@ -56,6 +57,7 @@ export function PredictionPhasePanel(props: {
     showFeatureCols,
     setShowFeatureCols,
     setShowPredictForm,
+    usageAgreementAccepted,
   } = props;
 
   return (
@@ -99,7 +101,11 @@ export function PredictionPhasePanel(props: {
 
       {showPredictForm && (
         <div className="flex justify-center mt-6">
-          <Button onClick={() => onPredict(useTestingLabels ? testingLabels : null)} disabled={isPredicting}>
+          <Button
+            onClick={() => usageAgreementAccepted && onPredict(useTestingLabels ? testingLabels : null)}
+            disabled={!usageAgreementAccepted || isPredicting}
+            title={!usageAgreementAccepted ? tr.usageAgreementRequired : undefined}
+          >
             {isPredicting ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" /> {tr.predicting} ({predictSecs}s)

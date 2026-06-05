@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Data Protection, Fair Use & Usage Agreement</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        line-height: 1.6;
+        color: #0f172a;
+        background: #f8fafc;
+      }
+      body {
+        margin: 0;
+      }
+      main {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 40px 20px 56px;
+      }
+      article {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 32px;
+        box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: clamp(1.75rem, 4vw, 2.5rem);
+        line-height: 1.15;
+      }
+      h2 {
+        margin-top: 32px;
+        font-size: 1.2rem;
+      }
+      p,
+      li {
+        font-size: 1rem;
+      }
+      .lead {
+        color: #475569;
+        margin-top: 0;
+      }
+      strong {
+        color: #020617;
+      }
+      a {
+        color: #1d4ed8;
+      }
+      @media (max-width: 640px) {
+        article {
+          padding: 24px;
+          border-radius: 8px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <article>
+        <h1>Data Protection, Fair Use & Usage Agreement</h1>
+        <p class="lead">For the experimental web application at llmfeatures.vse.cz.</p>
+
+        <h2>1. Mandatory Data Anonymization Request</h2>
+        <p>
+          To protect privacy and comply with data protection regulations, including GDPR,
+          <strong>remove all personally identifiable information (PII), confidential data, and sensitive data</strong>
+          from source files before uploading them for analysis.
+        </p>
+        <p>
+          This open-source and experimental tool analyzes and extracts features from the substance of research
+          and multimedia data. It is not designed to process personal details.
+        </p>
+        <p>Please review datasets and strip out:</p>
+        <ul>
+          <li>Author or subject names, institutional affiliations, email addresses, and contact details.</li>
+          <li>Acknowledgments, funding statements, metadata, or document properties that identify individuals.</li>
+          <li>Proprietary, commercial, confidential, or sensitive corporate data.</li>
+          <li>Any unstructured element that could identify you, co-authors, participants, or research subjects.</li>
+        </ul>
+
+        <h2>2. Fair Use & Acceptable Use Policy</h2>
+        <p>
+          This tool is provided for research, academic, and analytical purposes. To protect shared access and
+          system security, users must follow these conditions:
+        </p>
+        <ul>
+          <li><strong>No prompt injection or manipulation.</strong> Do not submit hidden prompts, jailbreaks, or adversarial instructions intended to alter workflows, system prompts, or safety controls.</li>
+          <li><strong>No sideloading or malicious payloads.</strong> Do not inject scripts, executable content, unauthorized data, arbitrary code, or bypass intended graphical or API interfaces.</li>
+          <li><strong>Intended use only.</strong> Use the service only for discovering and generating human-readable features from valid multimodal datasets, including text, images, tables, and video.</li>
+          <li><strong>Resource protection.</strong> Do not intentionally overload the service with excessive, automated, or concurrent requests, including denial-of-service attacks or aggressive scraping.</li>
+        </ul>
+
+        <h2>3. User Acknowledgments & Legal Binding</h2>
+        <p>By proceeding and uploading data, you acknowledge and agree that:</p>
+        <ul>
+          <li>You have made a rigorous, reasonable effort to anonymize and scrub personal, confidential, and sensitive data from submitted files.</li>
+          <li>Uploaded data may be processed on servers at VSE v Praze (Prague University of Economics and Business) or on third-party servers used through Bring Your Own Key (BYOK) configuration.</li>
+          <li>Processing may involve data transfers outside the European Economic Area (EEA).</li>
+          <li>If third-party AI services are used via BYOK, use of this tool is bound by the respective providers' terms of use.</li>
+          <li>The application is experimental and open source, offered under the MIT License for academic and research purposes.</li>
+          <li>Feature discovery, schema generation, extracted tabular results, and model metrics are provided <strong>as is</strong> and <strong>as available</strong>.</li>
+          <li>The authors, contributors, and VSE v Praze provide no express or implied warranties regarding accuracy, completeness, reliability, safety, or fitness for a particular purpose.</li>
+          <li>Any reliance on generated features, CSV files, or downstream metrics is strictly at your own risk. You are responsible for validating outputs against original source data before use in regulatory, scientific, or critical business contexts.</li>
+        </ul>
+      </article>
+    </main>
+  </body>
+</html>
