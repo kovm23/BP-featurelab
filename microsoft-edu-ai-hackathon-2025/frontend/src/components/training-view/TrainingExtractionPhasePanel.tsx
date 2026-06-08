@@ -1,7 +1,7 @@
 import React from "react";
 import { CheckCircle2, ChevronRight, Download, Loader2, PlayCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { FeatureSpec } from "@/lib/api";
+import type { FeatureSpec, LlmEndpointConfig } from "@/lib/api";
 import { downloadTrainingDataCSV } from "@/lib/pipelineDownloads";
 import { cls, DatasetTable, FeatureSpecBox, FileDropZone, ProgressBar } from "./shared";
 import { OllamaWarning } from "./OllamaWarning";
@@ -34,6 +34,8 @@ export function TrainingExtractionPhasePanel(props: {
   onCancel?: () => void;
   onGoToStep?: (step: number) => void;
   usageAgreementAccepted: boolean;
+  modelProvider?: string;
+  llmEndpoint?: LlmEndpointConfig;
 }) {
   const {
     deluxe,
@@ -60,6 +62,8 @@ export function TrainingExtractionPhasePanel(props: {
     onCancel,
     onGoToStep,
     usageAgreementAccepted,
+    modelProvider,
+    llmEndpoint,
   } = props;
 
   return (
@@ -192,7 +196,11 @@ export function TrainingExtractionPhasePanel(props: {
             >
               <Download className="w-3 h-3" /> {tr.downloadTrainingX}
             </button>
-            <RepeatabilityTestModal deluxe={deluxe} />
+            <RepeatabilityTestModal
+              deluxe={deluxe}
+              modelProvider={modelProvider}
+              llmEndpoint={llmEndpoint}
+            />
           </div>
           <div className="flex justify-center mt-4">
             <Button onClick={() => onGoToStep?.(3)}>

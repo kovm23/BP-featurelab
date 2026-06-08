@@ -386,6 +386,8 @@ export function TrainingView({
           onCancel={onCancel}
           onGoToStep={onGoToStep}
           usageAgreementAccepted={usageAgreementAccepted}
+          modelProvider={modelProvider}
+          llmEndpoint={llmEndpoint}
         />
       )}
 

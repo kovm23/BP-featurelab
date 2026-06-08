@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
-import { fetchJson, REPEATABILITY_TEST_URL, sessionHeaders, STATUS_URL } from "@/lib/api";
+import {
+  CUSTOM_MODEL_ID,
+  fetchJson,
+  type LlmEndpointConfig,
+  REPEATABILITY_TEST_URL,
+  sessionHeaders,
+  STATUS_URL,
+} from "@/lib/api";
 import { cls } from "./shared";
 
 interface FeatureStat {
@@ -31,9 +38,11 @@ function CvBadge({ cv }: { cv: number | null | undefined }) {
 export function RepeatabilityTestModal({
   deluxe,
   modelProvider,
+  llmEndpoint,
 }: {
   deluxe: boolean;
   modelProvider?: string;
+  llmEndpoint?: LlmEndpointConfig;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
@@ -75,7 +84,17 @@ export function RepeatabilityTestModal({
     const formData = new FormData();
     formData.append("file", file);
     formData.append("n_repetitions", String(nReps));
-    if (modelProvider) formData.append("model", modelProvider);
+    const useCustom = !!(llmEndpoint?.baseUrl && llmEndpoint?.apiKey);
+    if (useCustom) {
+      formData.append("model", llmEndpoint.model || modelProvider || CUSTOM_MODEL_ID);
+      formData.append("llm_base_url", llmEndpoint.baseUrl);
+      formData.append("llm_api_key", llmEndpoint.apiKey);
+      if (llmEndpoint.temperature != null) {
+        formData.append("llm_temperature", String(llmEndpoint.temperature));
+      }
+    } else if (modelProvider) {
+      formData.append("model", modelProvider);
+    }
 
     try {
       const { job_id } = await fetchJson<{ job_id: string }>(REPEATABILITY_TEST_URL, {

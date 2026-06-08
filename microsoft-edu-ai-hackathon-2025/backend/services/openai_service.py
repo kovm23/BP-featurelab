@@ -118,7 +118,17 @@ def get_client(custom_base_url: str = "", custom_api_key: str = "") -> "tuple[op
 
 def _is_unsupported_parameter_error(exc: BaseException, parameter_name: str) -> bool:
     msg = str(exc).lower()
-    return "unsupported parameter" in msg and parameter_name.lower() in msg
+    parameter = parameter_name.lower()
+    unsupported_markers = (
+        "unsupported parameter",
+        "unrecognized parameter",
+        "unknown parameter",
+        "unknown field",
+        "extra_forbidden",
+        "not permitted",
+        "not supported",
+    )
+    return parameter in msg and any(marker in msg for marker in unsupported_markers)
 
 
 def create_chat_completion_with_token_limit(
@@ -171,6 +181,83 @@ def _clean_json_response(content):
     return content.strip()
 
 
+def _parse_json_or_raw(content):
+    clean_content = _clean_json_response(content or "")
+    try:
+        return json.loads(clean_content)
+    except (json.JSONDecodeError, ValueError):
+        return {"features": clean_content, "error": "JSON parse error", "raw": content}
+
+
+def extract_multimodal_features_with_llm(
+    image_base64_list,
+    prompt=None,
+    deployment_name=None,
+    feature_gen=False,
+    custom_base_url: str = "",
+    custom_api_key: str = "",
+    custom_temperature: float | None = None,
+) -> dict:
+    """Send one multimodal request containing all provided images."""
+    model_name = deployment_name or DEFAULT_MODEL
+    client, is_custom = get_client(custom_base_url, custom_api_key)
+    prompt_text = prompt or "Extract meaningful features from these media frames."
+    user_content = [{"type": "text", "text": prompt_text}]
+    user_content.extend(
+        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}}
+        for img_b64 in image_base64_list
+    )
+
+    max_retries = 3
+    backoff = 2
+    use_cpu_fallback = False
+
+    for attempt in range(max_retries):
+        try:
+            temperature = custom_temperature if (is_custom and custom_temperature is not None) else 0.1
+            kwargs: dict = dict(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": "You are a feature extraction assistant. You MUST output valid JSON only. No text, no markdown, just JSON."},
+                    {"role": "user", "content": user_content},
+                ],
+                temperature=temperature,
+            )
+            if not is_custom:
+                options = ollama_request_options()
+                if use_cpu_fallback:
+                    options["num_gpu"] = 0
+                kwargs["extra_body"] = {"options": options}
+
+            response = create_chat_completion_with_token_limit(
+                client,
+                is_custom=is_custom,
+                token_limit=get_completion_token_limit(is_custom),
+                **kwargs,
+            )
+            return _parse_json_or_raw(response.choices[0].message.content)
+        except openai.RateLimitError:
+            if attempt < max_retries - 1:
+                time.sleep(backoff)
+                backoff *= 2
+                continue
+            return {"error": "Rate limit exceeded."}
+        except Exception as e:
+            if not is_custom and OLLAMA_CPU_FALLBACK and not use_cpu_fallback and is_gpu_load_error(e):
+                use_cpu_fallback = True
+                logger.warning("GPU model load failed, retrying multimodal extraction on CPU fallback: %s", e)
+                time.sleep(2)
+                continue
+            if not is_custom and is_transient_ollama_error(e) and attempt < max_retries - 1:
+                wait = backoff * (attempt + 1)
+                logger.warning("Transient Ollama error on multimodal extraction attempt %s, retrying in %ss: %s", attempt + 1, wait, e)
+                time.sleep(wait)
+                continue
+            return {"error": f"Model error ({model_name}): {str(e)}"}
+
+    return {"error": f"Model error ({model_name}): no response"}
+
+
 def extract_image_features_with_llm(
     image_base64_list,
     prompt=None,
@@ -220,15 +307,7 @@ def extract_image_features_with_llm(
                     **kwargs,
                 )
 
-                content = response.choices[0].message.content
-                clean_content = _clean_json_response(content)
-
-                try:
-                    features = json.loads(clean_content)
-                except (json.JSONDecodeError, ValueError):
-                    features = {"features": clean_content, "error": "JSON parse error", "raw": content}
-
-                features_list.append(features)
+                features_list.append(_parse_json_or_raw(response.choices[0].message.content))
                 break
 
             except openai.RateLimitError:

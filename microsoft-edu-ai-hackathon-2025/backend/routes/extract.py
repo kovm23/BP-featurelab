@@ -111,6 +111,7 @@ def api_extract():
         dataset_type, csv_path, labels_df, extract_path,
         cleanup_paths=[zip_path],
         llm_base_url=llm_base_url, llm_api_key=llm_api_key,
+        llm_temperature=llm_temperature,
     )
     return jsonify({"job_id": job_id, "media_count": len(media_files)})
 
@@ -175,5 +176,6 @@ def api_extract_local():
         pipeline, media_files, feature_spec, model_name,
         dataset_type, csv_path, labels_df, extract_path,
         llm_base_url=llm_base_url, llm_api_key=llm_api_key,
+        llm_temperature=llm_temperature,
     )
     return jsonify({"job_id": job_id, "media_count": len(media_files)})

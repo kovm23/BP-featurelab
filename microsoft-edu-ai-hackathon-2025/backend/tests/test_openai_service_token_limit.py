@@ -76,6 +76,28 @@ def test_custom_endpoint_falls_back_to_max_tokens_when_modern_param_is_unsupport
     assert "max_completion_tokens" not in client.calls[1]
 
 
+def test_custom_endpoint_falls_back_to_max_tokens_when_modern_param_is_unrecognized():
+    client = FakeClient(
+        failures=[
+            RuntimeError("Unrecognized parameter: max_completion_tokens")
+        ]
+    )
+
+    openai_service.create_chat_completion_with_token_limit(
+        client,
+        is_custom=True,
+        token_limit=openai_service.get_completion_token_limit(is_custom=True),
+        model="legacy-compatible-model",
+        messages=[{"role": "user", "content": "hi"}],
+    )
+
+    assert len(client.calls) == 2
+    assert client.calls[0]["max_completion_tokens"] == 8192
+    assert "max_tokens" not in client.calls[0]
+    assert client.calls[1]["max_tokens"] == 8192
+    assert "max_completion_tokens" not in client.calls[1]
+
+
 def test_custom_endpoint_does_not_retry_unrelated_errors():
     client = FakeClient(failures=[RuntimeError("boom")])
 

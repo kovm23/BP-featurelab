@@ -85,6 +85,12 @@ def api_repeatability_test():
     n_reps = int(request.form.get("n_repetitions", 5))
     n_reps = max(_MIN_REPS, min(n_reps, _MAX_REPS))
     model_name = request.form.get("model", DEFAULT_MODEL) or DEFAULT_MODEL
+    llm_base_url = request.form.get("llm_base_url", "").strip()
+    llm_api_key = request.form.get("llm_api_key", "").strip()
+    try:
+        llm_temperature = float(request.form.get("llm_temperature", ""))
+    except (ValueError, TypeError):
+        llm_temperature = None
 
     safe_name = secure_filename(uploaded_file.filename or "sample_file")
     tmp_path = os.path.join(UPLOAD_FOLDER, f"repeat_{uuid.uuid4().hex[:8]}_{safe_name}")
@@ -111,7 +117,14 @@ def api_repeatability_test():
                     stage=f"Run {rep + 1} of {n_reps}...",
                 )
                 try:
-                    attrs = _extract_single_pass(tmp_path, prompt, model_name)
+                    attrs = _extract_single_pass(
+                        tmp_path,
+                        prompt,
+                        model_name,
+                        custom_base_url=llm_base_url,
+                        custom_api_key=llm_api_key,
+                        custom_temperature=llm_temperature,
+                    )
                 except Exception as e:
                     logger.warning("Repeatability run %d failed: %s", rep + 1, e)
                     attrs = {}

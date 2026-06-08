@@ -13,13 +13,16 @@ logger = logging.getLogger(__name__)
 _FILENAME_PATTERN = re.compile(r'\d|[/\\]|\.[a-zA-Z0-9]{2,4}$')
 
 
-def _read_labels_csv(path: str) -> pd.DataFrame:
-    """Read a labels CSV with automatic header detection.
+def _read_labels_table(path: str) -> pd.DataFrame:
+    """Read a labels CSV/XLSX table with automatic CSV header detection.
 
     If the first column looks like a filename (contains digits, path separators
     or file extensions) rather than a descriptive column name, the file is
     re-read without a header row and generic column names are assigned.
     """
+    if path.lower().endswith(".xlsx"):
+        return pd.read_excel(path)
+
     df = pd.read_csv(path)
     if df.columns.size >= 1 and _FILENAME_PATTERN.search(str(df.columns[0])):
         logger.info("CSV '%s' appears to have no header row — re-reading with auto-assigned columns.", path)
@@ -43,7 +46,7 @@ def load_labels_from_request(request, dest_folder: str) -> pd.DataFrame | None:
     labels_path = os.path.join(dest_folder, f"labels_{secure_filename(lf.filename)}")
     lf.save(labels_path)
     try:
-        return _read_labels_csv(labels_path)
+        return _read_labels_table(labels_path)
     except Exception as e:
         logger.warning("Cannot load labels CSV: %s", e)
         return None
@@ -57,7 +60,7 @@ def load_labels_from_path(path: str) -> pd.DataFrame | None:
     if not path or not os.path.exists(path):
         return None
     try:
-        return _read_labels_csv(path)
+        return _read_labels_table(path)
     except Exception as e:
         logger.warning("Cannot load labels CSV from %s: %s", path, e)
         return None

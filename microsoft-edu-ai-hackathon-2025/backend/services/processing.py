@@ -12,7 +12,11 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 
-from .openai_service import DEFAULT_MODEL, extract_image_features_with_llm
+from .openai_service import (
+    DEFAULT_MODEL,
+    extract_image_features_with_llm,
+    extract_multimodal_features_with_llm,
+)
 from .speech_service import extract_audio_from_video, transcribe_with_timestamps
 
 logging.basicConfig(level=logging.INFO)
@@ -280,12 +284,12 @@ def process_single_media(
                 full_prompt += f"\n\nVisual frame timestamps: {', '.join(timestamps)}"
 
             # 4. LLM call
-            llm_resp = extract_image_features_with_llm(
+            llm_resp = extract_multimodal_features_with_llm(
                 frame_b64, prompt=full_prompt, deployment_name=model_name, feature_gen=True,
                 custom_base_url=custom_base_url, custom_api_key=custom_api_key,
                 custom_temperature=custom_temperature,
             )
-            result["analysis"] = llm_resp[0] if isinstance(llm_resp, list) and llm_resp else llm_resp
+            result["analysis"] = llm_resp
 
     except Exception as e:
         result["error"] = str(e)
