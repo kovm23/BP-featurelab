@@ -10,6 +10,56 @@ _INTERVAL_RE = re.compile(
 )
 _SET_RE = re.compile(r"([^=]+?)\s*=\s*\{([^}]+)\}")      # feat = {val}
 _SIMPLE_RE = re.compile(r"(.+?)\s*(>=|<=|>|<|=)\s*(.+)")  # feat >= val (last resort)
+_THEN_RE = re.compile(r"\bTHEN\b\s+(.+)$", re.IGNORECASE)
+_THEN_SET_RE = re.compile(r"=\s*\{([^}]+)\}")
+_THEN_ASSIGNMENT_RE = re.compile(r"=\s*(.+)$")
+
+
+def _normalize_rule_label(label) -> str | None:
+    """Return a comparison key for a class label from RuleKit output."""
+    if label is None:
+        return None
+    text = str(label).strip()
+    if not text:
+        return None
+    text = re.sub(r"\s+\[[^\]]+\]\s*$", "", text)
+    text = text.strip().strip("{}\"'")
+    text = re.sub(r"\s+", " ", text)
+    return text.casefold() if text else None
+
+
+def _extract_rule_then_label(rule_str: str) -> str | None:
+    """Extract the predicted class label from a RuleKit rule's THEN clause."""
+    match = _THEN_RE.search(str(rule_str))
+    if not match:
+        return None
+    then_part = match.group(1).strip()
+    set_match = _THEN_SET_RE.search(then_part)
+    if set_match:
+        return _normalize_rule_label(set_match.group(1))
+    assignment_match = _THEN_ASSIGNMENT_RE.search(then_part)
+    if assignment_match:
+        then_part = assignment_match.group(1).strip()
+    return _normalize_rule_label(then_part)
+
+
+def _filter_rules_by_label(rules: list[str], expected_label) -> list[str]:
+    """Keep only rules whose THEN label matches the expected RuleKit label."""
+    expected_key = _normalize_rule_label(expected_label)
+    if expected_key is None:
+        return list(rules)
+    return [
+        rule_str for rule_str in rules
+        if _extract_rule_then_label(rule_str) == expected_key
+    ]
+
+
+def _no_single_rule_match_label(predicted_label=None) -> str:
+    """Fallback text for rows without a label-consistent displayed rule."""
+    label = str(predicted_label).strip() if predicted_label is not None else ""
+    if label:
+        return f"RuleKit predicted {label} (no matching rule for this label)"
+    return "RuleKit (no single rule match)"
 
 
 def _rule_matches(row: pd.Series, rule_str: str) -> bool:
@@ -75,7 +125,12 @@ def _rule_matches(row: pd.Series, rule_str: str) -> bool:
     return True
 
 
-def _find_covering_rules(row: pd.Series, rules: list[str], max_rules: int = 3) -> list[str]:
+def _find_covering_rules(
+    row: pd.Series,
+    rules: list[str],
+    max_rules: int = 3,
+    expected_label=None,
+) -> list[str]:
     """Return up to max_rules whose IF-conditions are satisfied by row.
 
     Supports RuleKit's interval notation (Czech math convention):
@@ -87,7 +142,10 @@ def _find_covering_rules(row: pd.Series, rules: list[str], max_rules: int = 3) -
     Also handles simple operators: feat >= val, feat <= val, etc.
     """
     matches = []
+    expected_key = _normalize_rule_label(expected_label)
     for rule_str in rules:
+        if expected_key is not None and _extract_rule_then_label(rule_str) != expected_key:
+            continue
         if _rule_matches(row, rule_str):
             matches.append(rule_str)
             if len(matches) >= max_rules:
@@ -95,12 +153,12 @@ def _find_covering_rules(row: pd.Series, rules: list[str], max_rules: int = 3) -
     return matches
 
 
-def _find_covering_rule(row: pd.Series, rules: list[str]) -> str:
+def _find_covering_rule(row: pd.Series, rules: list[str], expected_label=None) -> str:
     """Return the first rule whose IF-conditions are satisfied by row, or a fallback label."""
-    matches = _find_covering_rules(row, rules, max_rules=1)
+    matches = _find_covering_rules(row, rules, max_rules=1, expected_label=expected_label)
     if matches:
         return matches[0]
-    return "RuleKit (no single rule match)"
+    return _no_single_rule_match_label(expected_label)
 
 
 def _count_rule_features(rules: list[str], feature_names: list[str]) -> dict:

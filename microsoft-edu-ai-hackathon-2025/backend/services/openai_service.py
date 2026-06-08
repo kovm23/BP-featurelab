@@ -56,10 +56,17 @@ DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5vl:7b")
 OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "4096"))
 _OLLAMA_OPTIONS = {"num_ctx": OLLAMA_NUM_CTX}
 OLLAMA_CPU_FALLBACK = os.getenv("OLLAMA_CPU_FALLBACK", "1").strip().lower() in ("1", "true", "yes")
+OLLAMA_MAX_COMPLETION_TOKENS = int(os.getenv("OLLAMA_MAX_COMPLETION_TOKENS", "2048"))
+CUSTOM_LLM_MAX_COMPLETION_TOKENS = int(os.getenv("CUSTOM_LLM_MAX_COMPLETION_TOKENS", "8192"))
 
 
 def ollama_request_options() -> dict:
     return dict(_OLLAMA_OPTIONS)
+
+
+def get_completion_token_limit(is_custom: bool) -> int:
+    """Return the default output-token budget for the selected LLM endpoint."""
+    return CUSTOM_LLM_MAX_COMPLETION_TOKENS if is_custom else OLLAMA_MAX_COMPLETION_TOKENS
 
 
 @contextmanager
@@ -209,7 +216,7 @@ def extract_image_features_with_llm(
                 response = create_chat_completion_with_token_limit(
                     client,
                     is_custom=is_custom,
-                    token_limit=2048,
+                    token_limit=get_completion_token_limit(is_custom),
                     **kwargs,
                 )
 
@@ -291,7 +298,7 @@ def extract_text_features_with_llm(
                 response = create_chat_completion_with_token_limit(
                     client,
                     is_custom=is_custom,
-                    token_limit=2048,
+                    token_limit=get_completion_token_limit(is_custom),
                     **kwargs,
                 )
 

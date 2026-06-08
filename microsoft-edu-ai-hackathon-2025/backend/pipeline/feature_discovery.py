@@ -10,8 +10,8 @@ import pandas as pd
 from config import DISCOVERY_MAX_SAMPLES
 from pipeline.feature_schema import normalize_feature_spec
 from services.openai_service import (
-    _tracked_ollama_lock,
     create_chat_completion_with_token_limit,
+    get_completion_token_limit,
     get_client,
     ollama_request_options,
 )
@@ -239,11 +239,12 @@ def discover_features(
                 if use_cpu_fallback:
                     options["num_gpu"] = 0
                 synth_kwargs["extra_body"] = {"options": options}
-            if is_custom:
-                response = synth_client.chat.completions.create(**synth_kwargs)
-            else:
-                with _tracked_ollama_lock():
-                    response = synth_client.chat.completions.create(**synth_kwargs)
+            response = create_chat_completion_with_token_limit(
+                synth_client,
+                is_custom=is_custom,
+                token_limit=get_completion_token_limit(is_custom),
+                **synth_kwargs,
+            )
             break
         except Exception as exc:
             if not use_cpu_fallback and is_gpu_load_error(exc):

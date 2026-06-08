@@ -38,8 +38,8 @@ def _pipeline(*, ensemble=True, coverage_matrix=None):
         rules=[
             "IF f1 >= 0 THEN A",
             "IF f1 >= 0 THEN B",
-            "IF f1 >= 0 THEN A2",
-            "IF f1 >= 0 THEN B2",
+            "IF f1 >= 0 THEN label = {A}",
+            "IF f1 >= 0 THEN label = {B}",
         ],
         target_variable="label",
         predictions=None,
@@ -89,8 +89,12 @@ def test_prediction_transparency_marks_ensemble_override_and_top_rules(monkeypat
     assert first["rule_applied"] == "IF f1 >= 0 THEN A"
     assert first["top_rules"] == [
         "IF f1 >= 0 THEN A",
-        "IF f1 >= 0 THEN B",
-        "IF f1 >= 0 THEN A2",
+        "IF f1 >= 0 THEN label = {A}",
+    ]
+    assert second["rule_applied"] == "IF f1 >= 0 THEN A"
+    assert second["top_rules"] == [
+        "IF f1 >= 0 THEN A",
+        "IF f1 >= 0 THEN label = {A}",
     ]
 
 
@@ -111,6 +115,31 @@ def test_prediction_transparency_degrades_without_ensemble(monkeypatch):
     assert first["confidence_breakdown"]["gbt"] == {"label": None, "confidence": None}
     assert first["top_rules"] == [
         "IF f1 >= 0 THEN A",
-        "IF f1 >= 0 THEN B",
-        "IF f1 >= 0 THEN A2",
+        "IF f1 >= 0 THEN label = {A}",
     ]
+    assert second["top_rules"] == [
+        "IF f1 >= 0 THEN B",
+        "IF f1 >= 0 THEN label = {B}",
+    ]
+
+
+def test_prediction_transparency_does_not_show_wrong_label_rule(monkeypatch):
+    def fake_rulekit_predict(*_args, **_kwargs):
+        return np.array(["A", "A"], dtype=object), np.array([[0.8, 0.2], [0.8, 0.2]])
+
+    monkeypatch.setattr(ml_training, "_rulekit_classification_predict", fake_rulekit_predict)
+
+    pipeline = _pipeline(
+        ensemble=False,
+        coverage_matrix=np.array([
+            [0, 1, 0, 1],
+            [0, 1, 0, 1],
+        ])
+    )
+
+    result = ml_training.predict_batch(pipeline)
+    first = result["predictions"][0]
+
+    assert first["rulekit_prediction"] == "A"
+    assert first["top_rules"] == []
+    assert first["rule_applied"] == "RuleKit predicted A (no matching rule for this label)"

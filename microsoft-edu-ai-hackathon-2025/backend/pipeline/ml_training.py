@@ -47,7 +47,14 @@ from pipeline.ml_preprocessing import (
     _preprocess_features,
 )
 from pipeline.ml_regression import _train_regression_branch
-from pipeline.ml_rules import _count_rule_features, _extract_rules, _find_covering_rule, _find_covering_rules
+from pipeline.ml_rules import (
+    _count_rule_features,
+    _extract_rules,
+    _filter_rules_by_label,
+    _find_covering_rule,
+    _find_covering_rules,
+    _no_single_rule_match_label,
+)
 from utils.csv_utils import normalize_media_name
 
 logger = logging.getLogger(__name__)
@@ -380,21 +387,25 @@ def predict_batch(pipeline, testing_Y_df: pd.DataFrame | None = None, progress_c
             rf_label = str(rf_pred_labels[row_num]) if rf_pred_labels is not None and row_num < len(rf_pred_labels) else None
             gbt_label = str(gbt_pred_labels[row_num]) if gbt_pred_labels is not None and row_num < len(gbt_pred_labels) else None
 
-            rule_applied = "RuleKit (no single rule match)"
+            rule_applied = _no_single_rule_match_label(rulekit_label)
             top_rules = []
             if coverage_matrix is not None and row_num < len(coverage_matrix):
                 covered = np.where(np.asarray(coverage_matrix[row_num]).astype(int) > 0)[0]
-                top_rules = [
+                covered_rules = [
                     pipeline.rules[int(rule_idx)]
-                    for rule_idx in covered[:3]
+                    for rule_idx in covered
                     if int(rule_idx) < len(pipeline.rules)
                 ]
+                top_rules = _filter_rules_by_label(covered_rules, rulekit_label)[:3]
             elif pipeline.rules:
-                top_rules = _find_covering_rules(row, pipeline.rules, max_rules=3)
+                top_rules = _find_covering_rules(
+                    row,
+                    pipeline.rules,
+                    max_rules=3,
+                    expected_label=rulekit_label,
+                )
             if top_rules:
                 rule_applied = top_rules[0]
-            elif pipeline.rules:
-                rule_applied = _find_covering_rule(row, pipeline.rules)
 
             item = {
                 "media_name": media_name,
