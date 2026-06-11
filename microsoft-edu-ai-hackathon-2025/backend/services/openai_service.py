@@ -179,7 +179,14 @@ def image_to_base64(img_arr):
 
 
 def _clean_json_response(content):
-    """Strip the markdown wrapper from a JSON response (common with local models)."""
+    """Strip the markdown wrapper or leading prose from a JSON response.
+
+    Handles:
+    - ```json ... ``` blocks
+    - plain ``` ... ``` blocks
+    - responses where the model outputs observation text first, then a JSON object
+      (e.g. "I see a road...\n\n{\"key\": \"val\"}")
+    """
     content = content.strip()
     if "```json" in content:
         content = content.split("```json")[1].split("```")[0]
@@ -189,6 +196,15 @@ def _clean_json_response(content):
             content = parts[1]
         elif len(parts) >= 2:
             content = parts[1]
+    content = content.strip()
+
+    # If the cleaned content doesn't start with '{', try to find the first JSON
+    # object in the text (handles "observation paragraph\n\n{...}" pattern).
+    if not content.startswith("{"):
+        brace_start = content.find("{")
+        if brace_start != -1:
+            content = content[brace_start:]
+
     return content.strip()
 
 
