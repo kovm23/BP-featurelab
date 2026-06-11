@@ -183,7 +183,7 @@ export default function MediaFeatureLabPro() {
     <div
       className={`min-h-screen ${
         deluxe
-          ? "bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 text-white"
+          ? "dark bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 text-white"
           : "bg-slate-50 text-slate-900"
       }`}
     >
