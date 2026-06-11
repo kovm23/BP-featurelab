@@ -32,6 +32,10 @@ export function AppHeader({
     schoolLogoAlt: string;
   };
 }) {
+  const headerOutlineButtonClass = deluxe
+    ? "border-white/15 bg-white/10 text-white hover:bg-white/15 hover:text-white"
+    : "";
+
   return (
     <header
       className={`mb-6 rounded-2xl border px-4 py-3 shadow-sm backdrop-blur ${
@@ -116,16 +120,31 @@ export function AppHeader({
             <CirclePlay className="h-4 w-4" aria-hidden="true" /> {t.guide}
           </Button>
 
-          <Button variant="outline" size="sm" onClick={handleReset}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleReset}
+            className={headerOutlineButtonClass}
+          >
             <RefreshCw className="mr-2 h-4 w-4" /> {t.reset}
           </Button>
 
-          <Button variant="outline" size="sm" onClick={handleExportSession}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportSession}
+            className={headerOutlineButtonClass}
+          >
             <Download className="mr-2 h-4 w-4" />
             {t.exportSession}
           </Button>
 
-          <Button variant="outline" size="sm" onClick={triggerImport}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={triggerImport}
+            className={headerOutlineButtonClass}
+          >
             <Upload className="mr-2 h-4 w-4" />
             {t.importSession}
           </Button>

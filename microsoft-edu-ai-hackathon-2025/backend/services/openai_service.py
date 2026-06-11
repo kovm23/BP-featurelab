@@ -57,14 +57,19 @@ OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "4096"))
 _OLLAMA_OPTIONS = {"num_ctx": OLLAMA_NUM_CTX}
 OLLAMA_CPU_FALLBACK = os.getenv("OLLAMA_CPU_FALLBACK", "1").strip().lower() in ("1", "true", "yes")
 OLLAMA_MAX_COMPLETION_TOKENS = int(os.getenv("OLLAMA_MAX_COMPLETION_TOKENS", "2048"))
-CUSTOM_LLM_MAX_COMPLETION_TOKENS = int(os.getenv("CUSTOM_LLM_MAX_COMPLETION_TOKENS", "8192"))
+_CUSTOM_LLM_MAX_COMPLETION_TOKENS_RAW = os.getenv("CUSTOM_LLM_MAX_COMPLETION_TOKENS", "").strip()
+CUSTOM_LLM_MAX_COMPLETION_TOKENS = (
+    int(_CUSTOM_LLM_MAX_COMPLETION_TOKENS_RAW)
+    if _CUSTOM_LLM_MAX_COMPLETION_TOKENS_RAW
+    else None
+)
 
 
 def ollama_request_options() -> dict:
     return dict(_OLLAMA_OPTIONS)
 
 
-def get_completion_token_limit(is_custom: bool) -> int:
+def get_completion_token_limit(is_custom: bool) -> int | None:
     """Return the default output-token budget for the selected LLM endpoint."""
     return CUSTOM_LLM_MAX_COMPLETION_TOKENS if is_custom else OLLAMA_MAX_COMPLETION_TOKENS
 
@@ -135,12 +140,14 @@ def create_chat_completion_with_token_limit(
     client,
     *,
     is_custom: bool,
-    token_limit: int,
+    token_limit: int | None,
     **kwargs,
 ):
     """Create a chat completion with endpoint-specific token-limit naming."""
     if is_custom:
         request_kwargs = dict(kwargs)
+        if token_limit is None:
+            return client.chat.completions.create(**request_kwargs)
         request_kwargs["max_completion_tokens"] = token_limit
         try:
             return client.chat.completions.create(**request_kwargs)

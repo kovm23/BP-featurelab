@@ -1,8 +1,11 @@
 """Unit tests for OpenAI-compatible token-limit parameter handling."""
+import os
 from contextlib import nullcontext
 from types import SimpleNamespace
 
 import pytest
+
+os.environ.pop("CUSTOM_LLM_MAX_COMPLETION_TOKENS", None)
 
 from pipeline import feature_discovery
 from services import openai_service
@@ -34,7 +37,7 @@ class FakeClient:
         return self.chat.completions.calls
 
 
-def test_custom_endpoint_uses_max_completion_tokens():
+def test_custom_endpoint_omits_token_limit_by_default():
     client = FakeClient()
 
     openai_service.create_chat_completion_with_token_limit(
@@ -45,13 +48,29 @@ def test_custom_endpoint_uses_max_completion_tokens():
         messages=[{"role": "user", "content": "hi"}],
     )
 
-    assert client.calls[0]["max_completion_tokens"] == 8192
+    assert "max_completion_tokens" not in client.calls[0]
     assert "max_tokens" not in client.calls[0]
 
 
 def test_default_token_limits_are_endpoint_specific():
-    assert openai_service.get_completion_token_limit(is_custom=True) == 8192
+    assert openai_service.get_completion_token_limit(is_custom=True) is None
     assert openai_service.get_completion_token_limit(is_custom=False) == 2048
+
+
+def test_custom_endpoint_uses_configured_max_completion_tokens(monkeypatch):
+    client = FakeClient()
+    monkeypatch.setattr(openai_service, "CUSTOM_LLM_MAX_COMPLETION_TOKENS", 16384)
+
+    openai_service.create_chat_completion_with_token_limit(
+        client,
+        is_custom=True,
+        token_limit=openai_service.get_completion_token_limit(is_custom=True),
+        model="gpt-test",
+        messages=[{"role": "user", "content": "hi"}],
+    )
+
+    assert client.calls[0]["max_completion_tokens"] == 16384
+    assert "max_tokens" not in client.calls[0]
 
 
 def test_custom_endpoint_falls_back_to_max_tokens_when_modern_param_is_unsupported():
@@ -64,7 +83,7 @@ def test_custom_endpoint_falls_back_to_max_tokens_when_modern_param_is_unsupport
     openai_service.create_chat_completion_with_token_limit(
         client,
         is_custom=True,
-        token_limit=openai_service.get_completion_token_limit(is_custom=True),
+        token_limit=8192,
         model="legacy-compatible-model",
         messages=[{"role": "user", "content": "hi"}],
     )
@@ -86,7 +105,7 @@ def test_custom_endpoint_falls_back_to_max_tokens_when_modern_param_is_unrecogni
     openai_service.create_chat_completion_with_token_limit(
         client,
         is_custom=True,
-        token_limit=openai_service.get_completion_token_limit(is_custom=True),
+        token_limit=8192,
         model="legacy-compatible-model",
         messages=[{"role": "user", "content": "hi"}],
     )
@@ -105,7 +124,7 @@ def test_custom_endpoint_does_not_retry_unrelated_errors():
         openai_service.create_chat_completion_with_token_limit(
             client,
             is_custom=True,
-            token_limit=openai_service.get_completion_token_limit(is_custom=True),
+            token_limit=8192,
             model="gpt-test",
             messages=[{"role": "user", "content": "hi"}],
         )
@@ -144,7 +163,7 @@ def test_warm_up_model_uses_token_limit_one_for_custom_endpoint(monkeypatch):
     assert "max_tokens" not in client.calls[0]
 
 
-def test_text_extraction_uses_token_limit_8192_for_custom_endpoint(monkeypatch):
+def test_text_extraction_omits_token_limit_for_custom_endpoint(monkeypatch):
     client = FakeClient(content='{"feature": 1}')
     monkeypatch.setattr(openai_service, "get_client", lambda *_: (client, True))
 
@@ -157,11 +176,11 @@ def test_text_extraction_uses_token_limit_8192_for_custom_endpoint(monkeypatch):
     )
 
     assert result == [{"feature": 1}]
-    assert client.calls[0]["max_completion_tokens"] == 8192
+    assert "max_completion_tokens" not in client.calls[0]
     assert "max_tokens" not in client.calls[0]
 
 
-def test_image_extraction_uses_token_limit_8192_for_custom_endpoint(monkeypatch):
+def test_image_extraction_omits_token_limit_for_custom_endpoint(monkeypatch):
     client = FakeClient(content='{"feature": 1}')
     monkeypatch.setattr(openai_service, "get_client", lambda *_: (client, True))
 
@@ -174,11 +193,11 @@ def test_image_extraction_uses_token_limit_8192_for_custom_endpoint(monkeypatch)
     )
 
     assert result == [{"feature": 1}]
-    assert client.calls[0]["max_completion_tokens"] == 8192
+    assert "max_completion_tokens" not in client.calls[0]
     assert "max_tokens" not in client.calls[0]
 
 
-def test_feature_discovery_synthesis_uses_token_limit_8192_for_custom_endpoint(monkeypatch):
+def test_feature_discovery_synthesis_omits_token_limit_for_custom_endpoint(monkeypatch):
     client = FakeClient(content='{"visual_complexity": [0, 10]}')
     monkeypatch.setattr(feature_discovery, "_warm_up_model", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(feature_discovery, "_any_has_audio", lambda *_args, **_kwargs: False)
@@ -200,5 +219,5 @@ def test_feature_discovery_synthesis_uses_token_limit_8192_for_custom_endpoint(m
     )
 
     assert result == {"visual_complexity": [0, 10]}
-    assert client.calls[0]["max_completion_tokens"] == 8192
+    assert "max_completion_tokens" not in client.calls[0]
     assert "max_tokens" not in client.calls[0]
