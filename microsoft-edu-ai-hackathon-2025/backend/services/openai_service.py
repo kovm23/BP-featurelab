@@ -57,12 +57,16 @@ OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "4096"))
 _OLLAMA_OPTIONS = {"num_ctx": OLLAMA_NUM_CTX}
 OLLAMA_CPU_FALLBACK = os.getenv("OLLAMA_CPU_FALLBACK", "1").strip().lower() in ("1", "true", "yes")
 OLLAMA_MAX_COMPLETION_TOKENS = int(os.getenv("OLLAMA_MAX_COMPLETION_TOKENS", "2048"))
-_CUSTOM_LLM_MAX_COMPLETION_TOKENS_RAW = os.getenv("CUSTOM_LLM_MAX_COMPLETION_TOKENS", "").strip()
-CUSTOM_LLM_MAX_COMPLETION_TOKENS = (
-    int(_CUSTOM_LLM_MAX_COMPLETION_TOKENS_RAW)
-    if _CUSTOM_LLM_MAX_COMPLETION_TOKENS_RAW
-    else None
-)
+
+
+def _read_custom_llm_max_completion_tokens() -> int | None:
+    raw_value = os.getenv("CUSTOM_LLM_MAX_COMPLETION_TOKENS", "8192").strip()
+    if not raw_value or raw_value == "0":
+        return None
+    return int(raw_value)
+
+
+CUSTOM_LLM_MAX_COMPLETION_TOKENS = _read_custom_llm_max_completion_tokens()
 
 
 def ollama_request_options() -> dict:

@@ -60,6 +60,9 @@ def _warm_up_model(model_name: str, progress_cb=None, custom_base_url: str = "",
     attempt = 0
     use_cpu_fallback = False
     client, is_custom = get_client(custom_base_url, custom_api_key)
+    if is_custom:
+        logger.debug("Skipping model warm-up for custom LLM endpoint.")
+        return
     while True:
         try:
             kwargs: dict = dict(
