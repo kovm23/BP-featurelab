@@ -22,7 +22,7 @@ function normalizeFeatureSpecForExport(featureSpec: FeatureSpec): Record<string,
     /(?:score|range|scale|hodnota)?\s*(\d+(?:\.\d+)?)\s*[-–—to]+\s*(\d+(?:\.\d+)?)/i;
   const binaryPattern = /\b(?:binary|bool|boolean)\b|(?:0\s+or\s+1)|(?:0\/1)/i;
   const percentagePattern = /\b(?:percent|percentage|%)\b/i;
-  const enumHintPattern = /^(?:one of|enum|categories?|values?)\s*[:\-]?\s*/i;
+  const enumHintPattern = /^(?:one of|enum|categories?|values?)\s*[:-]?\s*/i;
 
   const normalized: Record<string, unknown> = {};
 
@@ -71,8 +71,8 @@ function normalizeFeatureSpecForExport(featureSpec: FeatureSpec): Record<string,
     const enumText = text
       .replace(enumHintPattern, "")
       .trim()
-      .replace(/^[\[\(\{]\s*/, "")
-      .replace(/\s*[\]\)\}]$/, "");
+      .replace(/^[[({]\s*/, "")
+      .replace(/\s*[\])}]$/, "");
     const splitBy = enumText.includes(",") ? "," : (enumText.includes("|") ? "|" : null);
     if (splitBy) {
       const values = enumText

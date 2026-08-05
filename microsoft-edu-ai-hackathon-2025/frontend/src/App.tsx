@@ -144,10 +144,21 @@ export default function MediaFeatureLabPro() {
   const t = i18n[lang];
 
   const pipeline = useTrainingPipeline(lang);
+  const [transferNotice, setTransferNotice] = useState<
+    { message: string; type: "error" | "success" } | null
+  >(null);
   const { importInputRef, handleExportSession, handleImportSession } = useSessionTransfer(
     t.transferError,
     t.importOk,
+    (message, type) => setTransferNotice({ message, type }),
   );
+
+  useEffect(() => {
+    if (!transferNotice) return;
+    const ms = transferNotice.type === "error" ? 6000 : 3000;
+    const timer = setTimeout(() => setTransferNotice(null), ms);
+    return () => clearTimeout(timer);
+  }, [transferNotice]);
 
   useEffect(() => {
     if (!pipeline.isRestoring && pipeline.restoredWithData) {
@@ -278,6 +289,28 @@ export default function MediaFeatureLabPro() {
       {showRestoredToast && (
         <div className="fixed bottom-4 right-4 bg-slate-700 text-white text-sm px-4 py-2 rounded-lg shadow-lg z-50">
           {lang === "cs" ? "Relace obnovena" : "Session restored"}
+        </div>
+      )}
+
+      {transferNotice && (
+        <div
+          role={transferNotice.type === "error" ? "alert" : "status"}
+          aria-live={transferNotice.type === "error" ? "assertive" : "polite"}
+          className={`fixed bottom-16 right-4 flex items-start gap-3 max-w-sm text-sm px-4 py-2 rounded-lg shadow-lg z-50 ${
+            transferNotice.type === "error"
+              ? "bg-red-600 text-white"
+              : "bg-emerald-600 text-white"
+          }`}
+        >
+          <span>{transferNotice.message}</span>
+          <button
+            type="button"
+            onClick={() => setTransferNotice(null)}
+            aria-label={lang === "cs" ? "Zavřít" : "Dismiss"}
+            className="shrink-0 text-lg leading-none opacity-80 hover:opacity-100"
+          >
+            ×
+          </button>
         </div>
       )}
     </div>

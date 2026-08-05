@@ -18,7 +18,9 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(DATASET_FOLDER, exist_ok=True)
 os.makedirs(CHECKPOINT_FOLDER, exist_ok=True)
 
-MAX_CONTENT_LENGTH = 2 * 1024 * 1024 * 1024  # 2 GB
+# Maximum accepted upload size. Defaults to 2 GB (large video ZIPs); operators
+# can lower it via MAX_CONTENT_LENGTH_MB to reduce disk-fill / DoS exposure.
+MAX_CONTENT_LENGTH = int(os.getenv("MAX_CONTENT_LENGTH_MB", "2048")) * 1024 * 1024
 
 # How many media samples Phase 1 (Feature Discovery) analyses before synthesising the feature spec.
 # More samples → better feature spec, but longer discovery time.

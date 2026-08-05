@@ -1,2 +1,4 @@
--r requirements-server.txt
+# Test/lint profile: shared backend stack (no GPU extras) + tooling.
+-r requirements-base.txt
 pytest>=7.4
+ruff>=0.6,<0.9

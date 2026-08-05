@@ -6,6 +6,7 @@ import uuid
 from flask import Blueprint, jsonify, request
 
 from config import UPLOAD_FOLDER
+from extensions import JOB_RATE_LIMIT, limiter
 from jobs import set_job, update_job
 from utils.csv_utils import load_labels_from_request
 
@@ -15,6 +16,7 @@ predict_bp = Blueprint("predict", __name__)
 
 
 @predict_bp.route("/predict", methods=["POST"])
+@limiter.limit(JOB_RATE_LIMIT)
 def api_predict():
     """Phase 5: Batch prediction – async, returns job_id for polling."""
     from app import get_pipeline

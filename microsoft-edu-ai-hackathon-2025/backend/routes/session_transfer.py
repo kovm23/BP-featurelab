@@ -7,6 +7,8 @@ import zipfile
 
 from flask import Blueprint, jsonify, request, send_file
 
+from extensions import IMPORT_RATE_LIMIT, limiter
+
 logger = logging.getLogger(__name__)
 
 session_transfer_bp = Blueprint("session_transfer", __name__)
@@ -60,6 +62,7 @@ def export_session():
 
 
 @session_transfer_bp.route("/import-session", methods=["POST"])
+@limiter.limit(IMPORT_RATE_LIMIT)
 def import_session():
     """Import a previously exported session ZIP into current session."""
     from app import get_pipeline

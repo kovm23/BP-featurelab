@@ -49,7 +49,7 @@ function PredictionMetricsPanel({
 
 function escapeCsvCell(value: unknown) {
   const text = String(value ?? "");
-  if (/^[=+@\-]/.test(text)) return `"'${text.replace(/"/g, '""')}"`;
+  if (/^[=+@-]/.test(text)) return `"'${text.replace(/"/g, '""')}"`;
   if (text.includes(",") || text.includes('"') || text.includes("\n")) return `"${text.replace(/"/g, '""')}"`;
   return text;
 }

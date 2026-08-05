@@ -18,6 +18,12 @@ import os
 import numpy as np
 import pandas as pd
 from rulekit.classification import RuleClassifier
+from sklearn.metrics import (
+    accuracy_score,
+    balanced_accuracy_score,
+    f1_score,
+    matthews_corrcoef,
+)
 
 from pipeline.ml_classification import (
     _combined_predict_proba,
@@ -28,17 +34,11 @@ from pipeline.ml_classification import (
     _proba_to_labels,
     _resolve_positive_label,
     _rf_feature_importance,
+    _rulekit_classification_predict,
     _run_cross_validation_classification,
     _run_cross_validation_ensemble,
-    _rulekit_classification_predict,
     _train_ensemble_classifier,
     _validate_classification_target,
-)
-from sklearn.metrics import (
-    accuracy_score,
-    balanced_accuracy_score,
-    f1_score,
-    matthews_corrcoef,
 )
 from pipeline.ml_preprocessing import (
     _apply_median_imputer,

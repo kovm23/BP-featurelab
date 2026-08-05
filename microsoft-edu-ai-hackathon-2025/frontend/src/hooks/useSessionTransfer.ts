@@ -2,7 +2,13 @@ import { useRef } from "react";
 import { EXPORT_SESSION_URL, IMPORT_SESSION_URL, sessionHeaders } from "@/lib/api";
 import { getErrorMessage } from "@/lib/helpers";
 
-export function useSessionTransfer(transferErrorLabel: string, importOkLabel: string) {
+export type TransferNotify = (message: string, type: "error" | "success") => void;
+
+export function useSessionTransfer(
+  transferErrorLabel: string,
+  importOkLabel: string,
+  onNotify: TransferNotify,
+) {
   const importInputRef = useRef<HTMLInputElement | null>(null);
 
   async function handleExportSession() {
@@ -23,7 +29,7 @@ export function useSessionTransfer(transferErrorLabel: string, importOkLabel: st
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      alert(`${transferErrorLabel}: ${getErrorMessage(e)}`);
+      onNotify(`${transferErrorLabel}: ${getErrorMessage(e)}`, "error");
     }
   }
 
@@ -40,10 +46,11 @@ export function useSessionTransfer(transferErrorLabel: string, importOkLabel: st
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || `${res.status} ${res.statusText}`);
       }
-      alert(importOkLabel);
-      window.location.reload();
+      onNotify(importOkLabel, "success");
+      // Give the user a moment to read the confirmation before reloading.
+      setTimeout(() => window.location.reload(), 1500);
     } catch (e) {
-      alert(`${transferErrorLabel}: ${getErrorMessage(e)}`);
+      onNotify(`${transferErrorLabel}: ${getErrorMessage(e)}`, "error");
     }
   }
 

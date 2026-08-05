@@ -3,12 +3,13 @@ import logging
 import os
 import secrets
 
-from flask import Flask, request
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 import session_registry
 from config import MAX_CONTENT_LENGTH
 from env_loader import load_backend_env
+from extensions import limiter
 from routes import (
     discover_bp,
     export_matrix_bp,
@@ -49,6 +50,28 @@ CORS(
 logger.info("Allowed CORS origins: %s", ", ".join(ALLOWED_ORIGINS))
 
 app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
+
+limiter.init_app(app)
+
+
+@app.errorhandler(429)
+def _rate_limited(err):
+    """Return a JSON body for rate-limited requests so the SPA can display it."""
+    return (
+        jsonify({"error": "Too many requests. Please wait a moment and try again."}),
+        429,
+    )
+
+
+@app.errorhandler(413)
+def _payload_too_large(err):
+    """Return a JSON body when an upload exceeds MAX_CONTENT_LENGTH."""
+    limit_mb = MAX_CONTENT_LENGTH // (1024 * 1024)
+    return (
+        jsonify({"error": f"Upload too large. The maximum allowed size is {limit_mb} MB."}),
+        413,
+    )
+
 
 app.register_blueprint(discover_bp)
 app.register_blueprint(extract_bp)

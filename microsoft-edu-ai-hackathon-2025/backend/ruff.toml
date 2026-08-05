@@ -1,0 +1,16 @@
+# Ruff configuration for the backend.
+# Pragmatic starting point: enable high-signal rules, keep line-length lenient.
+target-version = "py311"
+line-length = 120
+extend-exclude = ["uploads", "dataset", "checkpoints", "venv", ".venv"]
+
+[lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+# E501 (line length) is left off to avoid noise on existing code.
+# UP038 (isinstance with X | Y) and B905 (zip strict=) require per-call-site
+# judgement and offer little benefit here; revisit later if desired.
+ignore = ["E501", "UP038", "B905"]
+
+[lint.per-file-ignores]
+# Tests use fixtures/imports that may look unused to static analysis.
+"tests/*" = ["F401", "F811"]

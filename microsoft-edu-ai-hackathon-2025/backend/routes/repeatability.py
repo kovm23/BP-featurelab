@@ -6,7 +6,6 @@ Requires Phase 1 (feature discovery) to be completed first.
 import logging
 import os
 import statistics
-import tempfile
 import threading
 import uuid
 from collections import Counter
@@ -16,6 +15,7 @@ from werkzeug.utils import secure_filename
 
 import jobs as job_registry
 from config import UPLOAD_FOLDER
+from extensions import JOB_RATE_LIMIT, limiter
 from pipeline.feature_extraction import _build_extraction_prompt, _extract_single_pass
 from services.openai_service import DEFAULT_MODEL
 
@@ -69,6 +69,7 @@ def _compute_feature_stats(feature_name: str, values: list, feature_spec: dict) 
 
 
 @repeatability_bp.route("/repeatability-test", methods=["POST"])
+@limiter.limit(JOB_RATE_LIMIT)
 def api_repeatability_test():
     """Start async repeatability test. Returns job_id for polling."""
     from app import get_pipeline

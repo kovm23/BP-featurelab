@@ -10,7 +10,6 @@ export default defineConfig({
     },
   },
   server: {
-    // TADY JE TA ZMĚNA:
     allowedHosts: true,
     host: true,
     port: 5173,

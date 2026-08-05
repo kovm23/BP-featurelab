@@ -10,14 +10,13 @@ import os
 import statistics
 from collections import Counter
 
-import numpy as np
 import pandas as pd
 
+import jobs as job_registry
 from pipeline.feature_validation import validate_row
 from services.processing import _is_image_file, compute_video_features, process_single_media
 from utils.csv_utils import load_labels_from_path
 from utils.target_context import build_labels_context
-import jobs as job_registry
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +163,7 @@ def extract_features_async(
         done_names: set[str] = set()
         if os.path.exists(checkpoint_file):
             try:
-                with open(checkpoint_file, "r", encoding="utf-8") as cf:
+                with open(checkpoint_file, encoding="utf-8") as cf:
                     features_data = json.load(cf)
                 done_names = {row["media_name"] for row in features_data}
                 logger.info("Resume: loaded %d records from checkpoint.", len(features_data))

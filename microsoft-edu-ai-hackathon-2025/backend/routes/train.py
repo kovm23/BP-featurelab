@@ -5,6 +5,7 @@ import uuid
 
 from flask import Blueprint, jsonify, request
 
+from extensions import JOB_RATE_LIMIT, limiter
 from jobs import set_job, update_job
 
 logger = logging.getLogger(__name__)
@@ -13,6 +14,7 @@ train_bp = Blueprint("train", __name__)
 
 
 @train_bp.route("/train", methods=["POST"])
+@limiter.limit(JOB_RATE_LIMIT)
 def api_train():
     """Phase 3: Train RuleKit model – async, returns job_id for polling."""
     from app import get_pipeline

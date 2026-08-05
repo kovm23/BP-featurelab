@@ -3,6 +3,8 @@ import json
 import logging
 import os
 import pickle
+import tempfile
+import threading
 from typing import Any
 
 import pandas as pd
@@ -11,7 +13,7 @@ from config import CHECKPOINT_FOLDER
 from pipeline.feature_discovery import discover_features
 from pipeline.feature_extraction import extract_features_async
 from pipeline.feature_schema import normalize_feature_spec
-from pipeline.ml_training import train_model, predict_batch
+from pipeline.ml_training import predict_batch, train_model
 
 logger = logging.getLogger(__name__)
 
@@ -30,12 +32,44 @@ def _json_default(value: Any) -> Any:
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 
+def _atomic_replace(path: str, writer) -> None:
+    """Atomically (re)write *path*.
+
+    ``writer(tmp_path)`` fills a temporary file in the same directory, which is
+    then ``os.replace``'d into place. Because the rename is atomic on POSIX, a
+    crash or a concurrent writer can never leave a half-written checkpoint file
+    behind — readers always see either the old or the new complete file.
+    """
+    directory = os.path.dirname(path) or "."
+    fd, tmp_path = tempfile.mkstemp(dir=directory, prefix=".tmp-", suffix="-" + os.path.basename(path))
+    os.close(fd)
+    try:
+        writer(tmp_path)
+        os.replace(tmp_path, path)
+    except BaseException:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
+def _dump_pickle(obj: Any, path: str) -> None:
+    with open(path, "wb") as f:
+        pickle.dump(obj, f)
+
+
 class MachineLearningPipeline:
     """Holds all state for the five-phase ML pipeline."""
 
     def __init__(self, checkpoint_folder: str | None = None):
         self._checkpoint_folder = checkpoint_folder or CHECKPOINT_FOLDER
         os.makedirs(self._checkpoint_folder, exist_ok=True)
+
+        # Serialises checkpoint reads/writes for this session so concurrent
+        # requests (e.g. a background job and a /reset) cannot interleave and
+        # corrupt the on-disk state. Re-entrant: load_state() may call save_state().
+        self._io_lock = threading.RLock()
 
         self._state_json = os.path.join(self._checkpoint_folder, "pipeline_state.json")
         self._model_pkl = os.path.join(self._checkpoint_folder, "model.pkl")
@@ -177,90 +211,99 @@ class MachineLearningPipeline:
     # ------------------------------------------------------------------
 
     def save_state(self) -> None:
-        """Persist pipeline state to disk (JSON + CSV + pickle for models)."""
-        try:
-            # Save JSON-serialisable scalars
-            state = {
-                "feature_spec": self.feature_spec,
-                "target_variable": self.target_variable,
-                "target_mode": self.target_mode,
-                "training_Y_column": self.training_Y_column,
-                "rules": self.rules,
-                "mse": self.mse,
-                "rulekit_mse": self.rulekit_mse,
-                "xgb_mse": self.xgb_mse,
-                "cv_mse": self.cv_mse,
-                "cv_std": self.cv_std,
-                "cv_mae": self.cv_mae,
-                "feature_importance": self.feature_importance,
-                "is_trained": self.is_trained,
-                "train_accuracy": self.train_accuracy,
-                "train_balanced_accuracy": self.train_balanced_accuracy,
-                "train_f1_macro": self.train_f1_macro,
-                "train_mcc": self.train_mcc,
-                "train_baseline_accuracy": self.train_baseline_accuracy,
-                "train_majority_class": self.train_majority_class,
-                "cv_accuracy": self.cv_accuracy,
-                "cv_balanced_accuracy": self.cv_balanced_accuracy,
-                "cv_f1_macro": self.cv_f1_macro,
-                "cv_precision_macro": self.cv_precision_macro,
-                "cv_recall_macro": self.cv_recall_macro,
-                "cv_mcc": self.cv_mcc,
-                "cv_folds": self.cv_folds,
-                "warnings": self.warnings,
-                "predictions": self.predictions,
-                "prediction_metrics": self.prediction_metrics,
-                "_label_classes": self._label_classes,
-                "_training_columns": self._training_columns,
-                "_scaler_mean": self._scaler_mean,
-                "_scaler_scale": self._scaler_scale,
-                "_positive_label": self._positive_label,
-            }
-            with open(self._state_json, "w", encoding="utf-8") as f:
-                json.dump(state, f, ensure_ascii=False, indent=2, default=_json_default)
+        """Persist pipeline state to disk (JSON + CSV + pickle for models).
 
-            # Save DataFrames as CSV
-            self._save_df(self.training_X, self._training_x_csv)
-            self._save_series(self.training_Y, self._training_y_csv)
-            self._save_df(self.training_Y_df, self._training_y_df_csv)
-            self._save_df(self.testing_X, self._testing_x_csv)
+        All files are written atomically and under a per-session lock, so a
+        crash or a concurrent save/reset can never leave a partially written
+        checkpoint behind.
+        """
+        with self._io_lock:
+            try:
+                # Save JSON-serialisable scalars
+                state = {
+                    "feature_spec": self.feature_spec,
+                    "target_variable": self.target_variable,
+                    "target_mode": self.target_mode,
+                    "training_Y_column": self.training_Y_column,
+                    "rules": self.rules,
+                    "mse": self.mse,
+                    "rulekit_mse": self.rulekit_mse,
+                    "xgb_mse": self.xgb_mse,
+                    "cv_mse": self.cv_mse,
+                    "cv_std": self.cv_std,
+                    "cv_mae": self.cv_mae,
+                    "feature_importance": self.feature_importance,
+                    "is_trained": self.is_trained,
+                    "train_accuracy": self.train_accuracy,
+                    "train_balanced_accuracy": self.train_balanced_accuracy,
+                    "train_f1_macro": self.train_f1_macro,
+                    "train_mcc": self.train_mcc,
+                    "train_baseline_accuracy": self.train_baseline_accuracy,
+                    "train_majority_class": self.train_majority_class,
+                    "cv_accuracy": self.cv_accuracy,
+                    "cv_balanced_accuracy": self.cv_balanced_accuracy,
+                    "cv_f1_macro": self.cv_f1_macro,
+                    "cv_precision_macro": self.cv_precision_macro,
+                    "cv_recall_macro": self.cv_recall_macro,
+                    "cv_mcc": self.cv_mcc,
+                    "cv_folds": self.cv_folds,
+                    "warnings": self.warnings,
+                    "predictions": self.predictions,
+                    "prediction_metrics": self.prediction_metrics,
+                    "_label_classes": self._label_classes,
+                    "_training_columns": self._training_columns,
+                    "_scaler_mean": self._scaler_mean,
+                    "_scaler_scale": self._scaler_scale,
+                    "_positive_label": self._positive_label,
+                }
 
-            # RuleKit model (Java object — must be pickle)
-            if self.model is not None:
-                with open(self._model_pkl, "wb") as f:
-                    pickle.dump(self.model, f)
-            elif os.path.exists(self._model_pkl):
-                os.remove(self._model_pkl)
+                def _write_json(tmp_path: str) -> None:
+                    with open(tmp_path, "w", encoding="utf-8") as f:
+                        json.dump(state, f, ensure_ascii=False, indent=2, default=_json_default)
 
-            # XGBoost model
-            if self.xgb_model is not None:
-                with open(self._xgb_model_pkl, "wb") as f:
-                    pickle.dump(self.xgb_model, f)
-            elif os.path.exists(self._xgb_model_pkl):
-                os.remove(self._xgb_model_pkl)
+                _atomic_replace(self._state_json, _write_json)
 
-            logger.info("Pipeline state saved to disk.")
-        except Exception as e:
-            logger.warning("Cannot save pipeline state: %s", e)
+                # Save DataFrames as CSV
+                self._save_df(self.training_X, self._training_x_csv)
+                self._save_series(self.training_Y, self._training_y_csv)
+                self._save_df(self.training_Y_df, self._training_y_df_csv)
+                self._save_df(self.testing_X, self._testing_x_csv)
+
+                # RuleKit model (Java object — must be pickle)
+                if self.model is not None:
+                    _atomic_replace(self._model_pkl, lambda p: _dump_pickle(self.model, p))
+                elif os.path.exists(self._model_pkl):
+                    os.remove(self._model_pkl)
+
+                # XGBoost model
+                if self.xgb_model is not None:
+                    _atomic_replace(self._xgb_model_pkl, lambda p: _dump_pickle(self.xgb_model, p))
+                elif os.path.exists(self._xgb_model_pkl):
+                    os.remove(self._xgb_model_pkl)
+
+                logger.info("Pipeline state saved to disk.")
+            except Exception as e:
+                logger.warning("Cannot save pipeline state: %s", e)
 
     def load_state(self) -> bool:
         """Load pipeline state from disk if it exists. Returns True on success."""
-        if os.path.exists(self._state_json):
-            return self._load_json_state()
-        if os.path.exists(self._legacy_state_file):
-            ok = self._load_legacy_pickle()
-            if ok:
-                self.save_state()
-                try:
-                    os.remove(self._legacy_state_file)
-                except OSError:
-                    pass
-            return ok
-        return False
+        with self._io_lock:
+            if os.path.exists(self._state_json):
+                return self._load_json_state()
+            if os.path.exists(self._legacy_state_file):
+                ok = self._load_legacy_pickle()
+                if ok:
+                    self.save_state()
+                    try:
+                        os.remove(self._legacy_state_file)
+                    except OSError:
+                        pass
+                return ok
+            return False
 
     def _load_json_state(self) -> bool:
         try:
-            with open(self._state_json, "r", encoding="utf-8") as f:
+            with open(self._state_json, encoding="utf-8") as f:
                 state = json.load(f)
             self.feature_spec = normalize_feature_spec(state.get("feature_spec", {}))
             self.target_variable = state.get("target_variable", "")
@@ -361,14 +404,14 @@ class MachineLearningPipeline:
     @staticmethod
     def _save_df(df: pd.DataFrame | None, path: str) -> None:
         if df is not None:
-            df.to_csv(path, index=False)
+            _atomic_replace(path, lambda p: df.to_csv(p, index=False))
         elif os.path.exists(path):
             os.remove(path)
 
     @staticmethod
     def _save_series(s: pd.Series | None, path: str) -> None:
         if s is not None:
-            s.to_csv(path, index=False, header=True)
+            _atomic_replace(path, lambda p: s.to_csv(p, index=False, header=True))
         elif os.path.exists(path):
             os.remove(path)
 

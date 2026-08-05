@@ -2,7 +2,6 @@
 import json
 import logging
 import os
-import re
 import time
 
 import pandas as pd
@@ -11,8 +10,8 @@ from config import DISCOVERY_MAX_SAMPLES
 from pipeline.feature_schema import normalize_feature_spec
 from services.openai_service import (
     create_chat_completion_with_token_limit,
-    get_completion_token_limit,
     get_client,
+    get_completion_token_limit,
     ollama_request_options,
 )
 from services.processing import process_single_media

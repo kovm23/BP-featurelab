@@ -65,7 +65,7 @@ Konfigurace je připravena v [apache-llmfeatures.vse.cz.conf](apache-llmfeatures
 
 ```bash
 sudo cp ~/BP/microsoft-edu-ai-hackathon-2025/docs/apache-llmfeatures.vse.cz.conf /etc/apache2/sites-available/llmfeatures.vse.cz.conf
-sudo a2enmod rewrite proxy proxy_http
+sudo a2enmod rewrite proxy proxy_http headers
 sudo a2ensite llmfeatures.vse.cz.conf
 sudo apache2ctl configtest
 sudo systemctl reload apache2

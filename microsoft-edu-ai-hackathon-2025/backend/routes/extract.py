@@ -9,12 +9,13 @@ import uuid
 from flask import Blueprint, jsonify, request
 from werkzeug.utils import secure_filename
 
-from config import DATASET_FOLDER, UPLOAD_FOLDER, ALLOWED_EXTENSIONS
+import jobs as job_registry
+from config import ALLOWED_EXTENSIONS, DATASET_FOLDER, UPLOAD_FOLDER
+from extensions import JOB_RATE_LIMIT, limiter
 from pipeline.feature_schema import normalize_feature_spec
 from services.openai_service import DEFAULT_MODEL
+from utils.csv_utils import load_labels_from_path, load_labels_from_request
 from utils.file_utils import allowed_file, extract_zip_contents
-from utils.csv_utils import load_labels_from_request, load_labels_from_path
-import jobs as job_registry
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,7 @@ def _start_extraction(pipeline, media_files, feature_spec, model_name,
 
 
 @extract_bp.route("/extract", methods=["POST"])
+@limiter.limit(JOB_RATE_LIMIT)
 def api_extract():
     """Phase 2 & 4: Async feature extraction from a ZIP dataset (upload)."""
     from app import get_pipeline
@@ -117,6 +119,7 @@ def api_extract():
 
 
 @extract_bp.route("/extract-local", methods=["POST"])
+@limiter.limit(JOB_RATE_LIMIT)
 def api_extract_local():
     """Phase 2 & 4: Async feature extraction from a ZIP already on the server."""
     from app import get_pipeline

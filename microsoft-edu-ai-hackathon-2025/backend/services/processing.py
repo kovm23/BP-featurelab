@@ -1,15 +1,13 @@
 # processing.py - Modular file processing service
 
-import os
-import json
 import base64
 import io
 import logging
-from typing import List, Optional, Any, Tuple, Dict
+import os
+from typing import Any
 
 import cv2
 import numpy as np
-import pandas as pd
 from PIL import Image
 
 from .openai_service import (
@@ -62,7 +60,7 @@ def _compute_histogram(frame: np.ndarray) -> np.ndarray:
 
 def extract_key_frames_with_timestamps(
     video_path: str, frame_limit: int = 10
-) -> List[Tuple[np.ndarray, float]]:
+) -> list[tuple[np.ndarray, float]]:
     """Extract keyframes using scene-change detection.
 
     Selects frames at points where the visual content changes significantly
@@ -83,7 +81,7 @@ def extract_key_frames_with_timestamps(
     sample_step = max(1, total // 200)  # ~200 samples for efficiency
     frame_indices = list(range(0, total, sample_step))
 
-    histograms: List[Tuple[int, np.ndarray, np.ndarray]] = []  # (idx, frame, hist)
+    histograms: list[tuple[int, np.ndarray, np.ndarray]] = []  # (idx, frame, hist)
     for idx in frame_indices:
         cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
         ret, frame = cap.read()
@@ -229,7 +227,7 @@ def process_single_media(
     custom_base_url: str = "",
     custom_api_key: str = "",
     custom_temperature: float | None = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Process a single media file (video or image) and send it to the LLM with the given prompt.
 
     For video: extracts keyframes + audio transcript and appends them to the prompt.
@@ -238,7 +236,7 @@ def process_single_media(
     Returns a dict with keys: filename, transcript, analysis (JSON from LLM), error (if any).
     """
     filename = os.path.basename(media_path)
-    result: Dict[str, Any] = {
+    result: dict[str, Any] = {
         "filename": filename,
         "transcript": "",
         "analysis": None,

@@ -19,7 +19,7 @@ from env_loader import load_backend_env
 
 load_backend_env()
 
-from config import OLLAMA_REQUEST_TIMEOUT, OLLAMA_CONNECT_TIMEOUT  # noqa: E402
+from config import OLLAMA_CONNECT_TIMEOUT, OLLAMA_REQUEST_TIMEOUT  # noqa: E402
 from utils.ollama_errors import is_gpu_load_error, is_transient_ollama_error  # noqa: E402
 
 logger = logging.getLogger(__name__)

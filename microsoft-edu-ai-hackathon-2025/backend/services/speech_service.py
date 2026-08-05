@@ -1,7 +1,7 @@
 import logging
-import os
+from typing import Any
+
 import ffmpeg
-from typing import Dict, Any, Union
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ def extract_audio_from_video(video_path: str, output_audio_path: str) -> bool:
         return False
 
 
-def transcribe_with_timestamps(file_path: str) -> Dict[str, Any]:
+def transcribe_with_timestamps(file_path: str) -> dict[str, Any]:
     """Run local transcription and return structured data with timestamps."""
     try:
         model = get_local_whisper()
@@ -72,6 +72,6 @@ def transcribe_with_timestamps(file_path: str) -> Dict[str, Any]:
         return {"error": str(e), "full_text": "", "segments": []}
 
 
-def transcribe_video_file(file_path: str, model_choice: str = "local") -> Union[str, Dict[str, Any]]:
+def transcribe_video_file(file_path: str, model_choice: str = "local") -> str | dict[str, Any]:
     """Transcribe an audio/video file using the local Whisper model."""
     return transcribe_with_timestamps(file_path)

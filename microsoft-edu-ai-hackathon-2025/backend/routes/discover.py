@@ -9,10 +9,11 @@ from flask import Blueprint, jsonify, request
 from werkzeug.utils import secure_filename
 
 from config import UPLOAD_FOLDER
+from extensions import JOB_RATE_LIMIT, limiter
 from jobs import set_job, update_job
 from services.openai_service import DEFAULT_MODEL
-from utils.file_utils import allowed_file, extract_zip_contents
 from utils.csv_utils import load_labels_from_request
+from utils.file_utils import allowed_file, extract_zip_contents
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,7 @@ discover_bp = Blueprint("discover", __name__)
 
 
 @discover_bp.route("/discover", methods=["POST"])
+@limiter.limit(JOB_RATE_LIMIT)
 def api_discover():
     """Phase 1: Feature discovery from sample media (async, returns job_id)."""
     from app import get_pipeline

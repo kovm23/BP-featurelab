@@ -13,8 +13,8 @@ from sklearn.metrics import (
     confusion_matrix,
     f1_score,
     matthews_corrcoef,
-    precision_score,
     precision_recall_fscore_support,
+    precision_score,
     recall_score,
 )
 from sklearn.model_selection import StratifiedKFold
