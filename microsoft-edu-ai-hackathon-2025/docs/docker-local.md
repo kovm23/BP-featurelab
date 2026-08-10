@@ -51,11 +51,12 @@ službu. **Jedna proměnná volí službu, druhá dává klíč** — nemusí b�
 všechny klíče, stačí ten pro zvolenou službu. Nastav je v souboru `.env` v rootu
 repa (viz `.env.example`; skutečný `.env` je v gitignore), nebo na příkazové řádce:
 
-| `LLM_PROVIDER` | Klíč | Výchozí model (srovnatelný s qwen2.5vl:7b) |
+| `LLM_PROVIDER` | Klíč | Výchozí model |
 |---|---|---|
 | `ollama` (default) | žádný | `qwen2.5vl:7b` (lokální) |
 | `anthropic` | `ANTHROPIC_API_KEY` | `claude-haiku-4-5` |
 | `gemini` | `GEMINI_API_KEY` | `gemini-2.5-flash` |
+| `vse` (školní LiteLLM) | `VSE_LLM_API_KEY` | `qwen3.6-35b` |
 
 ```bash
 LLM_PROVIDER=anthropic ANTHROPIC_API_KEY=sk-ant-... docker compose up -d --build backend frontend
@@ -64,6 +65,13 @@ LLM_PROVIDER=anthropic ANTHROPIC_API_KEY=sk-ant-... docker compose up -d --build
 ```bash
 LLM_PROVIDER=gemini GEMINI_API_KEY=AIza... docker compose up -d --build backend frontend
 ```
+
+```bash
+LLM_PROVIDER=vse VSE_LLM_API_KEY=sk-... docker compose up -d --build backend frontend
+```
+
+Školní `vse` provider je LiteLLM proxy na `https://litellm.vse.cz` — klíč vydává
+škola (netřeba vlastní kredit u externí služby).
 
 Chování:
 

@@ -38,6 +38,7 @@ _ENV_VARS = (
     "LLM_MODEL",
     "ANTHROPIC_API_KEY",
     "GEMINI_API_KEY",
+    "VSE_LLM_API_KEY",
 )
 
 
@@ -83,6 +84,26 @@ def test_provider_model_env_overrides_preset_default(monkeypatch):
     monkeypatch.setenv("LLM_MODEL", "claude-sonnet-5")
 
     assert openai_service.resolve_model(openai_service.DEFAULT_MODEL) == "claude-sonnet-5"
+
+
+def test_provider_vse_uses_preset(monkeypatch):
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("LLM_PROVIDER", "vse")
+    monkeypatch.setenv("VSE_LLM_API_KEY", "sk-test")
+
+    client, is_custom = openai_service.get_client()
+
+    assert is_custom is True
+    assert str(client.base_url).startswith("https://litellm.vse.cz/v1")
+    assert openai_service.resolve_model(openai_service.DEFAULT_MODEL) == "qwen3.6-35b"
+
+
+def test_provider_vse_missing_key_raises(monkeypatch):
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("LLM_PROVIDER", "vse")
+
+    with pytest.raises(RuntimeError, match="VSE_LLM_API_KEY"):
+        openai_service.get_client()
 
 
 def test_provider_missing_key_raises_clear_error(monkeypatch):

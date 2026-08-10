@@ -133,6 +133,12 @@ _PROVIDER_PRESETS = {
         "key_env": "GEMINI_API_KEY",
         "default_model": "gemini-2.5-flash",
     },
+    # VSE school LiteLLM proxy (OpenAI-compatible).
+    "vse": {
+        "base_url": "https://litellm.vse.cz",
+        "key_env": "VSE_LLM_API_KEY",
+        "default_model": "qwen3.6-35b",
+    },
 }
 
 
@@ -140,10 +146,11 @@ def _env_default_custom() -> "tuple[str, str, str]":
     """Resolve the deployment-wide LLM endpoint from env (read at call time).
 
     LLM_PROVIDER selects the service: "ollama" (default — local, no key),
-    "anthropic", or "gemini". Only the selected provider's API key env var
-    (ANTHROPIC_API_KEY / GEMINI_API_KEY) has to be set; the others may stay
-    empty. LLM_MODEL overrides the provider's default model. Advanced:
-    LLM_BASE_URL + LLM_API_KEY point at any other OpenAI-compatible endpoint.
+    "anthropic", "gemini", or "vse" (school LiteLLM proxy). Only the selected
+    provider's API key env var (ANTHROPIC_API_KEY / GEMINI_API_KEY /
+    VSE_LLM_API_KEY) has to be set; the others may stay empty. LLM_MODEL
+    overrides the provider's default model. Advanced: LLM_BASE_URL +
+    LLM_API_KEY point at any other OpenAI-compatible endpoint.
 
     Returns (base_url, api_key, model); empty base_url means local Ollama.
     """
@@ -161,7 +168,7 @@ def _env_default_custom() -> "tuple[str, str, str]":
     if provider not in ("", "ollama", "custom"):
         raise RuntimeError(
             f"Unknown LLM_PROVIDER '{provider}'. "
-            f"Supported values: ollama, anthropic, gemini."
+            f"Supported values: ollama, anthropic, gemini, vse."
         )
     base_url = os.getenv("LLM_BASE_URL", "").strip()
     api_key = os.getenv("LLM_API_KEY", "").strip()

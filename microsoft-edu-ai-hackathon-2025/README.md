@@ -26,7 +26,7 @@ LLM_PROVIDER=gemini GEMINI_API_KEY=... docker compose up -d --build backend fron
 LLM_PROVIDER=anthropic ANTHROPIC_API_KEY=... docker compose up -d --build backend frontend
 ```
 
-Výchozí modely: `qwen2.5vl:7b` (ollama) / `claude-haiku-4-5` (anthropic) / `gemini-2.5-flash` (gemini); jiný vybereš přes `LLM_MODEL=...`. Klíče patří do souboru `.env` v rootu repa (je v gitignore), viz `.env.example`. Všechny varianty, ověření a zastavení: **[docs/docker-local.md](docs/docker-local.md)**.
+K dispozici je i školní server: `LLM_PROVIDER=vse VSE_LLM_API_KEY=...` (LiteLLM proxy `litellm.vse.cz`). Výchozí modely: `qwen2.5vl:7b` (ollama) / `claude-haiku-4-5` (anthropic) / `gemini-2.5-flash` (gemini) / `qwen3.6-35b` (vse); jiný vybereš přes `LLM_MODEL=...`. Klíče patří do souboru `.env` v rootu repa (je v gitignore), viz `.env.example`. Všechny varianty, ověření a zastavení: **[docs/docker-local.md](docs/docker-local.md)**.
 
 Pozn.: s externí službou opouštějí média tvůj počítač — pro citlivá data použij lokální Ollamu.
 

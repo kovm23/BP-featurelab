@@ -22,12 +22,13 @@ services:
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5vl:7b}
       # LLM service switch (see .env.example / docs/docker-local.md):
-      #   LLM_PROVIDER=ollama (default) | anthropic | gemini
-      # With anthropic/gemini set the matching API key and start only
+      #   LLM_PROVIDER=ollama (default) | anthropic | gemini | vse
+      # With an external provider set the matching API key and start only
       #   docker compose up -d backend frontend   (no Ollama needed)
       LLM_PROVIDER: ${LLM_PROVIDER:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      VSE_LLM_API_KEY: ${VSE_LLM_API_KEY:-}
       LLM_MODEL: ${LLM_MODEL:-}
       # Advanced: any other OpenAI-compatible endpoint (covers OpenAI/ChatGPT etc.)
       LLM_BASE_URL: ${LLM_BASE_URL:-}
