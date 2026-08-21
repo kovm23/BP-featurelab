@@ -28,4 +28,12 @@ jobs:
         run: |
           eval "$(ssh-agent -s)"
           ssh-add - <<< "${{ secrets.BACKEND_SSH_KEY }}"
-          ssh -o StrictHostKeyChecking=no kovm23@llm.vse.cz "cd ~/BP/microsoft-edu-ai-hackathon-2025/backend && git pull && pm2 reload ecosystem.config.js --update-env"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          ssh-keygen -R llm.vse.cz -f ~/.ssh/known_hosts || true
+          host_key="$(ssh-keyscan -t ed25519 llm.vse.cz 2>/dev/null)"
+          test -n "$host_key"
+          fingerprint="$(printf '%s\n' "$host_key" | ssh-keygen -lf - -E sha256 | awk '{print $2}')"
+          test "$fingerprint" = "SHA256:ScfH8gzC/Yfn2167Qt5Uv8AsTNapS0274Lfk8vBXLTw"
+          printf '%s\n' "$host_key" >> ~/.ssh/known_hosts
+          ssh -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes kovm23@llm.vse.cz "cd ~/BP/microsoft-edu-ai-hackathon-2025/backend && git pull && pm2 reload ecosystem.config.js --update-env"
