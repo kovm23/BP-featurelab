@@ -1,4 +1,12 @@
 {
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "typecheck": "npm --prefix frontend run typecheck",
+    "lint": "npm --prefix frontend run lint",
+    "preview": "npm --prefix frontend run preview",
+    "backend": "cd backend && python3 app.py"
+  },
   "dependencies": {
     "framer-motion": "^12.29.0",
     "lucide-react": "^0.562.0",
