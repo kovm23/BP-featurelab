@@ -99,7 +99,7 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
   const [progressLabel, setProgressLabel] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [modelProvider, setModelProvider] = useState<string>(
-    saved?.modelProvider ?? "qwen2.5vl:7b",
+    saved?.modelProvider ?? "qwen3-vl:32b",
   );
   const [llmEndpoint, setLlmEndpoint] = useState<LlmEndpointConfig>(
     saved?.llmEndpoint ?? { baseUrl: "", apiKey: "", model: "" },

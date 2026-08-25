@@ -72,9 +72,9 @@ export async function fetchJson<T>(
 // KONFIGURACE MODELŮ
 // =====================================================
 export const AVAILABLE_MODELS = [
-  { id: "qwen2.5vl:7b", name: "Qwen 2.5 VL", type: "local" as const },
-  { id: "llava:7b", name: "Llava v1.6 7B", type: "local" as const },
-  { id: "llama3.2-vision", name: "Llama 3.2 Vision", type: "local" as const },
+  { id: "qwen3-vl:32b", name: "Qwen3 VL 32B", type: "local" as const },
+  { id: "qwen3-vl:32b-instruct", name: "Qwen3 VL 32B Instruct", type: "local" as const },
+  { id: "qwen3.5:122b", name: "Qwen3.5 122B", type: "local" as const },
   { id: CUSTOM_MODEL_ID, name: "Custom endpoint…", type: "custom" as const },
 ];
 

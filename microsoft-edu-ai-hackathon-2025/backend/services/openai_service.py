@@ -52,7 +52,7 @@ Path(_OLLAMA_LOCK_FILE).touch(exist_ok=True)
 _ollama_waiting = 0
 _waiting_lock = threading.Lock()
 
-DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5vl:7b")
+DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "qwen3-vl:32b")
 OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "4096"))
 _OLLAMA_OPTIONS = {"num_ctx": OLLAMA_NUM_CTX}
 OLLAMA_CPU_FALLBACK = os.getenv("OLLAMA_CPU_FALLBACK", "1").strip().lower() in ("1", "true", "yes")
