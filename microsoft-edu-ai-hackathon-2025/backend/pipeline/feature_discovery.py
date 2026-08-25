@@ -2,6 +2,7 @@
 import json
 import logging
 import os
+import shutil
 import time
 
 import pandas as pd
@@ -31,6 +32,9 @@ _AUDIO_KEYWORDS = frozenset({
 
 def _any_has_audio(paths: list[str]) -> bool:
     """Return True if at least one file has an audio stream (uses ffprobe)."""
+    if shutil.which("ffprobe") is None:
+        logger.warning("ffprobe binary not found in PATH; skipping audio stream check")
+        return False
     try:
         import ffmpeg  # ffmpeg-python — already a project dependency
     except ImportError:
@@ -39,6 +43,9 @@ def _any_has_audio(paths: list[str]) -> bool:
     for p in paths:
         try:
             probe = ffmpeg.probe(p)
+        except (FileNotFoundError, OSError) as exc:
+            logger.warning("ffprobe executable missing or not callable; skipping audio stream checks: %s", exc)
+            return False
         except ffmpeg.Error as exc:
             logger.debug("ffprobe failed for %s: %s", p, exc)
             continue
