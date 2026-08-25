@@ -20,6 +20,10 @@ logger = logging.getLogger(__name__)
 discover_bp = Blueprint("discover", __name__)
 
 
+def _custom_llm_enabled(raw_flag: str | None) -> bool:
+    return (raw_flag or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 @discover_bp.route("/discover", methods=["POST"])
 @limiter.limit(JOB_RATE_LIMIT)
 def api_discover():
@@ -42,6 +46,9 @@ def api_discover():
     model_name = request.form.get("model", DEFAULT_MODEL)
     llm_base_url = request.form.get("llm_base_url", "").strip()
     llm_api_key = request.form.get("llm_api_key", "").strip()
+    if not _custom_llm_enabled(request.form.get("use_custom_llm")):
+        llm_base_url = ""
+        llm_api_key = ""
     try:
         llm_temperature = float(request.form.get("llm_temperature", ""))
     except (ValueError, TypeError):

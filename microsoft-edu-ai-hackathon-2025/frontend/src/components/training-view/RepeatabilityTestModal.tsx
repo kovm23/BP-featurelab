@@ -84,11 +84,12 @@ export function RepeatabilityTestModal({
     const formData = new FormData();
     formData.append("file", file);
     formData.append("n_repetitions", String(nReps));
-    const useCustom = !!(llmEndpoint?.baseUrl && llmEndpoint?.apiKey);
+    const useCustom = modelProvider === CUSTOM_MODEL_ID && !!(llmEndpoint?.baseUrl && llmEndpoint?.apiKey);
     if (useCustom) {
       formData.append("model", llmEndpoint.model || modelProvider || CUSTOM_MODEL_ID);
       formData.append("llm_base_url", llmEndpoint.baseUrl);
       formData.append("llm_api_key", llmEndpoint.apiKey);
+      formData.append("use_custom_llm", "1");
       if (llmEndpoint.temperature != null) {
         formData.append("llm_temperature", String(llmEndpoint.temperature));
       }

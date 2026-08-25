@@ -21,6 +21,12 @@ logger = logging.getLogger(__name__)
 
 extract_bp = Blueprint("extract", __name__)
 
+
+def _custom_llm_enabled(raw_flag) -> bool:
+    if isinstance(raw_flag, bool):
+        return raw_flag
+    return str(raw_flag or "").strip().lower() in {"1", "true", "yes", "on"}
+
 # Directories where /extract-local may read files from.
 _SAFE_PREFIXES = [
     os.path.realpath(UPLOAD_FOLDER),
@@ -76,6 +82,9 @@ def api_extract():
     model_name = request.form.get("model", DEFAULT_MODEL)
     llm_base_url = request.form.get("llm_base_url", "").strip()
     llm_api_key = request.form.get("llm_api_key", "").strip()
+    if not _custom_llm_enabled(request.form.get("use_custom_llm")):
+        llm_base_url = ""
+        llm_api_key = ""
     try:
         llm_temperature = float(request.form.get("llm_temperature", ""))
     except (ValueError, TypeError):
@@ -133,6 +142,9 @@ def api_extract_local():
     model_name = data.get("model", DEFAULT_MODEL)
     llm_base_url = data.get("llm_base_url", "").strip()
     llm_api_key = data.get("llm_api_key", "").strip()
+    if not _custom_llm_enabled(data.get("use_custom_llm")):
+        llm_base_url = ""
+        llm_api_key = ""
     raw_temp = data.get("llm_temperature")
     try:
         llm_temperature = float(raw_temp) if raw_temp is not None else None

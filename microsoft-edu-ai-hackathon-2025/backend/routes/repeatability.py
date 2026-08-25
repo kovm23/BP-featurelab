@@ -26,6 +26,10 @@ _MAX_REPS = 10
 _MIN_REPS = 2
 
 
+def _custom_llm_enabled(raw_flag: str | None) -> bool:
+    return (raw_flag or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _compute_feature_stats(feature_name: str, values: list, feature_spec: dict) -> dict:
     """Return statistics for a single feature across N extraction runs."""
     spec_val = feature_spec.get(feature_name)
@@ -88,6 +92,9 @@ def api_repeatability_test():
     model_name = request.form.get("model", DEFAULT_MODEL) or DEFAULT_MODEL
     llm_base_url = request.form.get("llm_base_url", "").strip()
     llm_api_key = request.form.get("llm_api_key", "").strip()
+    if not _custom_llm_enabled(request.form.get("use_custom_llm")):
+        llm_base_url = ""
+        llm_api_key = ""
     try:
         llm_temperature = float(request.form.get("llm_temperature", ""))
     except (ValueError, TypeError):

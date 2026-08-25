@@ -8,6 +8,7 @@ import type {
   TrainResult,
 } from "@/lib/api";
 import {
+  CUSTOM_MODEL_ID,
   DISCOVER_URL,
   EXTRACT_LOCAL_URL,
   EXTRACT_URL,
@@ -46,10 +47,12 @@ export async function submitDiscoveryRequest(params: {
   formData.append("target_variable", params.targetVariable);
   formData.append("target_mode", params.targetMode);
   const ep = params.llmEndpoint;
-  if (ep?.baseUrl && ep?.apiKey) {
+  const useCustom = params.modelProvider === CUSTOM_MODEL_ID && !!(ep?.baseUrl && ep?.apiKey);
+  if (useCustom) {
     formData.append("model", ep.model || params.modelProvider);
     formData.append("llm_base_url", ep.baseUrl);
     formData.append("llm_api_key", ep.apiKey);
+    formData.append("use_custom_llm", "1");
     if (ep.temperature != null) formData.append("llm_temperature", String(ep.temperature));
   } else {
     formData.append("model", params.modelProvider);
@@ -78,7 +81,7 @@ export async function pollDiscoveryJob(params: {
 
 export async function submitExtractRequest(config: ExtractRequestConfig) {
   const ep = config.llmEndpoint;
-  const useCustom = !!(ep?.baseUrl && ep?.apiKey);
+  const useCustom = config.modelProvider === CUSTOM_MODEL_ID && !!(ep?.baseUrl && ep?.apiKey);
   if (config.zipFile) {
     const formData = new FormData();
     formData.append("file", config.zipFile);
@@ -88,6 +91,7 @@ export async function submitExtractRequest(config: ExtractRequestConfig) {
     if (useCustom) {
       formData.append("llm_base_url", ep!.baseUrl);
       formData.append("llm_api_key", ep!.apiKey);
+      formData.append("use_custom_llm", "1");
       if (ep!.temperature != null) formData.append("llm_temperature", String(ep!.temperature));
     }
     if (config.labelsFile) formData.append("labels_file", config.labelsFile);
@@ -112,7 +116,7 @@ export async function submitExtractRequest(config: ExtractRequestConfig) {
       model: useCustom ? (ep!.model || config.modelProvider) : config.modelProvider,
       feature_spec: config.featureSpec,
       dataset_type: config.datasetType,
-      ...(useCustom ? { llm_base_url: ep!.baseUrl, llm_api_key: ep!.apiKey, ...(ep!.temperature != null ? { llm_temperature: ep!.temperature } : {}) } : {}),
+      ...(useCustom ? { llm_base_url: ep!.baseUrl, llm_api_key: ep!.apiKey, use_custom_llm: true, ...(ep!.temperature != null ? { llm_temperature: ep!.temperature } : {}) } : {}),
     }),
   });
   if (!response.ok) {

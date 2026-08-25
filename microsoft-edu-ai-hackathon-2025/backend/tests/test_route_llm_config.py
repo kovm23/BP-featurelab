@@ -72,6 +72,7 @@ def test_extract_upload_forwards_llm_temperature(monkeypatch):
             "model": "gpt-test",
             "feature_spec": '{"f1": [0, 1]}',
             "dataset_type": "training",
+            "use_custom_llm": "1",
             "llm_base_url": "https://api.openai.com/v1",
             "llm_api_key": "sk-test",
             "llm_temperature": "0.37",
@@ -84,6 +85,36 @@ def test_extract_upload_forwards_llm_temperature(monkeypatch):
     assert pipeline.calls[0]["llm_base_url"] == "https://api.openai.com/v1"
     assert pipeline.calls[0]["llm_api_key"] == "sk-test"
     assert pipeline.calls[0]["llm_temperature"] == 0.37
+
+
+def test_extract_upload_ignores_custom_credentials_without_opt_in(monkeypatch):
+    pipeline = FakePipeline()
+    monkeypatch.setattr(app_module, "get_pipeline", lambda: pipeline)
+    monkeypatch.setattr(extract_routes.threading, "Thread", ImmediateThread)
+    monkeypatch.setattr(
+        extract_routes,
+        "extract_zip_contents",
+        lambda *_args, **_kwargs: (["clip.mp4"], None),
+    )
+
+    response = app_module.app.test_client().post(
+        "/extract",
+        data={
+            "file": (io.BytesIO(b"zip"), "dataset.zip"),
+            "model": "qwen2.5vl:7b",
+            "feature_spec": '{"f1": [0, 1]}',
+            "dataset_type": "training",
+            "llm_base_url": "https://api.openai.com/v1",
+            "llm_api_key": "sk-stale",
+            "llm_temperature": "0.37",
+        },
+        content_type="multipart/form-data",
+        headers={"X-Session-ID": "route-test"},
+    )
+
+    assert response.status_code == 200
+    assert pipeline.calls[0]["llm_base_url"] == ""
+    assert pipeline.calls[0]["llm_api_key"] == ""
 
 
 def test_extract_local_forwards_llm_temperature(monkeypatch, tmp_path):
@@ -105,6 +136,7 @@ def test_extract_local_forwards_llm_temperature(monkeypatch, tmp_path):
             "model": "gpt-test",
             "feature_spec": {"f1": [0, 1]},
             "dataset_type": "testing",
+            "use_custom_llm": True,
             "llm_base_url": "https://api.openai.com/v1",
             "llm_api_key": "sk-test",
             "llm_temperature": 0.42,
@@ -145,6 +177,7 @@ def test_repeatability_forwards_custom_endpoint(monkeypatch):
             "file": (io.BytesIO(b"media"), "clip.mp4"),
             "n_repetitions": "2",
             "model": "gpt-test",
+            "use_custom_llm": "1",
             "llm_base_url": "https://api.openai.com/v1",
             "llm_api_key": "sk-test",
             "llm_temperature": "0.55",
