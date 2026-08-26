@@ -6,6 +6,30 @@ V klasifikačním režimu se predikce tvoří **3-way soft vote**: RuleKit (1/3)
 
 Projekt vznikl na Microsoft × VŠE Edu AI Hackathonu 2025 a dále se rozvíjí jako součást bakalářské práce.
 
+## Jak to spustit (Docker — doporučeno)
+
+Jediná prerekvizita je Docker. Vše ostatní (Python, Java, ffmpeg, Ollama) běží v kontejnerech:
+
+```bash
+docker compose up -d --build
+```
+
+První start stáhne vision model `qwen2.5vl:7b` (~6 GB) do volume; průběh: `docker compose logs -f ollama-pull`. UI pak běží na **http://localhost:8080** (backend API přímo na http://localhost:5001).
+
+Bez čekání na model a bez pomalé CPU inference lze přepnout na externí LLM — jedna proměnná volí službu, druhá dává klíč (nemusí být vyplněné všechny, stačí pro zvolenou službu):
+
+```bash
+LLM_PROVIDER=gemini GEMINI_API_KEY=... docker compose up -d --build backend frontend
+```
+
+```bash
+LLM_PROVIDER=anthropic ANTHROPIC_API_KEY=... docker compose up -d --build backend frontend
+```
+
+K dispozici je i školní server: `LLM_PROVIDER=vse VSE_LLM_API_KEY=...` (LiteLLM proxy `litellm.vse.cz`). Výchozí modely: `qwen2.5vl:7b` (ollama) / `claude-haiku-4-5` (anthropic) / `gemini-2.5-flash` (gemini) / `qwen3.6-35b` (vse); jiný vybereš přes `LLM_MODEL=...`. Klíče patří do souboru `.env` v rootu repa (je v gitignore), viz `.env.example`. Všechny varianty, ověření a zastavení: **[docs/docker-local.md](docs/docker-local.md)**.
+
+Pozn.: s externí službou opouštějí média tvůj počítač — pro citlivá data použij lokální Ollamu.
+
 ## Tech stack
 
 | Vrstva | Technologie |
@@ -51,6 +75,10 @@ ollama serve                      # http://localhost:11434
 ```
 
 Otevři `http://localhost:5173` a projdi pipeline: Discovery → Training Extraction → Training → Testing Extraction → Prediction.
+
+### Běh v Dockeru
+
+Viz sekce **„Jak to spustit (Docker)"** na začátku tohoto README a [docs/docker-local.md](docs/docker-local.md).
 
 ## Nové funkce (verze pro obhajobu BP)
 

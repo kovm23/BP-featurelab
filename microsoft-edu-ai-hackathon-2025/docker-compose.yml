@@ -1,0 +1,91 @@
+# Media Feature Lab — self-contained local/shared run via Docker.
+#
+# DEFAULT (everything in Docker, incl. Ollama — nothing else to install):
+#   docker compose up -d --build
+#   → UI on http://localhost:8080; the qwen2.5vl:7b model (~6 GB) is pulled
+#     automatically on first start by the one-shot `ollama-pull` service.
+#
+# Faster DEV variant on macOS (native Ollama app uses the GPU via Metal;
+# in-Docker Ollama is CPU-only on Macs and therefore slow):
+#   ollama pull qwen2.5vl:7b
+#   OLLAMA_BASE_URL=http://host.docker.internal:11434 docker compose up -d backend frontend
+#
+# On a Linux host with an NVIDIA GPU uncomment `gpus: all` on the ollama service.
+# No API keys required — Ollama's OpenAI-compatible endpoint uses a dummy key.
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    environment:
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5vl:7b}
+      # LLM service switch (see .env.example / docs/docker-local.md):
+      #   LLM_PROVIDER=ollama (default) | anthropic | gemini | vse
+      # With an external provider set the matching API key and start only
+      #   docker compose up -d backend frontend   (no Ollama needed)
+      LLM_PROVIDER: ${LLM_PROVIDER:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      VSE_LLM_API_KEY: ${VSE_LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      # Advanced: any other OpenAI-compatible endpoint (covers OpenAI/ChatGPT etc.)
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      ALLOWED_ORIGINS: http://localhost:8080,http://127.0.0.1:8080,http://localhost:5173
+      # Same knobs as production pm2 config
+      CV_MAX_FOLDS: "3"
+      EXTRACTION_PASSES: "1"
+    ports:
+      # Host port 5001 — macOS AirPlay Receiver occupies 5000 on the host.
+      # Inside the compose network the backend still listens on backend:5000.
+      - "5001:5000"
+    extra_hosts:
+      # Makes host.docker.internal work on Linux too (for the native-Ollama dev variant)
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - backend_uploads:/app/backend/uploads
+      - backend_dataset:/app/backend/dataset
+      - backend_checkpoints:/app/backend/checkpoints
+    healthcheck:
+      # Runs inside the container, where the app listens on 5000
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_data:/root/.ollama
+    # Linux + NVIDIA GPU: uncomment for GPU inference
+    # gpus: all
+
+  # One-shot: waits for the ollama server, then pulls the model if missing.
+  # Re-running is a fast no-op once the model is in the ollama_data volume.
+  ollama-pull:
+    image: ollama/ollama:latest
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c",
+      "until ollama list >/dev/null 2>&1; do echo 'waiting for ollama...'; sleep 2; done; ollama pull ${OLLAMA_MODEL:-qwen2.5vl:7b}"]
+    depends_on:
+      - ollama
+    restart: "no"
+
+volumes:
+  backend_uploads:
+  backend_dataset:
+  backend_checkpoints:
+  ollama_data:

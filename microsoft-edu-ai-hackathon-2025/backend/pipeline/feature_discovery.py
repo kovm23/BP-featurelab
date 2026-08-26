@@ -5,6 +5,7 @@ import os
 import shutil
 import time
 
+import openai
 import pandas as pd
 
 from config import DISCOVERY_MAX_SAMPLES
@@ -14,6 +15,7 @@ from services.openai_service import (
     get_client,
     get_completion_token_limit,
     ollama_request_options,
+    resolve_model,
 )
 from services.processing import process_single_media
 from utils.ollama_errors import is_gpu_load_error, is_transient_ollama_error
@@ -143,6 +145,10 @@ def discover_features(
     pipeline.target_variable = target_variable
     target_mode = getattr(pipeline, "target_mode", "regression")
 
+    # Env-configured external endpoint (LLM_BASE_URL/LLM_API_KEY) may remap the
+    # stock local model id to LLM_MODEL; per-request UI overrides win unchanged.
+    model_name = resolve_model(model_name, bool(llm_base_url and llm_api_key))
+
     labels_context = build_labels_context(labels_df, target_variable, target_mode)
 
     # Pre-warm the model so Ollama finishes loading before the observation loop.
@@ -255,6 +261,18 @@ def discover_features(
                 **synth_kwargs,
             )
             break
+        except openai.RateLimitError as exc:
+            # External providers' free tiers allow only a few requests/minute;
+            # the observation calls right before synthesis often exhaust them.
+            if attempt >= max_retries - 1:
+                raise
+            wait_s = min(25 * (attempt + 1), 75)
+            logger.warning(
+                "LLM rate limit during feature synthesis (attempt %s/%s), retrying in %ss: %s",
+                attempt + 1, max_retries, wait_s, exc,
+            )
+            _cb(70, f"LLM rate limit hit, waiting {wait_s}s before retry...")
+            time.sleep(wait_s)
         except Exception as exc:
             if not use_cpu_fallback and is_gpu_load_error(exc):
                 use_cpu_fallback = True

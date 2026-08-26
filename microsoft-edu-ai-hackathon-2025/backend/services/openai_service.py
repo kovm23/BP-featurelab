@@ -118,11 +118,91 @@ def _make_client(base_url: str, api_key: str) -> openai.OpenAI:
     )
 
 
+# Provider presets for the LLM_PROVIDER switch. Both services expose an
+# OpenAI-compatible endpoint, so they plug into the existing client code.
+# Default models are chosen as small vision-capable tiers comparable to the
+# local qwen2.5vl:7b.
+_PROVIDER_PRESETS = {
+    "anthropic": {
+        "base_url": "https://api.anthropic.com",
+        "key_env": "ANTHROPIC_API_KEY",
+        "default_model": "claude-haiku-4-5",
+    },
+    "gemini": {
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "key_env": "GEMINI_API_KEY",
+        "default_model": "gemini-2.5-flash",
+    },
+    # VSE school LiteLLM proxy (OpenAI-compatible).
+    "vse": {
+        "base_url": "https://litellm.vse.cz",
+        "key_env": "VSE_LLM_API_KEY",
+        "default_model": "qwen3.6-35b",
+    },
+}
+
+
+def _env_default_custom() -> "tuple[str, str, str]":
+    """Resolve the deployment-wide LLM endpoint from env (read at call time).
+
+    LLM_PROVIDER selects the service: "ollama" (default — local, no key),
+    "anthropic", "gemini", or "vse" (school LiteLLM proxy). Only the selected
+    provider's API key env var (ANTHROPIC_API_KEY / GEMINI_API_KEY /
+    VSE_LLM_API_KEY) has to be set; the others may stay empty. LLM_MODEL
+    overrides the provider's default model. Advanced: LLM_BASE_URL +
+    LLM_API_KEY point at any other OpenAI-compatible endpoint.
+
+    Returns (base_url, api_key, model); empty base_url means local Ollama.
+    """
+    provider = os.getenv("LLM_PROVIDER", "").strip().lower()
+    model_override = os.getenv("LLM_MODEL", "").strip()
+    if provider in _PROVIDER_PRESETS:
+        preset = _PROVIDER_PRESETS[provider]
+        api_key = os.getenv(preset["key_env"], "").strip()
+        if not api_key:
+            raise RuntimeError(
+                f"LLM_PROVIDER={provider} is set but {preset['key_env']} is empty. "
+                f"Set the API key or switch LLM_PROVIDER back to 'ollama'."
+            )
+        return preset["base_url"], api_key, model_override or preset["default_model"]
+    if provider not in ("", "ollama", "custom"):
+        raise RuntimeError(
+            f"Unknown LLM_PROVIDER '{provider}'. "
+            f"Supported values: ollama, anthropic, gemini, vse."
+        )
+    base_url = os.getenv("LLM_BASE_URL", "").strip()
+    api_key = os.getenv("LLM_API_KEY", "").strip()
+    if base_url and api_key:
+        return base_url, api_key, model_override
+    return "", "", ""
+
+
 def get_client(custom_base_url: str = "", custom_api_key: str = "") -> "tuple[openai.OpenAI, bool]":
-    """Return (client, is_custom). is_custom=True means skip file lock and extra_body."""
+    """Return (client, is_custom). is_custom=True means skip file lock and extra_body.
+
+    Priority: per-request override (UI config) > env-configured provider
+    (LLM_PROVIDER=anthropic/gemini, or LLM_BASE_URL + LLM_API_KEY) > local Ollama.
+    """
     if custom_base_url and custom_api_key:
         return _make_client(custom_base_url, custom_api_key), True
+    env_base_url, env_api_key, _ = _env_default_custom()
+    if env_base_url and env_api_key:
+        return _make_client(env_base_url, env_api_key), True
     return local_client, False
+
+
+def resolve_model(requested: str | None, has_request_override: bool = False) -> str:
+    """Map the requested model to the effective one.
+
+    The stock UI always sends the local default model id; when the deployment
+    is switched to an external endpoint via env (and the request carries no
+    explicit endpoint of its own), that id is remapped to LLM_MODEL.
+    """
+    env_base_url, env_api_key, env_model = _env_default_custom()
+    if not has_request_override and env_base_url and env_api_key and env_model:
+        if not requested or requested == DEFAULT_MODEL:
+            return env_model
+    return requested or DEFAULT_MODEL
 
 
 def _is_unsupported_parameter_error(exc: BaseException, parameter_name: str) -> bool:
@@ -130,9 +210,11 @@ def _is_unsupported_parameter_error(exc: BaseException, parameter_name: str) -> 
     parameter = parameter_name.lower()
     unsupported_markers = (
         "unsupported parameter",
+        "unsupported value",
         "unrecognized parameter",
         "unknown parameter",
         "unknown field",
+        "unknown name",
         "extra_forbidden",
         "not permitted",
         "not supported",
@@ -147,23 +229,41 @@ def create_chat_completion_with_token_limit(
     token_limit: int | None,
     **kwargs,
 ):
-    """Create a chat completion with endpoint-specific token-limit naming."""
+    """Create a chat completion with endpoint-specific token-limit naming.
+
+    For custom endpoints, progressively degrades on parameter rejections:
+    max_completion_tokens → max_tokens, and drops temperature entirely for
+    models that only accept their default (e.g. reasoning-model families).
+    """
     if is_custom:
         request_kwargs = dict(kwargs)
-        if token_limit is None:
-            return client.chat.completions.create(**request_kwargs)
-        request_kwargs["max_completion_tokens"] = token_limit
-        try:
-            return client.chat.completions.create(**request_kwargs)
-        except Exception as exc:
-            if not _is_unsupported_parameter_error(exc, "max_completion_tokens"):
+        if token_limit is not None:
+            request_kwargs["max_completion_tokens"] = token_limit
+        for _ in range(3):
+            try:
+                return client.chat.completions.create(**request_kwargs)
+            except Exception as exc:
+                if (
+                    "max_completion_tokens" in request_kwargs
+                    and _is_unsupported_parameter_error(exc, "max_completion_tokens")
+                ):
+                    request_kwargs.pop("max_completion_tokens")
+                    request_kwargs["max_tokens"] = token_limit
+                    logger.info(
+                        "Custom endpoint does not support max_completion_tokens; retrying with max_tokens."
+                    )
+                    continue
+                if (
+                    "temperature" in request_kwargs
+                    and _is_unsupported_parameter_error(exc, "temperature")
+                ):
+                    request_kwargs.pop("temperature")
+                    logger.info(
+                        "Custom endpoint rejected the temperature parameter; retrying without it."
+                    )
+                    continue
                 raise
-            fallback_kwargs = dict(kwargs)
-            fallback_kwargs["max_tokens"] = token_limit
-            logger.info(
-                "Custom endpoint does not support max_completion_tokens; retrying with max_tokens."
-            )
-            return client.chat.completions.create(**fallback_kwargs)
+        raise RuntimeError("Custom endpoint kept rejecting request parameters.")
 
     request_kwargs = dict(kwargs)
     request_kwargs["max_tokens"] = token_limit
@@ -226,7 +326,7 @@ def extract_multimodal_features_with_llm(
     custom_temperature: float | None = None,
 ) -> dict:
     """Send one multimodal request containing all provided images."""
-    model_name = deployment_name or DEFAULT_MODEL
+    model_name = resolve_model(deployment_name, bool(custom_base_url and custom_api_key))
     client, is_custom = get_client(custom_base_url, custom_api_key)
     prompt_text = prompt or "Extract meaningful features from these media frames."
     user_content = [{"type": "text", "text": prompt_text}]
@@ -236,7 +336,8 @@ def extract_multimodal_features_with_llm(
     )
 
     max_retries = 3
-    backoff = 2
+    # Long enough to survive free-tier per-minute quotas on external providers.
+    backoff = 20 if is_custom else 2
     use_cpu_fallback = False
 
     for attempt in range(max_retries):
@@ -295,7 +396,7 @@ def extract_image_features_with_llm(
     custom_temperature: float | None = None,
 ) -> list:
     features_list = []
-    model_name = deployment_name or DEFAULT_MODEL
+    model_name = resolve_model(deployment_name, bool(custom_base_url and custom_api_key))
     client, is_custom = get_client(custom_base_url, custom_api_key)
 
     for img_b64 in image_base64_list:
@@ -307,7 +408,8 @@ def extract_image_features_with_llm(
         ]
 
         max_retries = 3
-        backoff = 2
+        # Long enough to survive free-tier per-minute quotas on external providers.
+        backoff = 20 if is_custom else 2
         use_cpu_fallback = False
 
         for attempt in range(max_retries):
@@ -370,7 +472,7 @@ def extract_text_features_with_llm(
     custom_temperature: float | None = None,
 ) -> list:
     features_list = []
-    model_name = deployment_name or DEFAULT_MODEL
+    model_name = resolve_model(deployment_name, bool(custom_base_url and custom_api_key))
     client, is_custom = get_client(custom_base_url, custom_api_key)
 
     for text in text_list:
