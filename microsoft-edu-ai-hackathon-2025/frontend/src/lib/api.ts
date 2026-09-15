@@ -26,7 +26,12 @@ export interface LlmEndpointConfig {
   temperature?: number;
 }
 
-export const DEFAULT_LLM_ENDPOINT: LlmEndpointConfig = { baseUrl: "", apiKey: "", model: "", temperature: 0.1 };
+export const DEFAULT_LLM_ENDPOINT: LlmEndpointConfig = {
+  baseUrl: "https://litellm.vse.cz",
+  apiKey: "",
+  model: "gemma3:270m",
+  temperature: 0.1,
+};
 
 export const CUSTOM_MODEL_ID = "__custom__";
 
@@ -78,7 +83,7 @@ export const AVAILABLE_MODELS = [
   { id: "qwen3-vl:32b", name: "Qwen3 VL 32B", type: "local" as const },
   { id: "qwen3-vl:32b-instruct", name: "Qwen3 VL 32B Instruct", type: "local" as const },
   { id: "qwen3.5:122b", name: "Qwen3.5 122B", type: "local" as const },
-  { id: CUSTOM_MODEL_ID, name: "Custom endpoint…", type: "custom" as const },
+  { id: CUSTOM_MODEL_ID, name: "LiteLLM endpoint…", type: "custom" as const },
 ];
 
 // =====================================================

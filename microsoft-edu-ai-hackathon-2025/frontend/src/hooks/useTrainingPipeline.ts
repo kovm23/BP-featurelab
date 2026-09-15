@@ -14,6 +14,7 @@ import type {
   PredictionMetrics,
 } from "@/lib/api";
 import {
+  CUSTOM_MODEL_ID,
   fetchJson,
   RESET_URL,
   STATE_URL,
@@ -99,10 +100,15 @@ export function useTrainingPipeline(uiLanguage: "cs" | "en" = "cs") {
   const [progressLabel, setProgressLabel] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [modelProvider, setModelProvider] = useState<string>(
-    saved?.modelProvider ?? "qwen3-vl:32b",
+    saved?.modelProvider ?? CUSTOM_MODEL_ID,
   );
   const [llmEndpoint, setLlmEndpoint] = useState<LlmEndpointConfig>(
-    saved?.llmEndpoint ?? { baseUrl: "", apiKey: "", model: "" },
+    saved?.llmEndpoint ?? {
+      baseUrl: "https://litellm.vse.cz",
+      apiKey: "",
+      model: "gemma3:270m",
+      temperature: 0.1,
+    },
   );
 
   const pipelineStateSetters = {
