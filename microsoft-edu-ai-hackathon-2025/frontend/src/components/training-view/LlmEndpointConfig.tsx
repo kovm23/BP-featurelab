@@ -49,7 +49,7 @@ export function LlmEndpointConfigPanel({
         <label className={labelCls}>Model name</label>
         <input
           type="text"
-          placeholder="e.g. gemma3:270m"
+          placeholder="e.g. qwen3-vl:32b"
           value={value.model}
           onChange={(e) => onChange({ ...value, model: e.target.value })}
           className={inputCls}

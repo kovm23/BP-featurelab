@@ -29,7 +29,7 @@ export interface LlmEndpointConfig {
 export const DEFAULT_LLM_ENDPOINT: LlmEndpointConfig = {
   baseUrl: "https://litellm.vse.cz",
   apiKey: "",
-  model: "gemma3:270m",
+  model: "qwen3-vl:32b",
   temperature: 0.1,
 };
 
