@@ -2,9 +2,12 @@
 import logging
 import os
 import secrets
+import time
+import uuid
 
-from flask import Flask, jsonify, request
+from flask import Flask, g, jsonify, request
 from flask_cors import CORS
+from werkzeug.exceptions import HTTPException
 
 import session_registry
 from config import MAX_CONTENT_LENGTH
@@ -52,6 +55,46 @@ logger.info("Allowed CORS origins: %s", ", ".join(ALLOWED_ORIGINS))
 app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
 
 limiter.init_app(app)
+
+
+@app.before_request
+def _start_request_logging():
+    """Attach an ID so a browser error can be matched to server logs."""
+    g.request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex[:12]
+    g.request_started_at = time.perf_counter()
+
+
+@app.after_request
+def _log_request(response):
+    response.headers["X-Request-ID"] = g.get("request_id", "unknown")
+    elapsed_ms = (time.perf_counter() - g.get("request_started_at", time.perf_counter())) * 1000
+    logger.info(
+        "request_id=%s method=%s path=%s status=%s duration_ms=%.1f",
+        g.get("request_id", "unknown"),
+        request.method,
+        request.path,
+        response.status_code,
+        elapsed_ms,
+    )
+    return response
+
+
+@app.errorhandler(Exception)
+def _unhandled_error(err):
+    """Log the full failure while returning a traceable JSON error to the SPA."""
+    if isinstance(err, HTTPException):
+        return err
+    request_id = g.get("request_id", "unknown")
+    logger.exception(
+        "Unhandled request error: request_id=%s method=%s path=%s",
+        request_id,
+        request.method,
+        request.path,
+    )
+    return jsonify({
+        "error": "Backend request failed. See server logs with the request ID.",
+        "request_id": request_id,
+    }), 500
 
 
 @app.errorhandler(429)

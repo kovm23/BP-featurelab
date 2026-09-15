@@ -56,10 +56,13 @@ export async function fetchJson<T>(
 ): Promise<T> {
   const response = await fetch(input, init);
   if (!response.ok) {
-    let errorMessage = `${response.status} ${response.statusText}`;
+    let errorMessage = response.status === 503
+      ? "Backend sluzba je momentalne nedostupna (HTTP 503). Zkuste to za chvili; pokud problem trva, zkontrolujte serverove logy."
+      : `${response.status} ${response.statusText}`;
     try {
-      const payload = await response.json() as { error?: string; message?: string };
+      const payload = await response.json() as { error?: string; message?: string; request_id?: string };
       errorMessage = payload.error || payload.message || errorMessage;
+      if (payload.request_id) errorMessage += ` (request ID: ${payload.request_id})`;
     } catch {
       // Fall back to the HTTP status when the response body is not JSON.
     }
