@@ -1,5 +1,6 @@
 """Health check endpoint — reports Ollama availability."""
 import logging
+import os
 
 import requests
 from flask import Blueprint, jsonify
@@ -15,7 +16,12 @@ health_bp = Blueprint("health", __name__)
 def api_health():
     """Check if the backend and Ollama are reachable."""
     try:
-        r = requests.get(get_ollama_healthcheck_url(), timeout=2)
+        headers = {}
+        api_key = os.getenv("OLLAMA_API_KEY")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        r = requests.get(get_ollama_healthcheck_url(), headers=headers, timeout=2)
         ollama_ok = r.status_code == 200
     except requests.RequestException as e:
         logger.debug("Ollama health check failed: %s", e)

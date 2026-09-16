@@ -4,6 +4,7 @@ import io
 from types import SimpleNamespace
 
 import app as app_module
+from services.openai_service import get_ollama_healthcheck_url
 from routes import extract as extract_routes
 from routes import repeatability as repeatability_routes
 
@@ -192,3 +193,9 @@ def test_repeatability_forwards_custom_endpoint(monkeypatch):
     assert captured[0]["custom_base_url"] == "https://api.openai.com/v1"
     assert captured[0]["custom_api_key"] == "sk-test"
     assert captured[0]["custom_temperature"] == 0.55
+
+
+def test_litellm_health_check_uses_openai_models_endpoint(monkeypatch):
+    monkeypatch.setenv("OLLAMA_BASE_URL", "https://litellm.vse.cz")
+
+    assert get_ollama_healthcheck_url() == "https://litellm.vse.cz/v1/models"

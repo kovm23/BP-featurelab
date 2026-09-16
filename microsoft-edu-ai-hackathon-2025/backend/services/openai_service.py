@@ -33,8 +33,8 @@ def _ollama_api_base_url() -> str:
 def get_ollama_healthcheck_url() -> str:
     raw_base = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
     if raw_base.endswith("/v1"):
-        raw_base = raw_base[:-3]
-    return f"{raw_base}/api/tags"
+        return f"{raw_base}/models"
+    return f"{raw_base}/v1/models"
 
 # --- Client configuration (local Ollama only) ---
 local_client = openai.OpenAI(
