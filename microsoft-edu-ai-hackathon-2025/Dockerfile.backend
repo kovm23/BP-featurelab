@@ -1,0 +1,33 @@
+# Media Feature Lab — backend image (Flask + gunicorn + RuleKit/JPype + OpenCV)
+# Uses requirements-server.txt: no torch/faster-whisper, so video transcripts are
+# gracefully skipped (same behaviour as the production server). Image pipeline is complete.
+FROM python:3.13-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    JAVA_HOME=/usr/lib/jvm/default-java
+
+# ffmpeg: audio extraction + ffprobe (audio-stream detection)
+# default-jre-headless: JVM for RuleKit via JPype
+# libgl1 + libglib2.0-0: opencv-python runtime deps
+# curl: container healthcheck
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ffmpeg \
+        default-jre-headless \
+        libgl1 \
+        libglib2.0-0 \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app/backend
+
+COPY backend/requirements-server.txt ./requirements-server.txt
+RUN pip install -r requirements-server.txt
+
+COPY backend/ ./
+
+EXPOSE 5000
+
+# Mirrors production pm2/gunicorn settings (1 worker, 8 threads, 1200 s timeout)
+CMD ["gunicorn", "-w", "1", "--threads", "8", "-k", "gthread", \
+     "-b", "0.0.0.0:5000", "--timeout", "1200", "--graceful-timeout", "60", "app:app"]
